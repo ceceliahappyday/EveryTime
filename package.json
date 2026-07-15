@@ -1,0 +1,50 @@
+{
+  "name": "today-daily-planner",
+  "version": "2.0.4",
+  "private": true,
+  "description": "桌面浮窗日程与待办记事本",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --win dir",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.local.todayDailyPlanner",
+    "productName": "今日日程",
+    "directories": {
+      "output": "D:/今日日程APP/安装包"
+    },
+    "files": [
+      "index.html",
+      "styles.css",
+      "app.js",
+      "main.js",
+      "preload.js",
+      "excel-runtime/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "今日日程-安装程序-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "今日日程",
+      "installerHeaderIcon": null
+    },
+    "publish": null
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  }
+}

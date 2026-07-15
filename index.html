@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f5f3ee" />
+  <title>今日 · 日程记事本</title>
+  <script>if (window.desktopAPI) document.documentElement.classList.add("desktop-shell");</script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">今</div>
+        <div>
+          <h1>今日</h1>
+          <p id="todaySummary">专注当下，把事情一件件做好</p>
+        </div>
+      </div>
+
+      <div class="date-controls">
+        <button class="icon-button" id="previousWeek" aria-label="上一周">←</button>
+        <button class="date-picker-button" id="monthPickerButton">
+          <strong id="monthLabel"></strong>
+          <span>选择日期</span>
+        </button>
+        <input type="date" id="datePicker" aria-label="选择日期" />
+        <button class="soft-button" id="todayButton">回到今天</button>
+        <button class="icon-button" id="nextWeek" aria-label="下一周">→</button>
+      </div>
+
+      <div class="header-actions">
+        <div class="header-view-switcher" id="viewSwitcher">
+          <button class="active" data-view="day">日</button>
+          <button data-view="week">周</button>
+          <button data-view="month">月</button>
+        </div>
+        <button class="soft-button" id="exportButton" title="导出全部任务和日程">⇩ 导出</button>
+        <button class="soft-button" id="progressReviewButton" title="集中更新进行中任务">↻ 更新进度</button>
+        <button class="soft-button desktop-only" id="glassMode" title="切换磨砂玻璃桌面组件外观">◫ 玻璃模式</button>
+        <button class="soft-button desktop-only" id="desktopLock" title="降低界面存在感，但保持可编辑">◌ 低干扰</button>
+        <button class="soft-button desktop-only" id="pinWindow" title="让窗口保持在最前">📌 置顶</button>
+        <button class="soft-button desktop-only" id="settingsButton" title="打开桌面组件设置">⚙ 设置</button>
+        <button class="icon-button" id="toggleCompact" title="切换紧凑模式">↕</button>
+        <button class="primary-button" id="quickAddButton"><span>＋</span> 新建待办</button>
+        <div class="window-controls desktop-only">
+          <button id="minimizeWindow" title="最小化">—</button>
+          <button id="closeWindow" class="window-close" title="彻底退出">×</button>
+        </div>
+      </div>
+    </header>
+
+    <nav class="week-strip" aria-label="工作日选择">
+      <div class="week-days" id="weekDays"></div>
+    </nav>
+
+    <main class="workspace">
+      <aside class="task-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">TASKS</span>
+            <h2 id="taskViewTitle">当天待办</h2>
+          </div>
+          <span class="count-badge" id="taskCount">0</span>
+        </div>
+
+        <form class="quick-add quick-task-form" id="quickTaskForm">
+          <input id="quickTaskInput" maxlength="80" placeholder="写下新的待办，未填日期即未计划…" autocomplete="off" />
+          <button type="submit" id="taskAddTrigger" title="快速新增">＋</button>
+        </form>
+
+        <div class="task-tabs" id="taskTabs" role="tablist">
+          <button data-filter="unplanned">未计划 <span id="unplannedCount">0</span></button>
+          <button class="active" data-filter="planned">计划中 <span id="openCount">0</span></button>
+          <button data-filter="in_progress">进行中 <span id="doneCount">0</span></button>
+          <button data-filter="ended">已结束 <span id="closedCount">0</span></button>
+        </div>
+
+        <div class="task-list" id="taskList"></div>
+
+        <div class="task-panel-footer">
+          <div>
+            <span>当天计划</span>
+            <strong id="plannedHours">0 小时</strong>
+          </div>
+          <div>
+            <span>完成进度</span>
+            <strong id="progressLabel">0%</strong>
+          </div>
+          <div class="progress-track"><i id="progressBar"></i></div>
+        </div>
+      </aside>
+
+      <section class="schedule-panel">
+        <div class="schedule-heading">
+          <div>
+            <span class="eyebrow">SCHEDULE</span>
+            <h2 id="scheduleTitle">当天日程</h2>
+          </div>
+          <div class="schedule-stats">
+            <div><span>已记录</span><strong id="loggedHours">0h</strong></div>
+            <div><span>空闲</span><strong id="freeHours">0h</strong></div>
+          </div>
+        </div>
+
+        <div class="all-day-row">
+          <span>全天</span>
+          <button id="dayNoteButton">＋ 添加当天备注</button>
+          <p id="dayNoteText"></p>
+        </div>
+
+        <div class="timeline-wrap" id="timelineWrap">
+          <div class="timeline" id="timeline"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="modal" id="entryDialog">
+    <form method="dialog" id="entryForm">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow" id="entryEyebrow">NEW ENTRY</span>
+          <h3 id="entryDialogTitle">添加日程</h3>
+        </div>
+        <button type="button" class="close-button" data-close-dialog="entryDialog" aria-label="关闭">×</button>
+      </div>
+
+      <label>
+        <span>事项</span>
+        <input id="entryTitle" maxlength="80" required placeholder="这段时间做什么？" />
+      </label>
+
+      <label>
+        <span>关联待办</span>
+        <select id="entryTaskLink"></select>
+      </label>
+
+      <div class="form-row">
+        <label>
+          <span>开始时间</span>
+          <select id="entryStart"></select>
+        </label>
+        <label>
+          <span>结束时间</span>
+          <select id="entryEnd"></select>
+        </label>
+      </div>
+
+      <label>
+        <span>完成内容 / 进度说明（可选）</span>
+        <textarea id="entryNote" rows="3" maxlength="360" placeholder="空着表示计划投入；填写后会作为这个任务在本时间段的进展记录"></textarea>
+      </label>
+
+      <div class="color-picker" id="colorPicker">
+        <span>颜色</span>
+        <button type="button" class="selected" data-color="sage" aria-label="鼠尾草绿"></button>
+        <button type="button" data-color="blue" aria-label="蓝色"></button>
+        <button type="button" data-color="amber" aria-label="琥珀色"></button>
+        <button type="button" data-color="rose" aria-label="玫瑰色"></button>
+        <button type="button" data-color="violet" aria-label="紫色"></button>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="danger-button hidden" id="deleteEntryButton">删除</button>
+        <span></span>
+        <button type="button" class="soft-button" data-close-dialog="entryDialog">取消</button>
+        <button type="submit" class="primary-button">保存日程</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal" id="taskDialog">
+    <form method="dialog" id="taskEditForm">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow" id="taskDialogEyebrow">NEW TASK</span>
+          <h3 id="taskDialogTitle">新建待办</h3>
+        </div>
+        <button type="button" class="close-button" data-close-dialog="taskDialog" aria-label="关闭">×</button>
+      </div>
+      <div class="task-detail-summary hidden" id="taskDetailSummary"></div>
+      <label><span>待办名称</span><input id="taskTitleInput" maxlength="80" placeholder="需要完成什么？" /></label>
+      <div class="form-row">
+        <label><span>目标日期（可选）</span><input type="date" id="taskDueDate" /></label>
+        <label><span>目标时间（可选）</span><input type="time" id="taskDueTime" value="18:00" step="60" /></label>
+      </div>
+      <div class="form-row">
+        <label><span>责任人</span><input id="taskOwner" maxlength="30" placeholder="例如：我、王芳" /></label>
+        <label><span>归属主计划</span><select id="taskParent"><option value="">不选择，作为主计划</option></select></label>
+      </div>
+      <div class="form-row">
+        <label>
+          <span>优先级</span>
+          <select id="taskPriority">
+            <option value="general_daily" selected>一般日常</option>
+            <option value="kpi">KPI</option>
+            <option value="follow_up">跟踪关注</option>
+            <option value="important_urgent">重要紧急</option>
+            <option value="paused">中止暂停</option>
+          </select>
+        </label>
+        <label class="hidden">
+          <span>任务进度</span>
+          <div class="progress-input">
+            <input type="range" id="taskProgress" min="0" max="100" step="5" value="0" />
+            <strong id="taskProgressValue">0%</strong>
+          </div>
+        </label>
+      </div>
+      <label class="checkbox-setting">
+        <input type="checkbox" id="taskMonthlyRecurring" />
+        <span>这是每月固定时间的任务</span>
+      </label>
+      <div class="recurring-options hidden" id="recurringOptions">
+        <label>
+          <span>规则有效至</span>
+          <input type="month" id="taskRecurringUntil" />
+        </label>
+        <p class="form-hint">不会一次性生成所有未来任务；每个自然月打开/进入该月时，自动生成当月实例。若该月没有对应日期，将使用该月最后一天。</p>
+      </div>
+      <label>
+        <span>任务状态</span>
+        <select id="taskStatus">
+          <option value="planned" disabled>计划中（尚未排入日程）</option>
+          <option value="in_progress" disabled>进行中（已排入日程）</option>
+          <option value="done">已完成 / 已关闭</option>
+        </select>
+      </label>
+      <div class="form-row">
+        <label><span>实际开始时间</span><input type="datetime-local" id="taskActualStart" step="60" /></label>
+        <label><span>实际完成/关闭时间</span><input type="datetime-local" id="taskActualEnd" step="60" /></label>
+      </div>
+      <label id="businessBackgroundLabel">
+        <span>业务背景（可选）</span>
+        <textarea id="taskBusinessBackground" rows="2" maxlength="500" placeholder="为什么要做这件事？它服务于什么业务目标？"></textarea>
+      </label>
+      <label id="problemReasonLabel">
+        <span>问题原因（可选）</span>
+        <textarea id="taskProblemReason" rows="2" maxlength="500" placeholder="当前问题、触发原因或需要解决的根因"></textarea>
+      </label>
+      <label>
+        <span>详细计划 / 交付件（可选）</span>
+        <textarea id="taskDeliveryNote" rows="2" maxlength="500" placeholder="写清楚目标、交付件、检查标准或计划拆解；实际推进由日程记录承接"></textarea>
+      </label>
+      <label><span>任务说明（可选）</span><textarea id="taskDescription" rows="3" maxlength="240" placeholder="补充交付标准、背景或注意事项"></textarea></label>
+      <div class="modal-actions">
+        <button type="button" class="danger-button hidden" id="deleteTaskButton">删除待办</button>
+        <span></span>
+        <button type="button" class="soft-button" data-close-dialog="taskDialog">取消</button>
+        <button type="submit" class="primary-button">保存待办</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal small-modal" id="noteDialog">
+    <form method="dialog" id="noteForm">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">DAY NOTE</span>
+          <h3>当天备注</h3>
+        </div>
+        <button type="button" class="close-button" data-close-dialog="noteDialog">×</button>
+      </div>
+      <textarea id="dayNoteInput" rows="5" maxlength="500" placeholder="今天最重要的提醒、目标或复盘…"></textarea>
+      <div class="modal-actions">
+        <span></span><span></span>
+        <button type="button" class="soft-button" data-close-dialog="noteDialog">取消</button>
+        <button type="submit" class="primary-button">保存备注</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal progress-review-modal" id="progressReviewDialog">
+    <form method="dialog" id="progressReviewForm">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">PROGRESS REVIEW</span>
+          <h3>更新进行中任务</h3>
+        </div>
+        <button type="button" class="close-button" data-close-dialog="progressReviewDialog">×</button>
+      </div>
+      <p class="form-hint progress-review-intro">逐项回顾当前进行中的任务，填写交付进展并调整完成百分比。</p>
+      <div class="progress-review-list" id="progressReviewList"></div>
+      <div class="modal-actions">
+        <span></span><span></span>
+        <button type="button" class="soft-button" data-close-dialog="progressReviewDialog">取消</button>
+        <button type="submit" class="primary-button">保存全部进度</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal small-modal" id="exportDialog">
+    <form method="dialog" id="exportForm">
+      <div class="modal-header">
+        <div><span class="eyebrow">EXPORT</span><h3>导出工作记录</h3></div>
+        <button type="button" class="close-button" data-close-dialog="exportDialog">×</button>
+      </div>
+      <label>
+        <span>文件格式</span>
+        <select id="exportFormat">
+          <option value="xlsx">Excel 工作簿（推荐）</option>
+          <option value="json">JSON 完整数据</option>
+        </select>
+      </label>
+      <p class="form-hint">Excel 包含“任务清单”“日程记录”“每日备注”三个工作表。</p>
+      <div class="modal-actions">
+        <span></span><span></span>
+        <button type="button" class="soft-button" data-close-dialog="exportDialog">取消</button>
+        <button type="submit" class="primary-button">导出文件</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal settings-modal" id="settingsDialog">
+    <form method="dialog" id="settingsForm">
+      <div class="modal-header">
+        <div><span class="eyebrow">SETTINGS</span><h3>桌面组件设置</h3></div>
+        <button type="button" class="close-button" data-close-dialog="settingsDialog">×</button>
+      </div>
+      <div class="settings-list">
+        <label class="checkbox-setting">
+          <input type="checkbox" id="settingGlass" />
+          <span>启动时使用玻璃背景</span>
+        </label>
+        <label class="checkbox-setting">
+          <input type="checkbox" id="settingPinned" />
+          <span>窗口保持置顶</span>
+        </label>
+        <label class="checkbox-setting">
+          <input type="checkbox" id="settingLocked" />
+          <span>默认进入低干扰模式</span>
+        </label>
+        <label class="checkbox-setting">
+          <input type="checkbox" id="settingCompact" />
+          <span>使用紧凑显示</span>
+        </label>
+        <label class="checkbox-setting">
+          <input type="checkbox" id="settingStartAtLogin" />
+          <span>开机自动启动</span>
+        </label>
+      </div>
+      <div class="settings-info">
+        <div><span>数据保存位置</span><strong id="settingsDataPath">读取中…</strong></div>
+        <div><span>默认导出位置</span><strong id="settingsExportPath">读取中…</strong></div>
+        <p>应用更新不会删除已有数据；每次保存前会自动备份一份旧数据。</p>
+      </div>
+      <div class="modal-actions">
+        <span></span><span></span>
+        <button type="button" class="soft-button" data-close-dialog="settingsDialog">取消</button>
+        <button type="submit" class="primary-button">保存设置</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status"></div>
+  <div class="resize-handle desktop-only" title="拖动调整窗口大小"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
