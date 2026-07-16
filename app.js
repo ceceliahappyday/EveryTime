@@ -533,7 +533,7 @@ function renderTasks() {
     const todayTasks = tasksForDateScope(state.selectedDate).filter(task => matchesFilter(task, state.filter));
     const futureTasks = getAllTasks()
       .map(({ task }) => task)
-      .filter(task => task.status === "planned" && task.dueDate > state.selectedDate)
+      .filter(task => matchesFilter(task, "planned") && task.dueDate > state.selectedDate)
       .filter(task => !todayTasks.some(todayTask => todayTask.id === task.id))
       .filter(task => !isHiddenFutureRecurringInstance(task))
       .sort((a, b) => `${a.dueDate} ${a.dueTime}`.localeCompare(`${b.dueDate} ${b.dueTime}`));
@@ -648,7 +648,7 @@ function createTaskCard(task) {
 }
 
 function updateTaskStats(tasks) {
-  tasks = [...new Map(tasks.map(task => [task.id, task])).values()];
+  tasks = uniqueTasks(tasks).filter(isTodoListTask);
   const groups = {
     unplanned: tasks.filter(isUnplannedTask),
     planned: tasks.filter(task => task.status === "planned" && !isUnplannedTask(task) && !isContainerOnlyTask(task)),
@@ -1552,6 +1552,7 @@ function scheduledDateTime(dateKey, decimalHour) {
 
 function isUnplannedTask(task) {
   if (!task || task.status !== "planned") return false;
+  if (!isTodoListTask(task)) return false;
   if (isContainerOnlyTask(task)) return false;
   return !hasPlanningAnchor(task);
 }
@@ -1561,6 +1562,14 @@ function isContainerOnlyTask(task) {
   const children = getChildTasks(task.id);
   if (!children.length) return false;
   return !hasOwnPlanningAnchor(task) && children.some(child => hasPlanningAnchor(child));
+}
+
+function isTodoListTask(task) {
+  return !!task && !hasChildTasks(task.id);
+}
+
+function hasChildTasks(taskId) {
+  return getChildTasks(taskId).length > 0;
 }
 
 function hasPlanningAnchor(task, visited = new Set()) {
@@ -1585,6 +1594,7 @@ function getChildTasks(parentId) {
 }
 
 function matchesFilter(task, filter) {
+  if (!isTodoListTask(task)) return false;
   if (filter === "unplanned") return isUnplannedTask(task);
   if (filter === "ended") return task.status === "done" || task.status === "closed";
   if (filter === "planned") return task.status === "planned" && !isUnplannedTask(task) && !isContainerOnlyTask(task);
