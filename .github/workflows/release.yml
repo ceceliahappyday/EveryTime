@@ -25,8 +25,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build and publish GitHub Release
-        run: npm run release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build installer
+        run: npm run dist -- --publish never
 
+      - name: Publish GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/EveryTime-Setup-*.exe
+            dist/EveryTime-Setup-*.exe.blockmap
+            dist/latest.yml
