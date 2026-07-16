@@ -36,15 +36,34 @@
 
 ## 后续需要完成
 
-- [ ] 确认 GitHub 实际用户名或登录 GitHub CLI 后自动读取。
-- [ ] 创建公开仓库：`EveryTime`
-- [ ] 推送当前代码。
-- [ ] 安装 `electron-updater`。
-- [ ] 把当前本地更新器替换为 GitHub Releases 自动更新器。
-- [ ] 配置 `package.json` 的 `publish` 字段。
-- [ ] 配置 GitHub Actions 自动构建 Release。
+- [x] 确认 GitHub 仓库：`ceceliahappyday/EveryTime`
+- [x] 创建公开仓库：`EveryTime`
+- [x] 推送当前代码。
+- [x] 安装 `electron-updater`。
+- [x] 把当前本地更新器替换为 GitHub Releases 自动更新器。
+- [x] 配置 `package.json` 的 `publish` 字段。
+- [x] 配置 GitHub Actions 自动构建 Release。
 - [ ] 增加 OneDrive / Microsoft Graph 数据同步。
 - [ ] 后续准备正式图标、隐私说明、代码签名证书。
+
+## 发布新版本
+
+修改代码并提交后，创建并推送 tag：
+
+```powershell
+git tag v2.0.5
+git push origin main
+git push origin v2.0.5
+```
+
+GitHub Actions 会自动：
+
+1. 安装依赖。
+2. 构建 Windows NSIS 安装包。
+3. 发布到 GitHub Releases。
+4. 上传自动更新需要的 `latest.yml` 元数据。
+
+APP 安装版启动后会通过 GitHub Releases 检查新版本，并询问用户是否下载和安装。
 
 ## 安全约定
 
@@ -53,4 +72,3 @@
 - 不提交 GitHub Token。
 - 不提交 Microsoft OAuth Secret。
 - 公开仓库内只保留程序代码、文档、构建配置。
-

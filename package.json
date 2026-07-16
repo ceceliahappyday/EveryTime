@@ -4,10 +4,16 @@
   "private": true,
   "description": "桌面浮窗日程与待办记事本",
   "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ceceliahappyday/EveryTime.git"
+  },
+  "homepage": "https://github.com/ceceliahappyday/EveryTime",
   "scripts": {
     "start": "electron .",
     "pack": "electron-builder --win dir",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "release": "electron-builder --win nsis --publish always"
   },
   "devDependencies": {
     "electron": "^37.2.0",
@@ -17,7 +23,7 @@
     "appId": "com.local.todayDailyPlanner",
     "productName": "今日日程",
     "directories": {
-      "output": "D:/今日日程APP/安装包"
+      "output": "dist"
     },
     "files": [
       "index.html",
@@ -32,7 +38,7 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "今日日程-安装程序-${version}.${ext}"
+      "artifactName": "EveryTime-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -42,9 +48,17 @@
       "shortcutName": "今日日程",
       "installerHeaderIcon": null
     },
-    "publish": null
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ceceliahappyday",
+        "repo": "EveryTime",
+        "releaseType": "release"
+      }
+    ]
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0"
   }
 }

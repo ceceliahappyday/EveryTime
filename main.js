@@ -1,13 +1,14 @@
 const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const { spawn } = require("child_process");
+const { autoUpdater } = require("electron-updater");
 const ExcelJS = require("exceljs");
 
 let mainWindow;
 let locked = false;
 let glass = true;
 let tray;
+let manualUpdateCheck = false;
 const dataFileName = "planner-data.json";
 const windowStateFileName = "window-state.json";
 const settingsFileName = "settings.json";
@@ -71,7 +72,6 @@ app.whenReady().then(() => {
   ipcMain.handle("app:get-paths", () => ({
     dataFile: plannerDataPath(),
     exportDir: defaultExportDir(),
-    installerDir: defaultInstallerDir(),
     installSuggestion: "D:\\今日日程APP"
   }));
   ipcMain.handle("window:minimize", () => mainWindow.minimize());
@@ -133,7 +133,8 @@ app.whenReady().then(() => {
   if (settings.pinned) mainWindow.setAlwaysOnTop(true, "floating");
   if (locked) mainWindow.webContents.once("did-finish-load", () => mainWindow.webContents.send("window:lock-changed", locked));
   createTray();
-  mainWindow.webContents.once("did-finish-load", () => setTimeout(checkForLocalUpdate, 1800));
+  configureAutoUpdater();
+  mainWindow.webContents.once("did-finish-load", () => setTimeout(() => checkForUpdates(false), 1800));
   globalShortcut.register("CommandOrControl+Shift+Space", () => setLocked(!locked));
   app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());
 });
@@ -170,13 +171,9 @@ function defaultExportDir() {
   return fs.existsSync("D:\\") ? "D:\\今日日程APP\\导出" : path.join(app.getPath("documents"), "今日日程APP", "导出");
 }
 
-function defaultInstallerDir() {
-  return fs.existsSync("D:\\") ? "D:\\今日日程APP\\安装包" : path.join(app.getPath("documents"), "今日日程APP", "安装包");
-}
-
 function loadSettings() {
   const file = settingsPath();
-  const defaults = { glass: true, pinned: false, locked: false, compact: false, startAtLogin: false, skippedUpdateVersion: "" };
+  const defaults = { glass: true, pinned: false, locked: false, compact: false, startAtLogin: false };
   if (!fs.existsSync(file)) return defaults;
   try {
     return { ...defaults, ...JSON.parse(fs.readFileSync(file, "utf8")) };
@@ -210,68 +207,69 @@ function persistPartialSettings(partial) {
   fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2), "utf8");
 }
 
-async function checkForLocalUpdate(manual = false) {
-  const update = findLatestInstaller();
-  if (!update) {
-    if (manual) dialog.showMessageBox(mainWindow, { type: "info", title: "检查更新", message: "当前没有发现新的安装包。" });
-    return;
-  }
-  const settings = loadSettings();
-  if (!manual && settings.skippedUpdateVersion === update.version) return;
-  const result = await dialog.showMessageBox(mainWindow, {
-    type: "question",
-    title: "发现新版本",
-    message: `发现今日日程 ${update.version}，当前版本是 ${app.getVersion()}。`,
-    detail: `安装包位置：${update.filePath}\n\n是否现在更新？应用会先退出，然后启动安装程序。`,
-    buttons: ["立即更新", "稍后提醒", "不再提示此版本"],
-    defaultId: 0,
-    cancelId: 1
+function configureAutoUpdater() {
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("update-available", async info => {
+    manualUpdateCheck = false;
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "question",
+      title: "发现新版本",
+      message: `发现 EveryTime ${info.version}，当前版本是 ${app.getVersion()}。`,
+      detail: "是否现在下载更新？下载完成后会再次询问是否重启并安装。",
+      buttons: ["下载更新", "稍后"],
+      defaultId: 0,
+      cancelId: 1
+    });
+    if (result.response === 0) autoUpdater.downloadUpdate();
   });
-  if (result.response === 2) {
-    persistPartialSettings({ skippedUpdateVersion: update.version });
+  autoUpdater.on("update-not-available", () => {
+    if (manualUpdateCheck) {
+      manualUpdateCheck = false;
+      dialog.showMessageBox(mainWindow, { type: "info", title: "检查更新", message: "当前已经是最新版本。" });
+    }
+  });
+  autoUpdater.on("download-progress", progress => {
+    mainWindow?.setProgressBar(Math.max(0, Math.min(1, progress.percent / 100)));
+  });
+  autoUpdater.on("update-downloaded", async info => {
+    mainWindow?.setProgressBar(-1);
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "question",
+      title: "更新已下载",
+      message: `EveryTime ${info.version} 已下载完成。`,
+      detail: "是否现在重启并安装？",
+      buttons: ["立即安装", "退出时安装"],
+      defaultId: 0,
+      cancelId: 1
+    });
+    if (result.response === 0) {
+      app.isQuitting = true;
+      autoUpdater.quitAndInstall(false, true);
+    }
+  });
+  autoUpdater.on("error", error => {
+    mainWindow?.setProgressBar(-1);
+    if (manualUpdateCheck) {
+      manualUpdateCheck = false;
+      dialog.showErrorBox("检查更新失败", error?.message || String(error));
+    }
+  });
+}
+
+function checkForUpdates(manual = false) {
+  manualUpdateCheck = manual;
+  if (!app.isPackaged) {
+    if (manual) dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: "检查更新",
+      message: "开发模式不会检查 GitHub Releases。请安装正式版本后测试自动更新。"
+    });
     return;
   }
-  if (result.response !== 0) return;
-  launchInstaller(update.filePath);
-}
-
-function findLatestInstaller() {
-  const dir = defaultInstallerDir();
-  if (!fs.existsSync(dir)) return null;
-  const currentVersion = app.getVersion();
-  return fs.readdirSync(dir)
-    .map(name => {
-      const match = name.match(/^今日日程-安装程序-(\d+\.\d+\.\d+)\.exe$/);
-      if (!match) return null;
-      const filePath = path.join(dir, name);
-      const stat = fs.statSync(filePath);
-      if (!stat.isFile() || stat.size < 10 * 1024 * 1024) return null;
-      return { version: match[1], filePath, mtimeMs: stat.mtimeMs };
-    })
-    .filter(Boolean)
-    .filter(item => compareVersions(item.version, currentVersion) > 0)
-    .sort((a, b) => compareVersions(b.version, a.version) || b.mtimeMs - a.mtimeMs)[0] || null;
-}
-
-function compareVersions(a, b) {
-  const left = String(a).split(".").map(Number);
-  const right = String(b).split(".").map(Number);
-  for (let i = 0; i < Math.max(left.length, right.length); i++) {
-    const diff = (left[i] || 0) - (right[i] || 0);
-    if (diff) return diff;
-  }
-  return 0;
-}
-
-function launchInstaller(filePath) {
-  try {
-    const child = spawn(filePath, [], { detached: true, stdio: "ignore" });
-    child.unref();
-    app.isQuitting = true;
-    app.quit();
-  } catch (error) {
-    dialog.showErrorBox("无法启动更新程序", error.message || String(error));
-  }
+  autoUpdater.checkForUpdates().catch(error => {
+    if (manual) dialog.showErrorBox("检查更新失败", error?.message || String(error));
+  });
 }
 
 function loadWindowState() {
@@ -314,7 +312,7 @@ function createTray() {
     { label: "显示并解锁", click: () => { if (locked) setLocked(false); mainWindow.show(); mainWindow.focus(); } },
     { label: "切换玻璃模式", click: () => setGlass(!glass) },
     { label: "切换窗口置顶", click: () => mainWindow.setAlwaysOnTop(!mainWindow.isAlwaysOnTop()) },
-    { label: "检查更新", click: () => checkForLocalUpdate(true) },
+    { label: "检查更新", click: () => checkForUpdates(true) },
     { type: "separator" },
     { label: "退出今日日程", click: () => app.quit() }
   ]));
