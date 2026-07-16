@@ -692,6 +692,7 @@ function tasksForDateScope(dateKey) {
   getAllTasks().forEach(({ task }) => {
     if (isHiddenFutureRecurringInstance(task)) return;
     if (task.dueDate === dateKey) tasks.push(task);
+    if (isTaskActiveOnDate(task, dateKey)) tasks.push(task);
     if (task.completedAt && toDateKey(new Date(task.completedAt)) === dateKey) tasks.push(task);
   });
   (getDay(dateKey).entries || []).forEach(entry => {
@@ -700,6 +701,21 @@ function tasksForDateScope(dateKey) {
     if (linked && !isHiddenFutureRecurringInstance(linked)) tasks.push(linked);
   });
   return uniqueTasks(tasks);
+}
+
+function isTaskActiveOnDate(task, dateKey, now = new Date()) {
+  if (!task || ["done", "closed"].includes(task.status)) return false;
+  const startIso = task.startOverrideAt || task.startedAt;
+  if (!startIso) return false;
+  const start = new Date(startIso);
+  if (Number.isNaN(start.getTime())) return false;
+
+  const dayStart = fromDateKey(dateKey);
+  const dayEnd = addDays(dayStart, 1);
+  const activeEnd = task.completedAt ? new Date(task.completedAt) : now;
+  if (Number.isNaN(activeEnd.getTime())) return false;
+
+  return start < dayEnd && activeEnd >= dayStart;
 }
 
 function uniqueTasks(tasks) {
