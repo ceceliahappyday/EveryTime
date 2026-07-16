@@ -724,11 +724,11 @@ function uniqueTasks(tasks) {
 
 function isHiddenFutureRecurringInstance(task) {
   if (!task?.recurrenceGroupId || task.recurrence?.frequency !== "monthly") return false;
-  const currentMonth = state.selectedDate.slice(0, 7);
+  const currentMonth = RecurringPolicy.currentMonthKey();
   const taskMonth = task.dueDate?.slice(0, 7);
   if (!taskMonth || taskMonth === currentMonth) return false;
   if (["done", "closed", "in_progress"].includes(task.status)) return false;
-  return taskMonth > currentMonth;
+  return RecurringPolicy.isFutureRecurringInstance(taskMonth, currentMonth);
 }
 
 function renderMonthCalendar() {
@@ -833,6 +833,7 @@ function fillParentOptions(editingTask) {
   el.taskParent.innerHTML = `<option value="">不选择，作为主计划</option>`;
   getAllTasks()
     .filter(({ task }) => !task.parentId && !["done", "closed"].includes(task.status) && task.id !== editingTask?.id)
+    .filter(({ task }) => !isHiddenFutureRecurringInstance(task))
     .sort((a, b) => `${a.task.dueDate} ${a.task.dueTime}`.localeCompare(`${b.task.dueDate} ${b.task.dueTime}`))
     .forEach(({ task }) => {
       const option = new Option(`${task.dueDate.slice(5)} · ${task.title}`, task.id);
@@ -1654,8 +1655,7 @@ function defaultRecurringUntil(dateKey) {
 }
 
 function ensureRecurringTasksForVisibleRange() {
-  const selectedMonth = state.selectedDate.slice(0, 7);
-  ensureRecurringTasksForMonth(selectedMonth);
+  ensureRecurringTasksForMonth(RecurringPolicy.currentMonthKey());
 }
 
 function ensureRecurringTasksForMonth(targetMonth) {
@@ -1664,8 +1664,12 @@ function ensureRecurringTasksForMonth(targetMonth) {
     const recurrence = template.recurrence;
     if (!recurrence || recurrence.frequency !== "monthly") return;
     const startMonth = template.dueDate.slice(0, 7);
-    if (targetMonth < startMonth) return;
-    if (recurrence.until && targetMonth > recurrence.until) return;
+    if (!RecurringPolicy.shouldGenerateRecurringMonth({
+      targetMonth,
+      currentMonth: RecurringPolicy.currentMonthKey(),
+      startMonth,
+      untilMonth: recurrence.until
+    })) return;
     const groupId = template.recurrenceGroupId || template.id;
     const exists = getAllTasks().some(({ task }) =>
       task.id !== template.id &&
