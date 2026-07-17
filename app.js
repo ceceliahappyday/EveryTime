@@ -73,6 +73,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "deleteTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle",
     "entryTaskLink", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast", "pinWindow", "desktopLock", "glassMode",
+    "updateProgress", "updateProgressText", "updateProgressBar",
     "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "closeWindow",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "settingsButton", "settingsDialog", "settingsForm", "settingGlass", "settingPinned", "settingLocked",
@@ -81,12 +82,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   await initPersistentStorage();
   migrateData();
+  ensureEntryTaskLinks();
   ensureRecurringTasksForVisibleRange();
   persistentWritesEnabled = true;
   saveData();
   fillTimeOptions();
   bindEvents();
   initDesktop();
+  bindUpdateProgress();
   renderAppVersion();
   render();
   requestAnimationFrame(scrollToWorkday);
@@ -117,17 +120,6 @@ function migrateData() {
     day.tasks ||= [];
     day.entries ||= [];
     day.note ||= "";
-    day.entries.forEach(entry => {
-      if (!entry.taskId && entry.title?.trim()) {
-        const task = createTaskFromEntryPayload({
-          title: entry.title,
-          start: entry.start,
-          end: entry.end,
-          note: entry.note || ""
-        }, dateKey, "从日程自动补建，确保左侧待办状态与右侧日程一致。");
-        entry.taskId = task.id;
-      }
-    });
     day.tasks.forEach(task => {
       task.dueDate ??= dateKey;
       task.dueTime ??= "18:00";
@@ -154,6 +146,24 @@ function migrateData() {
     });
   });
   saveData();
+}
+
+function ensureEntryTaskLinks() {
+  let changed = false;
+  Object.entries(state.data).forEach(([dateKey, day]) => {
+    (day.entries || []).forEach(entry => {
+      if (entry.taskId || !entry.title?.trim()) return;
+      const task = createTaskFromEntryPayload({
+        title: entry.title,
+        start: entry.start,
+        end: entry.end,
+        note: entry.note || ""
+      }, dateKey, "从日程自动补建，确保左侧待办状态与右侧日程一致。");
+      entry.taskId = task.id;
+      changed = true;
+    });
+  });
+  if (changed) saveData();
 }
 
 function saveData() {
@@ -271,16 +281,7 @@ function bindEvents() {
     el.colorPicker.querySelectorAll("button").forEach(item => item.classList.toggle("selected", item === button));
   });
   el.deleteEntryButton.addEventListener("click", () => {
-    const deleted = getDay().entries.find(entry => entry.id === state.editingEntryId);
-    getDay().entries = getDay().entries.filter(entry => entry.id !== state.editingEntryId);
-    if (deleted?.taskId) {
-      const linked = findTask(deleted.taskId)?.task;
-      if (linked && !["done", "closed"].includes(linked.status)) applyAutomaticTaskStatus(linked);
-    }
-    saveData();
-    el.entryDialog.close();
-    render();
-    showToast("日程已删除");
+    cancelEditingEntry();
   });
 
   el.dayNoteButton.addEventListener("click", openNoteDialog);
@@ -387,6 +388,21 @@ async function renderAppVersion() {
   const label = version ? `v${version}` : "网页版";
   if (el.appVersionBadge) el.appVersionBadge.textContent = label;
   if (el.settingsAppVersion) el.settingsAppVersion.textContent = label;
+}
+
+function bindUpdateProgress() {
+  window.desktopAPI?.onUpdateProgress?.(payload => {
+    if (!el.updateProgress || !payload) return;
+    const percent = Math.max(0, Math.min(100, Number(payload.percent || 0)));
+    el.updateProgress.classList.remove("hidden", "done", "error");
+    el.updateProgress.classList.toggle("done", payload.state === "downloaded");
+    el.updateProgress.classList.toggle("error", payload.state === "error");
+    el.updateProgressText.textContent = payload.message || `正在下载更新… ${Math.round(percent)}%`;
+    el.updateProgressBar.style.width = `${percent}%`;
+    if (payload.state === "downloaded" || payload.state === "error") {
+      setTimeout(() => el.updateProgress?.classList.add("hidden"), 6500);
+    }
+  });
 }
 
 async function openSettingsDialog() {
@@ -702,7 +718,7 @@ function tasksForDateScope(dateKey) {
   getAllTasks().forEach(({ task }) => {
     if (isHiddenFutureRecurringInstance(task)) return;
     if (task.dueDate === dateKey) tasks.push(task);
-    if (isTaskActiveOnDate(task, dateKey)) tasks.push(task);
+    if (isTaskStartedOnDate(task, dateKey)) tasks.push(task);
     if (task.completedAt && toDateKey(new Date(task.completedAt)) === dateKey) tasks.push(task);
   });
   (getDay(dateKey).entries || []).forEach(entry => {
@@ -713,19 +729,13 @@ function tasksForDateScope(dateKey) {
   return uniqueTasks(tasks);
 }
 
-function isTaskActiveOnDate(task, dateKey, now = new Date()) {
-  if (!task || ["done", "closed"].includes(task.status)) return false;
+function isTaskStartedOnDate(task, dateKey) {
+  if (!task) return false;
   const startIso = task.startOverrideAt || task.startedAt;
   if (!startIso) return false;
   const start = new Date(startIso);
   if (Number.isNaN(start.getTime())) return false;
-
-  const dayStart = fromDateKey(dateKey);
-  const dayEnd = addDays(dayStart, 1);
-  const activeEnd = task.completedAt ? new Date(task.completedAt) : now;
-  if (Number.isNaN(activeEnd.getTime())) return false;
-
-  return start < dayEnd && activeEnd >= dayStart;
+  return toDateKey(start) === dateKey;
 }
 
 function uniqueTasks(tasks) {
@@ -1001,6 +1011,23 @@ function deleteEditingTask() {
   el.taskDialog.close();
   render();
   showToast("待办已删除，原有日程记录已保留");
+}
+
+function cancelEditingEntry() {
+  const day = getDay();
+  const deleted = day.entries.find(entry => entry.id === state.editingEntryId);
+  day.entries = day.entries.filter(entry => entry.id !== state.editingEntryId);
+  if (deleted?.taskId) {
+    const linked = findTask(deleted.taskId)?.task;
+    if (linked && !["done", "closed"].includes(linked.status)) {
+      applyAutomaticTaskStatus(linked);
+      linked.updatedAt = new Date().toISOString();
+    }
+  }
+  saveData();
+  el.entryDialog.close();
+  render();
+  showToast("已取消日程安排，关联待办已回到待办栏");
 }
 
 function renderSchedule() {
@@ -1338,9 +1365,10 @@ function focusLinkedTaskFilter(taskId) {
 function fillEntryTaskOptions(entry = null) {
   el.entryTaskLink.innerHTML = "";
   el.entryTaskLink.add(new Option("自动创建为待办（推荐）", "__create__"));
-  el.entryTaskLink.add(new Option("只记录日程，不进待办", "__none__"));
   getAllTasks()
     .filter(({ task }) => !["done", "closed"].includes(task.status))
+    .filter(({ task }) => isTodoListTask(task))
+    .filter(({ task }) => !isHiddenFutureRecurringInstance(task))
     .sort((a, b) => `${a.task.dueDate} ${a.task.dueTime}`.localeCompare(`${b.task.dueDate} ${b.task.dueTime}`))
     .forEach(({ task }) => {
       const prefix = task.dueDate ? (task.dueDate === state.selectedDate ? "今天" : task.dueDate.slice(5)) : "未计划";
@@ -1351,7 +1379,6 @@ function fillEntryTaskOptions(entry = null) {
 
 function resolveEntryTaskLink(entryPayload, existingEntry = null) {
   const selected = el.entryTaskLink.value;
-  if (selected === "__none__") return "";
   if (selected && selected !== "__create__") return selected;
   if (existingEntry?.taskId) return existingEntry.taskId;
   return createTaskFromEntryPayload(entryPayload).id;

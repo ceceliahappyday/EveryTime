@@ -222,7 +222,10 @@ function configureAutoUpdater() {
       defaultId: 0,
       cancelId: 1
     });
-    if (result.response === 0) autoUpdater.downloadUpdate();
+    if (result.response === 0) {
+      sendUpdateProgress({ state: "downloading", percent: 0, message: `正在下载 EveryTime ${info.version}…` });
+      autoUpdater.downloadUpdate();
+    }
   });
   autoUpdater.on("update-not-available", () => {
     if (manualUpdateCheck) {
@@ -231,10 +234,17 @@ function configureAutoUpdater() {
     }
   });
   autoUpdater.on("download-progress", progress => {
-    mainWindow?.setProgressBar(Math.max(0, Math.min(1, progress.percent / 100)));
+    const percent = Math.max(0, Math.min(100, progress.percent || 0));
+    mainWindow?.setProgressBar(percent / 100);
+    sendUpdateProgress({
+      state: "downloading",
+      percent,
+      message: `正在下载更新… ${Math.round(percent)}%`
+    });
   });
   autoUpdater.on("update-downloaded", async info => {
     mainWindow?.setProgressBar(-1);
+    sendUpdateProgress({ state: "downloaded", percent: 100, message: `EveryTime ${info.version} 已下载完成` });
     const result = await dialog.showMessageBox(mainWindow, {
       type: "question",
       title: "更新已下载",
@@ -251,11 +261,16 @@ function configureAutoUpdater() {
   });
   autoUpdater.on("error", error => {
     mainWindow?.setProgressBar(-1);
+    sendUpdateProgress({ state: "error", percent: 0, message: `更新失败：${error?.message || String(error)}` });
     if (manualUpdateCheck) {
       manualUpdateCheck = false;
       dialog.showErrorBox("检查更新失败", error?.message || String(error));
     }
   });
+}
+
+function sendUpdateProgress(payload) {
+  mainWindow?.webContents.send("app:update-progress", payload);
 }
 
 function checkForUpdates(manual = false) {

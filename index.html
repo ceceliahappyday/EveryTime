@@ -163,7 +163,7 @@
       </div>
 
       <div class="modal-actions">
-        <button type="button" class="danger-button hidden" id="deleteEntryButton">删除</button>
+        <button type="button" class="danger-button hidden" id="deleteEntryButton">取消安排</button>
         <span></span>
         <button type="button" class="soft-button" data-close-dialog="entryDialog">取消</button>
         <button type="submit" class="primary-button">保存日程</button>
@@ -356,6 +356,10 @@
   </dialog>
 
   <div class="toast" id="toast" role="status"></div>
+  <div class="update-progress hidden" id="updateProgress" role="status" aria-live="polite">
+    <span id="updateProgressText">正在下载更新… 0%</span>
+    <i id="updateProgressBar"></i>
+  </div>
   <div class="resize-handle desktop-only" title="拖动调整窗口大小"></div>
 
   <script src="recurrence-policy.js"></script>

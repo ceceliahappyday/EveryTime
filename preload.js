@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("desktopAPI", {
   getGlass: () => ipcRenderer.invoke("window:get-glass"),
   toggleGlass: () => ipcRenderer.invoke("window:toggle-glass"),
   onGlassChanged: callback => ipcRenderer.on("window:glass-changed", (_event, glass) => callback(glass)),
+  onUpdateProgress: callback => ipcRenderer.on("app:update-progress", (_event, payload) => callback(payload)),
   getSettings: () => ipcRenderer.invoke("app:get-settings"),
   saveSettings: settings => ipcRenderer.invoke("app:save-settings", settings),
   getVersion: () => ipcRenderer.invoke("app:get-version"),
