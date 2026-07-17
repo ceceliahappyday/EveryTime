@@ -20,7 +20,7 @@ function createWindow() {
     height: savedBounds?.height || 900,
     x: savedBounds?.x,
     y: savedBounds?.y,
-    minWidth: 420,
+    minWidth: 360,
     minHeight: 520,
     title: "今日日程",
     transparent: true,
@@ -69,6 +69,7 @@ app.whenReady().then(() => {
     startAtLogin: app.getLoginItemSettings().openAtLogin
   }));
   ipcMain.handle("app:save-settings", (_event, nextSettings) => saveSettings(nextSettings || {}));
+  ipcMain.handle("app:get-version", () => app.getVersion());
   ipcMain.handle("app:get-paths", () => ({
     dataFile: plannerDataPath(),
     exportDir: defaultExportDir(),

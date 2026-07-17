@@ -59,6 +59,7 @@ let persistentWritesEnabled = false;
 document.addEventListener("DOMContentLoaded", async () => {
   [
     "todaySummary", "monthLabel", "monthPickerButton", "datePicker", "previousWeek", "nextWeek",
+    "appVersionBadge",
     "todayButton", "weekDays", "taskCount", "taskList", "unplannedCount", "openCount", "doneCount", "closedCount", "exportButton",
     "plannedHours", "progressLabel", "progressBar", "scheduleTitle", "loggedHours", "freeHours",
     "timeline", "timelineWrap", "quickAddButton", "toggleCompact", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "viewSwitcher",
@@ -75,7 +76,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "closeWindow",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "settingsButton", "settingsDialog", "settingsForm", "settingGlass", "settingPinned", "settingLocked",
-    "settingCompact", "settingStartAtLogin", "settingsDataPath", "settingsExportPath"
+    "settingCompact", "settingStartAtLogin", "settingsAppVersion", "settingsDataPath", "settingsExportPath"
   ].forEach(id => el[id] = document.getElementById(id));
 
   await initPersistentStorage();
@@ -86,6 +87,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   fillTimeOptions();
   bindEvents();
   initDesktop();
+  renderAppVersion();
   render();
   requestAnimationFrame(scrollToWorkday);
   setInterval(() => {
@@ -380,6 +382,13 @@ async function initDesktop() {
   });
 }
 
+async function renderAppVersion() {
+  const version = await window.desktopAPI?.getVersion?.().catch(() => "") || "";
+  const label = version ? `v${version}` : "网页版";
+  if (el.appVersionBadge) el.appVersionBadge.textContent = label;
+  if (el.settingsAppVersion) el.settingsAppVersion.textContent = label;
+}
+
 async function openSettingsDialog() {
   if (!window.desktopAPI) return;
   const [settings, paths] = await Promise.all([
@@ -391,6 +400,7 @@ async function openSettingsDialog() {
   el.settingLocked.checked = !!settings?.locked;
   el.settingCompact.checked = document.body.classList.contains("compact") || !!settings?.compact;
   el.settingStartAtLogin.checked = !!settings?.startAtLogin;
+  el.settingsAppVersion.textContent = el.appVersionBadge?.textContent || await window.desktopAPI.getVersion?.().then(version => `v${version}`).catch(() => "读取失败");
   el.settingsDataPath.textContent = paths?.dataFile || "当前用户数据目录";
   el.settingsExportPath.textContent = paths?.exportDir || "文档目录";
   el.settingsDialog.showModal();
@@ -1092,7 +1102,7 @@ function renderWeekSchedule() {
   el.timeline.className = "week-schedule";
   let logged = 0;
   let scheduled = 0;
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 5; i++) {
     const date = addDays(monday, i);
     const key = toDateKey(date);
     const column = document.createElement("section");
@@ -1122,7 +1132,7 @@ function renderWeekSchedule() {
     el.timeline.appendChild(column);
   }
   el.loggedHours.textContent = `${trimNumber(logged)}h`;
-  el.freeHours.textContent = `${trimNumber(Math.max(0, 7 * HOURS.length - scheduled))}h`;
+  el.freeHours.textContent = `${trimNumber(Math.max(0, 5 * HOURS.length - scheduled))}h`;
 }
 
 function renderMonthSchedule() {
