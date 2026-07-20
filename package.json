@@ -1,6 +1,6 @@
 {
   "name": "today-daily-planner",
-  "version": "2.0.12",
+  "version": "2.0.13",
   "private": true,
   "description": "桌面浮窗日程与待办记事本",
   "main": "main.js",

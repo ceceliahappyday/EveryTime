@@ -54,7 +54,8 @@ button { color: inherit; }
 .topbar {
   height: 96px;
   display: grid;
-  grid-template-columns: minmax(0, .9fr) auto minmax(0, 1.35fr);
+  grid-template-columns: minmax(230px, .8fr) minmax(180px, auto) minmax(0, 1.6fr);
+  column-gap: 16px;
   align-items: center;
   padding: 0 28px;
   border-bottom: 1px solid var(--line-soft);
@@ -86,8 +87,18 @@ button { color: inherit; }
   vertical-align: middle;
 }
 
-.date-controls { justify-content: center; gap: 10px; }
-.header-actions { justify-content: flex-end; gap: 10px; min-width: 0; }
+.date-controls { justify-content: center; gap: 10px; min-width: 180px; }
+.header-actions {
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.header-actions::-webkit-scrollbar { width: 0; height: 0; }
+.header-actions > * { flex: 0 0 auto; }
 .header-actions button { white-space: nowrap; }
 .window-controls { gap: 3px; margin-left: 2px; }
 body.in-desktop .window-controls { display: flex; }
@@ -150,7 +161,8 @@ body.month-mode .workspace { height: calc(100vh - 116px); }
 .week-days {
   height: 100%;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(150px, 260px));
+  justify-content: space-between;
   gap: 8px;
 }
 .day-button {
@@ -1350,6 +1362,18 @@ body.in-desktop.glass-mode .settings-info strong { color: #f3f8fb; }
 
 body.compact { --hour-height: 58px; }
 body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
+
+@media (max-width: 1380px) {
+  .topbar {
+    grid-template-columns: minmax(200px, .75fr) minmax(170px, auto) minmax(0, 1fr);
+    column-gap: 10px;
+    padding: 0 20px;
+  }
+  .header-actions { gap: 7px; }
+  .header-actions > .soft-button { padding-left: 10px; padding-right: 10px; font-size: 0; }
+  .header-actions > .soft-button::first-letter { font-size: 13px; }
+  .primary-button { padding-left: 13px; padding-right: 13px; }
+}
 
 @media (max-width: 1120px) {
   .topbar { grid-template-columns: auto 1fr; padding: 0 18px; }
