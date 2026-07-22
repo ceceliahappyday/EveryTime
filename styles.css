@@ -367,6 +367,30 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
 .project-card strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
 .project-card span,
 .project-card small { display: block; overflow: hidden; margin-top: 6px; color: var(--muted); white-space: nowrap; text-overflow: ellipsis; font-size: 10px; }
+.project-status-heading.in_progress strong,
+.project-card.in_progress .project-status-row b { color: #377b72; }
+.project-status-heading.planned strong,
+.project-card.planned .project-status-row b { color: #946a30; }
+.project-status-heading.unplanned strong,
+.project-card.unplanned .project-status-row b { color: #667076; }
+.project-status-heading.ended strong,
+.project-card.ended .project-status-row b { color: #4f805a; }
+.project-status-row {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  white-space: normal !important;
+}
+.project-status-row b,
+.project-status-row i {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.62);
+  font-style: normal;
+  font-size: 9px;
+}
 .progress-input { display: grid; grid-template-columns: 1fr 42px; gap: 10px; align-items: center; min-height: 43px; }
 .progress-input input { padding: 0; accent-color: var(--accent); }
 .progress-input strong { text-align: right; font-size: 11px; }
@@ -519,9 +543,40 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   min-width: 760px;
   padding: 2px 4px 24px;
 }
-.project-gantt-days {
+.project-gantt-toolbar {
   position: sticky;
   top: 0;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: rgba(248,247,243,.94);
+}
+.project-gantt-toolbar strong { font-size: 11px; }
+.project-scale-switcher {
+  display: grid;
+  grid-template-columns: repeat(3, 34px);
+  gap: 3px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(220,224,217,.74);
+}
+.project-scale-switcher button {
+  padding: 5px 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 10px;
+}
+.project-scale-switcher button.active { color: #fff; background: var(--accent); font-weight: 800; }
+.project-gantt-days {
+  position: sticky;
+  top: 48px;
   z-index: 5;
   display: grid;
   gap: 4px;
@@ -552,6 +607,20 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
 }
 .project-gantt-section h3 { margin: 0; font-size: 15px; }
 .project-gantt-section p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+.project-gantt-group { margin-bottom: 16px; }
+.project-gantt-group-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 12px 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  color: var(--muted);
+  background: rgba(255,255,255,.58);
+  font-size: 10px;
+}
+.project-gantt-group-heading strong { color: var(--ink); font-size: 12px; }
 .project-gantt-row {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr);
@@ -1225,15 +1294,23 @@ body.in-desktop.glass-mode .time-slot { border-color: rgba(190,218,234,.40); }
 body.in-desktop.glass-mode .progress-track,
 body.in-desktop.glass-mode .task-progress-track { background: rgba(205,226,236,.18); }
 body.in-desktop.glass-mode .project-card,
+body.in-desktop.glass-mode .project-gantt-toolbar,
 body.in-desktop.glass-mode .project-gantt-days,
+body.in-desktop.glass-mode .project-gantt-group-heading,
 body.in-desktop.glass-mode .project-gantt-section {
   background: rgba(0,0,0,.34);
   border-color: rgba(172,211,233,.32);
 }
+body.in-desktop.glass-mode .project-scale-switcher,
+body.in-desktop.glass-mode .project-status-row b,
+body.in-desktop.glass-mode .project-status-row i { background: rgba(255,255,255,.10); }
 body.in-desktop.glass-mode .project-card span,
 body.in-desktop.glass-mode .project-card small,
+body.in-desktop.glass-mode .project-gantt-group-heading,
 body.in-desktop.glass-mode .project-gantt-section p,
 body.in-desktop.glass-mode .project-gantt-label span { color: #d2dee6; }
+body.in-desktop.glass-mode .project-gantt-group-heading strong,
+body.in-desktop.glass-mode .project-gantt-toolbar strong { color: #f4fbff; }
 body.in-desktop.glass-mode .project-gantt-lane { background: rgba(255,255,255,.10); }
 body.in-desktop.glass-mode input,
 body.in-desktop.glass-mode select,

@@ -1,7 +1,8 @@
 const assert = require("node:assert/strict");
 const {
   summarizeProject,
-  projectProgressPercent
+  projectProgressPercent,
+  classifyProjectStatus
 } = require("../project-summary-policy");
 
 const parent = { id: "p1", title: "月度财务复盘", status: "planned" };
@@ -38,5 +39,16 @@ assert.equal(summary.totalHours, 3.75, "child work hours should be summed");
 assert.equal(summary.firstStartIso, "2026-07-02T09:00:00.000Z", "earliest child start should be captured");
 assert.equal(summary.lastCompletedIso, "2026-07-03T10:00:00.000Z", "latest completed child time should be captured");
 assert.equal(projectProgressPercent(summary), 50, "project progress should use completed child count");
+assert.equal(summary.status, "in_progress", "project should be in progress when any child is in progress");
+assert.deepEqual(summary.statusCounts, {
+  unplanned: 0,
+  planned: 0,
+  in_progress: 1,
+  ended: 1
+}, "project should summarize children by status");
+
+assert.equal(classifyProjectStatus([{ status: "planned" }, { status: "unplanned" }]), "planned");
+assert.equal(classifyProjectStatus([{ status: "done" }, { status: "closed" }]), "ended");
+assert.equal(classifyProjectStatus([{ status: "unplanned" }]), "unplanned");
 
 console.log("project summary policy tests passed");

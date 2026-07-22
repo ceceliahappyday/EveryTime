@@ -44,6 +44,7 @@ const state = {
   selectedDate: toDateKey(new Date()),
   filter: "planned",
   taskView: "day",
+  projectScale: "day",
   editingTaskId: null,
   editingEntryId: null,
   selectedColor: "sage",
@@ -649,18 +650,31 @@ function renderProjectTaskList(tasks) {
     el.taskList.innerHTML = `<div class="empty-state">还没有项目<br>创建主计划或待办后，会在这里形成项目总览</div>`;
     return;
   }
-  projects.forEach(project => el.taskList.appendChild(createProjectCard(project)));
+  projectStatusGroups(projects).forEach(group => {
+    if (!group.projects.length) return;
+    const heading = document.createElement("div");
+    heading.className = `task-group-heading project-status-heading ${group.status}`;
+    heading.innerHTML = `<strong>${group.label}</strong><span>${group.projects.length} 项</span>`;
+    el.taskList.appendChild(heading);
+    group.projects.forEach(project => el.taskList.appendChild(createProjectCard(project)));
+  });
 }
 
 function createProjectCard(project) {
   const card = document.createElement("article");
-  card.className = "project-card";
+  card.className = `project-card ${project.status}`;
   const progress = ProjectSummaryPolicy.projectProgressPercent(project);
   const firstStart = project.firstStartIso ? formatDateTime(project.firstStartIso) : "未开始";
   const completed = project.lastCompletedIso ? formatDateTime(project.lastCompletedIso) : "未完成";
   card.innerHTML = `
     <div>
       <strong>${escapeHtml(project.parent.title)}</strong>
+      <span class="project-status-row">
+        <b>${projectStatusLabel(project.status)}</b>
+        <i>计划 ${project.statusCounts.planned}</i>
+        <i>进行 ${project.statusCounts.in_progress}</i>
+        <i>结束 ${project.statusCounts.ended}</i>
+      </span>
       <span>${project.taskCount} 个任务 · 完成 ${project.doneCount} 个 · ${formatHours(project.totalHours)}</span>
       <small>开始 ${firstStart} · 最近完成 ${completed}</small>
       <div class="task-progress-track" title="项目进度 ${progress}%"><i style="width:${progress}%"></i></div>
@@ -672,6 +686,19 @@ function createProjectCard(project) {
   });
   card.addEventListener("dblclick", () => openTaskDialog(project.parent));
   return card;
+}
+
+function projectStatusGroups(projects) {
+  return [
+    { status: "in_progress", label: "进行中的项目", projects: projects.filter(project => project.status === "in_progress") },
+    { status: "planned", label: "计划中的项目", projects: projects.filter(project => project.status === "planned") },
+    { status: "unplanned", label: "未计划项目", projects: projects.filter(project => project.status === "unplanned") },
+    { status: "ended", label: "已关闭项目", projects: projects.filter(project => project.status === "ended") }
+  ];
+}
+
+function projectStatusLabel(status) {
+  return { unplanned: "未计划", planned: "计划中", in_progress: "进行中", ended: "已关闭" }[status] || "计划中";
 }
 
 function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
@@ -705,18 +732,39 @@ function getTaskScheduleEntries(taskId) {
   ).sort((a, b) => `${a.dateKey} ${a.entry.start}`.localeCompare(`${b.dateKey} ${b.entry.start}`));
 }
 
-function projectTimelineDays(projects) {
+function projectTimelineBuckets(projects, scale = "day") {
   const points = projects.flatMap(project => project.children.flatMap(task => taskTimelineDateKeys(task)));
   const fallback = state.selectedDate;
   const min = points.length ? points.sort()[0] : fallback;
   const max = points.length ? points.sort().at(-1) : fallback;
+  const buckets = [];
+  if (scale === "month") {
+    let cursor = new Date(fromDateKey(min).getFullYear(), fromDateKey(min).getMonth(), 1);
+    const end = new Date(fromDateKey(max).getFullYear(), fromDateKey(max).getMonth(), 1);
+    while (cursor <= end) {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+      buckets.push({ key, label: `${cursor.getMonth() + 1}月` });
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
+    return buckets.slice(0, 36);
+  }
+  if (scale === "week") {
+    let cursor = getMonday(fromDateKey(min));
+    const end = getMonday(fromDateKey(max));
+    while (cursor <= end) {
+      const key = toDateKey(cursor);
+      buckets.push({ key, label: `${cursor.getMonth() + 1}/${cursor.getDate()}周` });
+      cursor = addDays(cursor, 7);
+    }
+    return buckets.slice(0, 80);
+  }
   const start = addDays(fromDateKey(min), -1);
   const end = addDays(fromDateKey(max), 1);
-  const days = [];
   for (let cursor = start; cursor <= end; cursor = addDays(cursor, 1)) {
-    days.push(toDateKey(cursor));
+    const key = toDateKey(cursor);
+    buckets.push({ key, label: key.slice(5).replace("-", "/") });
   }
-  return days.slice(0, 90);
+  return buckets.slice(0, 120);
 }
 
 function taskTimelineDateKeys(task) {
@@ -729,20 +777,32 @@ function taskTimelineDateKeys(task) {
   ].filter(Boolean);
 }
 
-function taskTimelineSpan(task, days) {
+function projectBucketKey(dateKey, scale = "day") {
+  if (!dateKey) return "";
+  const date = fromDateKey(dateKey);
+  if (scale === "month") return dateKey.slice(0, 7);
+  if (scale === "week") return toDateKey(getMonday(date));
+  return dateKey;
+}
+
+function taskTimelineSpan(task, buckets, scale = "day") {
   const points = taskTimelineDateKeys(task);
-  const first = points.length ? points.sort()[0] : days[0];
+  const bucketKeys = buckets.map(bucket => bucket.key);
+  const first = points.length ? points.sort()[0] : buckets[0]?.key;
   const last = task.completedAt ? toDateKey(new Date(task.completedAt)) : (task.dueDate || points.sort().at(-1) || first);
-  const startIndex = Math.max(0, days.indexOf(first));
-  const endIndex = Math.max(startIndex, days.indexOf(last));
-  const left = days.length ? (startIndex / days.length) * 100 : 0;
-  const width = days.length ? ((endIndex - startIndex + 1) / days.length) * 100 : 100;
+  const firstBucket = projectBucketKey(first, scale);
+  const lastBucket = projectBucketKey(last, scale);
+  const startIndex = Math.max(0, bucketKeys.indexOf(firstBucket));
+  const endIndex = Math.max(startIndex, bucketKeys.indexOf(lastBucket));
+  const left = buckets.length ? (startIndex / buckets.length) * 100 : 0;
+  const width = buckets.length ? ((endIndex - startIndex + 1) / buckets.length) * 100 : 100;
   return { left, width: Math.max(width, 4) };
 }
 
-function taskEntryOffset(dateKey, days) {
-  const index = Math.max(0, days.indexOf(dateKey));
-  return days.length ? ((index + .5) / days.length) * 100 : 0;
+function taskEntryOffset(dateKey, buckets, scale = "day") {
+  const bucketKeys = buckets.map(bucket => bucket.key);
+  const index = Math.max(0, bucketKeys.indexOf(projectBucketKey(dateKey, scale)));
+  return buckets.length ? ((index + .5) / buckets.length) * 100 : 0;
 }
 
 function createTaskCard(task) {
@@ -1166,36 +1226,59 @@ function renderProjectSchedule() {
     el.freeHours.textContent = "—";
     return;
   }
-  const days = projectTimelineDays(projects);
+  const buckets = projectTimelineBuckets(projects, state.projectScale);
   const totalHours = projects.reduce((sum, project) => sum + project.totalHours, 0);
   el.loggedHours.textContent = `${trimNumber(totalHours)}h`;
   el.freeHours.textContent = `${projects.length} 项`;
+  const toolbar = document.createElement("div");
+  toolbar.className = "project-gantt-toolbar";
+  toolbar.innerHTML = `<strong>甘特粒度</strong>
+    <div class="project-scale-switcher">
+      <button data-scale="day">日</button>
+      <button data-scale="week">周</button>
+      <button data-scale="month">月</button>
+    </div>`;
+  toolbar.querySelectorAll("button").forEach(button => {
+    button.classList.toggle("active", button.dataset.scale === state.projectScale);
+    button.addEventListener("click", () => {
+      state.projectScale = button.dataset.scale;
+      renderSchedule();
+    });
+  });
+  el.timeline.appendChild(toolbar);
   const header = document.createElement("div");
   header.className = "project-gantt-days";
-  header.style.gridTemplateColumns = `180px repeat(${days.length}, minmax(34px, 1fr))`;
-  header.innerHTML = `<span>任务</span>${days.map(day => `<span>${day.slice(5).replace("-", "/")}</span>`).join("")}`;
+  header.style.gridTemplateColumns = `180px repeat(${buckets.length}, minmax(${state.projectScale === "day" ? 34 : 58}px, 1fr))`;
+  header.innerHTML = `<span>任务</span>${buckets.map(bucket => `<span>${bucket.label}</span>`).join("")}`;
   el.timeline.appendChild(header);
-  projects.forEach(project => {
-    const progress = ProjectSummaryPolicy.projectProgressPercent(project);
-    const section = document.createElement("section");
-    section.className = "project-gantt-section";
-    section.innerHTML = `<header>
-      <div>
-        <h3>${escapeHtml(project.parent.title)}</h3>
-        <p>${project.taskCount} 个任务 · 完成 ${project.doneCount} 个 · ${formatHours(project.totalHours)} · 进度 ${progress}%</p>
-      </div>
-      <button class="soft-button" type="button">详情</button>
-    </header>`;
-    section.querySelector("button").addEventListener("click", () => openTaskDialog(project.parent));
-    project.children.forEach(task => section.appendChild(createProjectGanttRow(task, days)));
-    el.timeline.appendChild(section);
+  projectStatusGroups(projects).forEach(group => {
+    if (!group.projects.length) return;
+    const groupNode = document.createElement("section");
+    groupNode.className = `project-gantt-group ${group.status}`;
+    groupNode.innerHTML = `<div class="project-gantt-group-heading"><strong>${group.label}</strong><span>${group.projects.length} 项</span></div>`;
+    group.projects.forEach(project => {
+      const progress = ProjectSummaryPolicy.projectProgressPercent(project);
+      const section = document.createElement("section");
+      section.className = `project-gantt-section ${project.status}`;
+      section.innerHTML = `<header>
+        <div>
+          <h3>${escapeHtml(project.parent.title)}</h3>
+          <p>${projectStatusLabel(project.status)} · ${project.taskCount} 个任务 · 完成 ${project.doneCount} 个 · ${formatHours(project.totalHours)} · 进度 ${progress}%</p>
+        </div>
+        <button class="soft-button" type="button">详情</button>
+      </header>`;
+      section.querySelector("button").addEventListener("click", () => openTaskDialog(project.parent));
+      project.children.forEach(task => section.appendChild(createProjectGanttRow(task, buckets, state.projectScale)));
+      groupNode.appendChild(section);
+    });
+    el.timeline.appendChild(groupNode);
   });
 }
 
-function createProjectGanttRow(task, days) {
+function createProjectGanttRow(task, buckets, scale = "day") {
   const row = document.createElement("div");
   row.className = `project-gantt-row ${task.status}`;
-  const span = taskTimelineSpan(task, days);
+  const span = taskTimelineSpan(task, buckets, scale);
   const entries = getTaskScheduleEntries(task.id);
   row.innerHTML = `
     <div class="project-gantt-label">
@@ -1204,7 +1287,7 @@ function createProjectGanttRow(task, days) {
     </div>
     <div class="project-gantt-lane">
       <i style="left:${span.left}%;width:${span.width}%"></i>
-      ${entries.map(item => `<em style="left:${taskEntryOffset(item.dateKey, days)}%" title="${item.dateKey} ${formatTime(item.entry.start)}-${formatTime(item.entry.end)}"></em>`).join("")}
+      ${entries.map(item => `<em style="left:${taskEntryOffset(item.dateKey, buckets, scale)}%" title="${item.dateKey} ${formatTime(item.entry.start)}-${formatTime(item.entry.end)}"></em>`).join("")}
     </div>`;
   row.addEventListener("dblclick", () => openTaskDialog(task));
   return row;
