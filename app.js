@@ -1366,15 +1366,20 @@ function fillEntryTaskOptions(entry = null) {
   el.entryTaskLink.innerHTML = "";
   el.entryTaskLink.add(new Option("自动创建为待办（推荐）", "__create__"));
   getAllTasks()
-    .filter(({ task }) => !["done", "closed"].includes(task.status))
-    .filter(({ task }) => isTodoListTask(task))
-    .filter(({ task }) => !isHiddenFutureRecurringInstance(task))
+    .filter(({ task }) => TaskOptionPolicy.shouldIncludeEntryTaskOption({
+      task,
+      isHiddenFutureRecurringInstance: isHiddenFutureRecurringInstance(task),
+      isCurrentLinkedTask: entry?.taskId === task.id
+    }))
     .sort((a, b) => `${a.task.dueDate} ${a.task.dueTime}`.localeCompare(`${b.task.dueDate} ${b.task.dueTime}`))
     .forEach(({ task }) => {
-      const prefix = task.dueDate ? (task.dueDate === state.selectedDate ? "今天" : task.dueDate.slice(5)) : "未计划";
-      el.entryTaskLink.add(new Option(`${prefix} · ${task.title}`, task.id));
+      el.entryTaskLink.add(new Option(TaskOptionPolicy.entryTaskOptionLabel({
+        task,
+        selectedDate: state.selectedDate,
+        hasChildren: hasChildTasks(task.id)
+      }), task.id));
     });
-  el.entryTaskLink.value = entry?.taskId || (entry ? "__none__" : "__create__");
+  el.entryTaskLink.value = entry?.taskId || "__create__";
 }
 
 function resolveEntryTaskLink(entryPayload, existingEntry = null) {
