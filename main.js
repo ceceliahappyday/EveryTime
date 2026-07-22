@@ -31,7 +31,7 @@ function createWindow() {
     title: "今日日程",
     transparent: true,
     frame: false,
-    skipTaskbar: true,
+    skipTaskbar: false,
     backgroundColor: "#00000000",
     autoHideMenuBar: true,
     alwaysOnTop: false,
@@ -327,7 +327,6 @@ function writePlannerBackup(content, latest = false) {
 }
 
 function createTray() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" rx="8" fill="#3c6655"/><text x="16" y="22" text-anchor="middle" font-size="18" fill="white">今</text></svg>`;
   tray = new Tray(nativeImage.createFromPath(appIconPath));
   tray.setToolTip("今日日程");
   tray.setContextMenu(Menu.buildFromTemplate([
