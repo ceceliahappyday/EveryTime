@@ -1,6 +1,6 @@
 {
   "name": "today-daily-planner",
-  "version": "2.0.15",
+  "version": "2.0.16",
   "private": true,
   "description": "桌面浮窗日程与待办记事本",
   "main": "main.js",
@@ -34,10 +34,12 @@
       "app.js",
       "main.js",
       "preload.js",
+      "assets/icons/**/*",
       "excel-runtime/**/*",
       "package.json"
     ],
     "win": {
+      "icon": "assets/icons/app-icon.ico",
       "target": [
         "nsis"
       ],
@@ -49,6 +51,8 @@
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
       "shortcutName": "今日日程",
+      "installerIcon": "assets/icons/app-icon.ico",
+      "uninstallerIcon": "assets/icons/app-icon.ico",
       "installerHeaderIcon": null
     },
     "publish": [

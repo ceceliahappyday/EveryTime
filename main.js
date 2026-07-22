@@ -12,6 +12,11 @@ let manualUpdateCheck = false;
 const dataFileName = "planner-data.json";
 const windowStateFileName = "window-state.json";
 const settingsFileName = "settings.json";
+const appIconPath = path.join(__dirname, "assets", "icons", "app-icon.ico");
+
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.local.todayDailyPlanner");
+}
 
 function createWindow() {
   const savedBounds = loadWindowState();
@@ -22,6 +27,7 @@ function createWindow() {
     y: savedBounds?.y,
     minWidth: 360,
     minHeight: 520,
+    icon: appIconPath,
     title: "今日日程",
     transparent: true,
     frame: false,
@@ -322,7 +328,7 @@ function writePlannerBackup(content, latest = false) {
 
 function createTray() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" rx="8" fill="#3c6655"/><text x="16" y="22" text-anchor="middle" font-size="18" fill="white">今</text></svg>`;
-  tray = new Tray(nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`));
+  tray = new Tray(nativeImage.createFromPath(appIconPath));
   tray.setToolTip("今日日程");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "显示并解锁", click: () => { if (locked) setLocked(false); mainWindow.show(); mainWindow.focus(); } },
