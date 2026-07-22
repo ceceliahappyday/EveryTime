@@ -13,6 +13,7 @@ const dataFileName = "planner-data.json";
 const windowStateFileName = "window-state.json";
 const settingsFileName = "settings.json";
 const appIconPath = path.join(__dirname, "assets", "icons", "app-icon.ico");
+const trayIconPath = path.join(__dirname, "assets", "icons", "app-icon.png");
 
 if (process.platform === "win32") {
   app.setAppUserModelId("com.local.todayDailyPlanner");
@@ -327,7 +328,7 @@ function writePlannerBackup(content, latest = false) {
 }
 
 function createTray() {
-  tray = new Tray(nativeImage.createFromPath(appIconPath));
+  tray = new Tray(nativeImage.createFromPath(trayIconPath).resize({ width: 20, height: 20, quality: "best" }));
   tray.setToolTip("今日日程");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "显示并解锁", click: () => { if (locked) setLocked(false); mainWindow.show(); mainWindow.focus(); } },

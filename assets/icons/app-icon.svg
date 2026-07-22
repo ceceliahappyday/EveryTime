@@ -5,17 +5,17 @@
     </filter>
   </defs>
   <rect width="512" height="512" rx="110" fill="none"/>
-  <circle cx="256" cy="256" r="154" fill="#1F2A38" filter="url(#shadow)"/>
+  <circle cx="256" cy="256" r="214" fill="#1F2A38" filter="url(#shadow)"/>
   <g fill="none" stroke="#DDEDF2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M 256 155 A 101 101 0 1 0 344 308" stroke-width="34"/>
-    <path d="M 205 258 L 240 294 L 327 198" stroke-width="42"/>
-    <path d="M 256 184 L 256 230 L 292 252" stroke-width="20" opacity=".86"/>
+    <path d="M 256 116 A 140 140 0 1 0 377 330" stroke-width="42"/>
+    <path d="M 180 260 L 232 316 L 350 184" stroke-width="52"/>
+    <path d="M 256 158 L 256 224 L 308 256" stroke-width="24" opacity=".86"/>
   </g>
   <g fill="#DDEDF2">
-    <circle cx="256" cy="154" r="9"/>
-    <circle cx="154" cy="256" r="9"/>
-    <circle cx="256" cy="358" r="9"/>
-    <circle cx="342" cy="170" r="8" opacity=".88"/>
-    <circle cx="171" cy="342" r="6" opacity=".70"/>
+    <circle cx="256" cy="116" r="11"/>
+    <circle cx="116" cy="256" r="11"/>
+    <circle cx="256" cy="396" r="11"/>
+    <circle cx="374" cy="138" r="10" opacity=".88"/>
+    <circle cx="138" cy="374" r="8" opacity=".70"/>
   </g>
 </svg>

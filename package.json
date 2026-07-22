@@ -1,6 +1,6 @@
 {
   "name": "today-daily-planner",
-  "version": "2.0.17",
+  "version": "2.0.18",
   "private": true,
   "description": "桌面浮窗日程与待办记事本",
   "main": "main.js",
@@ -53,6 +53,7 @@
       "shortcutName": "今日日程",
       "installerIcon": "assets/icons/app-icon.ico",
       "uninstallerIcon": "assets/icons/app-icon.ico",
+      "include": "build/installer.nsh",
       "installerHeaderIcon": null
     },
     "publish": [
