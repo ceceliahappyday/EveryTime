@@ -1,6 +1,6 @@
 {
   "name": "today-daily-planner",
-  "version": "2.0.14",
+  "version": "2.0.15",
   "private": true,
   "description": "桌面浮窗日程与待办记事本",
   "main": "main.js",
@@ -30,6 +30,7 @@
       "styles.css",
       "recurrence-policy.js",
       "task-option-policy.js",
+      "project-summary-policy.js",
       "app.js",
       "main.js",
       "preload.js",

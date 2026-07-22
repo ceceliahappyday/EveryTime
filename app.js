@@ -445,11 +445,13 @@ function render() {
   const date = fromDateKey(state.selectedDate);
   el.monthLabel.textContent = `${date.getFullYear()}年 ${date.getMonth() + 1}月`;
   el.datePicker.value = state.selectedDate;
-  el.scheduleTitle.textContent = state.taskView === "month" ? `${date.getFullYear()}年${date.getMonth() + 1}月 · 月历` :
+  el.scheduleTitle.textContent = state.taskView === "project" ? "项目进度 · 甘特总览" :
+    state.taskView === "month" ? `${date.getFullYear()}年${date.getMonth() + 1}月 · 月历` :
     state.taskView === "week" ? `${getMonday(date).getMonth() + 1}月${getMonday(date).getDate()}日起 · 周历` :
     `${date.getMonth() + 1}月${date.getDate()}日 · ${WEEKDAY_NAMES[date.getDay()]}`;
   el.todaySummary.textContent = isToday(date) ? "专注当下，把事情一件件做好" : `查看 ${date.getMonth() + 1}月${date.getDate()}日 的工作安排`;
   document.body.classList.toggle("month-mode", state.taskView === "month");
+  document.body.classList.toggle("project-mode", state.taskView === "project");
   renderWeek();
   renderTasks();
   renderSchedule();
@@ -486,7 +488,7 @@ function taskDatesForView() {
 }
 
 function renderTasks() {
-  const titles = { day: "当天待办", week: "本周待办", month: "月度计划" };
+  const titles = { day: "当天待办", week: "本周待办", month: "月度计划", project: "项目清单" };
   el.taskViewTitle.textContent = titles[state.taskView];
   el.taskList.className = `task-list ${state.taskView}-view`;
   el.taskList.innerHTML = "";
@@ -495,6 +497,11 @@ function renderTasks() {
   const allVisibleTasks = getAllTasks()
     .map(({ task }) => task)
     .filter(task => !isHiddenFutureRecurringInstance(task));
+
+  if (state.taskView === "project") {
+    renderProjectTaskList(allVisibleTasks);
+    return;
+  }
 
   if (state.taskView === "month") {
     const monthTasks = tasksInMonth(fromDateKey(state.selectedDate));
@@ -625,6 +632,117 @@ function orderedTasks(tasks) {
   });
   tasks.filter(task => !result.includes(task)).forEach(task => result.push(task));
   return result;
+}
+
+function renderProjectTaskList(tasks) {
+  el.taskTabs.classList.add("hidden");
+  const projects = getProjectSummaries(tasks);
+  el.taskCount.textContent = projects.length;
+  const totalHours = projects.reduce((sum, project) => sum + project.totalHours, 0);
+  const avgProgress = projects.length
+    ? Math.round(projects.reduce((sum, project) => sum + ProjectSummaryPolicy.projectProgressPercent(project), 0) / projects.length)
+    : 0;
+  el.plannedHours.textContent = formatHours(totalHours);
+  el.progressLabel.textContent = `${avgProgress}%`;
+  el.progressBar.style.width = `${avgProgress}%`;
+  if (!projects.length) {
+    el.taskList.innerHTML = `<div class="empty-state">还没有项目<br>创建主计划或待办后，会在这里形成项目总览</div>`;
+    return;
+  }
+  projects.forEach(project => el.taskList.appendChild(createProjectCard(project)));
+}
+
+function createProjectCard(project) {
+  const card = document.createElement("article");
+  card.className = "project-card";
+  const progress = ProjectSummaryPolicy.projectProgressPercent(project);
+  const firstStart = project.firstStartIso ? formatDateTime(project.firstStartIso) : "未开始";
+  const completed = project.lastCompletedIso ? formatDateTime(project.lastCompletedIso) : "未完成";
+  card.innerHTML = `
+    <div>
+      <strong>${escapeHtml(project.parent.title)}</strong>
+      <span>${project.taskCount} 个任务 · 完成 ${project.doneCount} 个 · ${formatHours(project.totalHours)}</span>
+      <small>开始 ${firstStart} · 最近完成 ${completed}</small>
+      <div class="task-progress-track" title="项目进度 ${progress}%"><i style="width:${progress}%"></i></div>
+    </div>
+    <button class="task-menu" title="查看项目详情">•••</button>`;
+  card.querySelector(".task-menu").addEventListener("click", event => {
+    event.stopPropagation();
+    openTaskDialog(project.parent);
+  });
+  card.addEventListener("dblclick", () => openTaskDialog(project.parent));
+  return card;
+}
+
+function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
+  const visible = uniqueTasks(tasks).filter(task => !isHiddenFutureRecurringInstance(task));
+  const visibleIds = new Set(visible.map(task => task.id));
+  const roots = visible
+    .filter(task => !task.parentId || !visibleIds.has(task.parentId))
+    .sort((a, b) => `${a.dueDate || "9999-12-31"} ${a.dueTime || ""}`.localeCompare(`${b.dueDate || "9999-12-31"} ${b.dueTime || ""}`));
+  return roots.map(root => {
+    const descendants = getDescendantTasks(root.id).filter(task => visibleIds.has(task.id));
+    const children = descendants.length ? descendants : [root];
+    return ProjectSummaryPolicy.summarizeProject({
+      parent: root,
+      children,
+      getTaskDuration
+    });
+  });
+}
+
+function getDescendantTasks(parentId, visited = new Set()) {
+  if (!parentId || visited.has(parentId)) return [];
+  visited.add(parentId);
+  return getChildTasks(parentId).flatMap(child => [child, ...getDescendantTasks(child.id, visited)]);
+}
+
+function getTaskScheduleEntries(taskId) {
+  return Object.entries(state.data).flatMap(([dateKey, day]) =>
+    (day.entries || [])
+      .filter(entry => entry.taskId === taskId)
+      .map(entry => ({ dateKey, entry }))
+  ).sort((a, b) => `${a.dateKey} ${a.entry.start}`.localeCompare(`${b.dateKey} ${b.entry.start}`));
+}
+
+function projectTimelineDays(projects) {
+  const points = projects.flatMap(project => project.children.flatMap(task => taskTimelineDateKeys(task)));
+  const fallback = state.selectedDate;
+  const min = points.length ? points.sort()[0] : fallback;
+  const max = points.length ? points.sort().at(-1) : fallback;
+  const start = addDays(fromDateKey(min), -1);
+  const end = addDays(fromDateKey(max), 1);
+  const days = [];
+  for (let cursor = start; cursor <= end; cursor = addDays(cursor, 1)) {
+    days.push(toDateKey(cursor));
+  }
+  return days.slice(0, 90);
+}
+
+function taskTimelineDateKeys(task) {
+  return [
+    task.dueDate,
+    task.startedAt ? toDateKey(new Date(task.startedAt)) : "",
+    task.startOverrideAt ? toDateKey(new Date(task.startOverrideAt)) : "",
+    task.completedAt ? toDateKey(new Date(task.completedAt)) : "",
+    ...getTaskScheduleEntries(task.id).map(item => item.dateKey)
+  ].filter(Boolean);
+}
+
+function taskTimelineSpan(task, days) {
+  const points = taskTimelineDateKeys(task);
+  const first = points.length ? points.sort()[0] : days[0];
+  const last = task.completedAt ? toDateKey(new Date(task.completedAt)) : (task.dueDate || points.sort().at(-1) || first);
+  const startIndex = Math.max(0, days.indexOf(first));
+  const endIndex = Math.max(startIndex, days.indexOf(last));
+  const left = days.length ? (startIndex / days.length) * 100 : 0;
+  const width = days.length ? ((endIndex - startIndex + 1) / days.length) * 100 : 100;
+  return { left, width: Math.max(width, 4) };
+}
+
+function taskEntryOffset(dateKey, days) {
+  const index = Math.max(0, days.indexOf(dateKey));
+  return days.length ? ((index + .5) / days.length) * 100 : 0;
 }
 
 function createTaskCard(task) {
@@ -1032,9 +1150,64 @@ function cancelEditingEntry() {
 
 function renderSchedule() {
   el.timeline.className = "timeline";
+  if (state.taskView === "project") return renderProjectSchedule();
   if (state.taskView === "week") return renderWeekSchedule();
   if (state.taskView === "month") return renderMonthSchedule();
   renderDayTimeline();
+}
+
+function renderProjectSchedule() {
+  const projects = getProjectSummaries();
+  el.timeline.innerHTML = "";
+  el.timeline.className = "project-gantt";
+  if (!projects.length) {
+    el.timeline.innerHTML = `<div class="empty-state">还没有可展示的项目进度</div>`;
+    el.loggedHours.textContent = "0h";
+    el.freeHours.textContent = "—";
+    return;
+  }
+  const days = projectTimelineDays(projects);
+  const totalHours = projects.reduce((sum, project) => sum + project.totalHours, 0);
+  el.loggedHours.textContent = `${trimNumber(totalHours)}h`;
+  el.freeHours.textContent = `${projects.length} 项`;
+  const header = document.createElement("div");
+  header.className = "project-gantt-days";
+  header.style.gridTemplateColumns = `180px repeat(${days.length}, minmax(34px, 1fr))`;
+  header.innerHTML = `<span>任务</span>${days.map(day => `<span>${day.slice(5).replace("-", "/")}</span>`).join("")}`;
+  el.timeline.appendChild(header);
+  projects.forEach(project => {
+    const progress = ProjectSummaryPolicy.projectProgressPercent(project);
+    const section = document.createElement("section");
+    section.className = "project-gantt-section";
+    section.innerHTML = `<header>
+      <div>
+        <h3>${escapeHtml(project.parent.title)}</h3>
+        <p>${project.taskCount} 个任务 · 完成 ${project.doneCount} 个 · ${formatHours(project.totalHours)} · 进度 ${progress}%</p>
+      </div>
+      <button class="soft-button" type="button">详情</button>
+    </header>`;
+    section.querySelector("button").addEventListener("click", () => openTaskDialog(project.parent));
+    project.children.forEach(task => section.appendChild(createProjectGanttRow(task, days)));
+    el.timeline.appendChild(section);
+  });
+}
+
+function createProjectGanttRow(task, days) {
+  const row = document.createElement("div");
+  row.className = `project-gantt-row ${task.status}`;
+  const span = taskTimelineSpan(task, days);
+  const entries = getTaskScheduleEntries(task.id);
+  row.innerHTML = `
+    <div class="project-gantt-label">
+      <strong>${escapeHtml(task.title)}</strong>
+      <span>${statusLabel(task.status)} · ${formatHours(getTaskDuration(task.id))}</span>
+    </div>
+    <div class="project-gantt-lane">
+      <i style="left:${span.left}%;width:${span.width}%"></i>
+      ${entries.map(item => `<em style="left:${taskEntryOffset(item.dateKey, days)}%" title="${item.dateKey} ${formatTime(item.entry.start)}-${formatTime(item.entry.end)}"></em>`).join("")}
+    </div>`;
+  row.addEventListener("dblclick", () => openTaskDialog(task));
+  return row;
 }
 
 function renderDayTimeline() {

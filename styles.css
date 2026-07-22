@@ -109,10 +109,10 @@ body.in-desktop .window-controls { display: flex; }
 .window-controls button:hover { color: var(--ink); background: rgba(120,130,124,.16); }
 .window-controls .window-close:hover { color: #fff; background: #b94c48; }
 .header-view-switcher {
-  display: grid; grid-template-columns: repeat(3, 34px); gap: 3px;
+  display: grid; grid-template-columns: repeat(4, 38px); gap: 3px;
   padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: #eeede8;
 }
-.header-view-switcher button { padding: 7px 3px; color: var(--muted); background: transparent; border-radius: 7px; font-size: 11px; }
+.header-view-switcher button { padding: 7px 3px; color: var(--muted); background: transparent; border-radius: 7px; font-size: 10px; }
 .header-view-switcher button.active { color: #fff; background: var(--accent); font-weight: 700; }
 
 button {
@@ -157,7 +157,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   background: #f7f5f0;
 }
 body.month-mode .week-strip { display: none; }
+body.project-mode .week-strip { display: none; }
 body.month-mode .workspace { height: calc(100vh - 116px); }
+body.project-mode .workspace { height: calc(100vh - 116px); }
 .week-days {
   height: 100%;
   display: grid;
@@ -351,6 +353,20 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
 .priority-badge.paused { color: #6f667d; background: #ebe6ef; }
 .task-progress-track { height: 4px; margin-top: 8px; overflow: hidden; border-radius: 3px; background: #e6e5df; }
 .task-progress-track i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.project-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 13px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 13px;
+  background: rgba(255,255,255,.70);
+  box-shadow: 0 7px 18px rgba(58,61,54,.05);
+}
+.project-card strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
+.project-card span,
+.project-card small { display: block; overflow: hidden; margin-top: 6px; color: var(--muted); white-space: nowrap; text-overflow: ellipsis; font-size: 10px; }
 .progress-input { display: grid; grid-template-columns: 1fr 42px; gap: 10px; align-items: center; min-height: 43px; }
 .progress-input input { padding: 0; accent-color: var(--accent); }
 .progress-input strong { text-align: right; font-size: 11px; }
@@ -499,6 +515,84 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   background-clip: padding-box;
 }
 .timeline { position: relative; min-height: calc(var(--hour-height) * 15); padding-bottom: 20px; }
+.project-gantt {
+  min-width: 760px;
+  padding: 2px 4px 24px;
+}
+.project-gantt-days {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 7px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: rgba(248,247,243,.94);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+}
+.project-gantt-days span:first-child { color: var(--ink); font-size: 10px; }
+.project-gantt-section {
+  margin-bottom: 14px;
+  padding: 13px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: rgba(250,249,246,.78);
+}
+.project-gantt-section header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.project-gantt-section h3 { margin: 0; font-size: 15px; }
+.project-gantt-section p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+.project-gantt-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 42px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.project-gantt-label { min-width: 0; }
+.project-gantt-label strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+.project-gantt-label span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+.project-gantt-lane {
+  position: relative;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(220,232,224,.36);
+}
+.project-gantt-lane i {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  min-width: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg,#76c4b8,#5d7f9e);
+}
+.project-gantt-row.done .project-gantt-lane i,
+.project-gantt-row.closed .project-gantt-lane i { background: linear-gradient(90deg,#8ac48f,#4c845b); }
+.project-gantt-row.planned .project-gantt-lane i { background: linear-gradient(90deg,#d6b478,#aa7b39); }
+.project-gantt-lane em {
+  position: absolute;
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #203846;
+  box-shadow: 0 1px 5px rgba(0,0,0,.25);
+}
 .week-schedule {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1130,6 +1224,17 @@ body.in-desktop.glass-mode .time-slot::after { border-color: rgba(190,218,234,.1
 body.in-desktop.glass-mode .time-slot { border-color: rgba(190,218,234,.40); }
 body.in-desktop.glass-mode .progress-track,
 body.in-desktop.glass-mode .task-progress-track { background: rgba(205,226,236,.18); }
+body.in-desktop.glass-mode .project-card,
+body.in-desktop.glass-mode .project-gantt-days,
+body.in-desktop.glass-mode .project-gantt-section {
+  background: rgba(0,0,0,.34);
+  border-color: rgba(172,211,233,.32);
+}
+body.in-desktop.glass-mode .project-card span,
+body.in-desktop.glass-mode .project-card small,
+body.in-desktop.glass-mode .project-gantt-section p,
+body.in-desktop.glass-mode .project-gantt-label span { color: #d2dee6; }
+body.in-desktop.glass-mode .project-gantt-lane { background: rgba(255,255,255,.10); }
 body.in-desktop.glass-mode input,
 body.in-desktop.glass-mode select,
 body.in-desktop.glass-mode textarea { color: #f3f8fb; }
@@ -1396,7 +1501,7 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
   .schedule-panel { padding: 18px 16px; }
   .brand p { display: none; }
   .brand-mark { width: 36px; height: 36px; }
-  .header-view-switcher { grid-template-columns: repeat(3, 28px); }
+  .header-view-switcher { grid-template-columns: repeat(4, 28px); }
   .primary-button { padding-left: 10px; padding-right: 10px; }
 }
 
@@ -1442,6 +1547,7 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
     padding: 16px 14px;
     overflow-y: auto;
   }
+  .project-gantt { min-width: 680px; }
   .task-panel-footer {
     position: static;
     margin-top: 12px;
@@ -1479,7 +1585,7 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
 }
 
 @media (max-width: 520px) {
-  .header-view-switcher { grid-template-columns: repeat(3, 30px); }
+  .header-view-switcher { grid-template-columns: repeat(4, 30px); }
   .app-version { margin-left: 4px; padding-inline: 6px; font-size: 9px; }
   .primary-button { font-size: 12px; }
   .workspace { grid-template-rows: minmax(180px, 42%) minmax(0, 1fr); }
