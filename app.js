@@ -1,4 +1,4 @@
-const HOURS = Array.from({ length: 15 }, (_, i) => i + 7);
+﻿const HOURS = Array.from({ length: 15 }, (_, i) => i + 7);
 const WEEKDAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const STORAGE_KEY = "today-planner-v1";
 const CN_HOLIDAYS = {
@@ -626,12 +626,16 @@ function renderTasks() {
 function orderedTasks(tasks) {
   const ids = new Set(tasks.map(task => task.id));
   const result = [];
+  const visited = new Set();
   const byDue = (a, b) => `${a.dueDate || "9999-12-31"} ${a.dueTime || ""}`.localeCompare(`${b.dueDate || "9999-12-31"} ${b.dueTime || ""}`);
-  tasks.filter(task => !task.parentId || !ids.has(task.parentId)).sort(byDue).forEach(parent => {
-    result.push(parent);
-    tasks.filter(task => task.parentId === parent.id).sort(byDue).forEach(child => result.push(child));
-  });
-  tasks.filter(task => !result.includes(task)).forEach(task => result.push(task));
+  const appendBranch = task => {
+    if (!task || visited.has(task.id)) return;
+    visited.add(task.id);
+    result.push(task);
+    tasks.filter(child => child.parentId === task.id).sort(byDue).forEach(appendBranch);
+  };
+  tasks.filter(task => !task.parentId || !ids.has(task.parentId)).sort(byDue).forEach(appendBranch);
+  tasks.filter(task => !visited.has(task.id)).sort(byDue).forEach(appendBranch);
   return result;
 }
 
@@ -1005,7 +1009,8 @@ function renderTaskDetailSummary(task) {
     el.taskDetailSummary.innerHTML = "";
     return;
   }
-  const parent = task.parentId ? findTask(task.parentId)?.task : null;
+  const allTasks = getAllTasks().map(({ task }) => task);
+  const hierarchyPath = TaskOptionPolicy.taskHierarchyPath({ task, tasks: allTasks, separator: " › " });
   const duration = getTaskDuration(task.id);
   const schedule = getTaskScheduleInfo(task.id);
   const latestProgress = latestTaskProgressNote(task.id);
@@ -1014,7 +1019,7 @@ function renderTaskDetailSummary(task) {
     ["优先级", priorityLabel(task.priority)],
     ["责任人", task.owner || "未指定"],
     ["目标", formatDue(task)],
-    ["任务归属", parent ? parent.title : "主计划"],
+    ["任务层级", hierarchyPath || "顶层任务"],
     ["实际开始", task.startedAt ? formatDateTime(task.startedAt) : "未开始"],
     ["实际完成", task.completedAt ? formatDateTime(task.completedAt) : "未完成"],
     ["累计投入", duration ? formatHours(duration) : "0 小时"],
@@ -1028,15 +1033,17 @@ function renderTaskDetailSummary(task) {
 }
 
 function fillParentOptions(editingTask) {
-  el.taskParent.innerHTML = `<option value="">不选择，作为主计划</option>`;
-  getAllTasks()
-    .filter(({ task }) => !task.parentId && !["done", "closed"].includes(task.status) && task.id !== editingTask?.id)
-    .filter(({ task }) => !isHiddenFutureRecurringInstance(task))
-    .sort((a, b) => `${a.task.dueDate} ${a.task.dueTime}`.localeCompare(`${b.task.dueDate} ${b.task.dueTime}`))
-    .forEach(({ task }) => {
-      const option = new Option(`${task.dueDate.slice(5)} · ${task.title}`, task.id);
-      el.taskParent.add(option);
-    });
+  el.taskParent.innerHTML = `<option value="">不选择，作为顶层任务</option>`;
+  const tasks = getAllTasks().map(({ task }) => task);
+  TaskOptionPolicy.parentTaskOptionCandidates({
+    tasks,
+    editingTaskId: editingTask?.id || "",
+    isHiddenFutureRecurringInstance
+  }).forEach(task => {
+    const path = TaskOptionPolicy.taskHierarchyPath({ task, tasks, separator: " › " });
+    const date = task.dueDate ? task.dueDate.slice(5) : "未计划";
+    el.taskParent.add(new Option(`${date} · ${path}`, task.id));
+  });
 }
 
 function saveTask() {
@@ -1064,6 +1071,11 @@ function saveTask() {
     description: el.taskDescription.value.trim()
   };
   if (!payload.title) return showTaskFieldError(el.taskTitleInput, "请填写待办名称");
+  if (payload.parentId && state.editingTaskId) {
+    const tasks = getAllTasks().map(({ task }) => task);
+    const invalidParentIds = new Set([state.editingTaskId, ...TaskOptionPolicy.descendantTaskIds({ tasks, parentId: state.editingTaskId })]);
+    if (invalidParentIds.has(payload.parentId)) return showTaskFieldError(el.taskParent, "不能选择自己或下级任务作为上级");
+  }
   if (payload.dueTime && !payload.dueDate) return showTaskFieldError(el.taskDueDate, "填写目标时间时，请同时选择目标日期");
   if (payload.dueDate && !payload.dueTime) payload.dueTime = "18:00";
   if (payload.recurrence && !payload.dueDate) return showTaskFieldError(el.taskDueDate, "月度固定任务需要选择首次目标日期");
@@ -1268,16 +1280,17 @@ function renderProjectSchedule() {
         <button class="soft-button" type="button">详情</button>
       </header>`;
       section.querySelector("button").addEventListener("click", () => openTaskDialog(project.parent));
-      project.children.forEach(task => section.appendChild(createProjectGanttRow(task, buckets, state.projectScale)));
+      project.children.forEach(task => section.appendChild(createProjectGanttRow(task, buckets, state.projectScale, project.parent.id)));
       groupNode.appendChild(section);
     });
     el.timeline.appendChild(groupNode);
   });
 }
 
-function createProjectGanttRow(task, buckets, scale = "day") {
+function createProjectGanttRow(task, buckets, scale = "day", rootId = "") {
   const row = document.createElement("div");
   row.className = `project-gantt-row ${task.status}`;
+  row.style.setProperty("--task-depth", getTaskDepth(task, rootId));
   const span = taskTimelineSpan(task, buckets, scale);
   const entries = getTaskScheduleEntries(task.id);
   row.innerHTML = `
@@ -1291,6 +1304,19 @@ function createProjectGanttRow(task, buckets, scale = "day") {
     </div>`;
   row.addEventListener("dblclick", () => openTaskDialog(task));
   return row;
+}
+
+function getTaskDepth(task, rootId = "") {
+  if (!task?.parentId || task.id === rootId) return 0;
+  let depth = 0;
+  let current = task;
+  const visited = new Set();
+  while (current?.parentId && current.id !== rootId && !visited.has(current.id)) {
+    visited.add(current.id);
+    depth += 1;
+    current = findTask(current.parentId)?.task;
+  }
+  return Math.max(0, depth - (rootId ? 1 : 0));
 }
 
 function renderDayTimeline() {
@@ -1621,6 +1647,7 @@ function focusLinkedTaskFilter(taskId) {
 function fillEntryTaskOptions(entry = null) {
   el.entryTaskLink.innerHTML = "";
   el.entryTaskLink.add(new Option("自动创建为待办（推荐）", "__create__"));
+  const tasks = getAllTasks().map(({ task }) => task);
   getAllTasks()
     .filter(({ task }) => TaskOptionPolicy.shouldIncludeEntryTaskOption({
       task,
@@ -1632,7 +1659,8 @@ function fillEntryTaskOptions(entry = null) {
       el.entryTaskLink.add(new Option(TaskOptionPolicy.entryTaskOptionLabel({
         task,
         selectedDate: state.selectedDate,
-        hasChildren: hasChildTasks(task.id)
+        hasChildren: hasChildTasks(task.id),
+        hierarchyPath: TaskOptionPolicy.taskHierarchyPath({ task, tasks, separator: " › " })
       }), task.id));
     });
   el.entryTaskLink.value = entry?.taskId || "__create__";

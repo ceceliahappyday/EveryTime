@@ -1,7 +1,9 @@
 const assert = require("node:assert/strict");
 const {
   shouldIncludeEntryTaskOption,
-  entryTaskOptionLabel
+  entryTaskOptionLabel,
+  parentTaskOptionCandidates,
+  taskHierarchyPath
 } = require("../task-option-policy");
 
 const parentTask = {
@@ -44,8 +46,8 @@ assert.equal(
     selectedDate: "2026-07-22",
     hasChildren: true
   }),
-  "主计划 · 07-25 · 集团财务月度复盘",
-  "parent tasks should be labeled as main plans"
+  "计划 · 07-25 · 集团财务月度复盘",
+  "parent tasks should be labeled as plans"
 );
 
 assert.equal(
@@ -56,6 +58,26 @@ assert.equal(
   }),
   "待办 · 今天 · 面试黄佩佩",
   "leaf tasks should be labeled as todos"
+);
+
+const hierarchyTasks = [
+  { id: "root", title: "Root", status: "planned", parentId: "", dueDate: "" },
+  { id: "phase", title: "Phase", status: "planned", parentId: "root", dueDate: "" },
+  { id: "leaf", title: "Leaf", status: "planned", parentId: "phase", dueDate: "" },
+  { id: "other", title: "Other", status: "planned", parentId: "", dueDate: "2026-07-22" },
+  { id: "closed", title: "Closed", status: "done", parentId: "", dueDate: "" }
+];
+
+assert.deepEqual(
+  parentTaskOptionCandidates({ tasks: hierarchyTasks, editingTaskId: "phase" }).map(task => task.id),
+  ["other", "root"],
+  "parent candidates should support many levels while excluding self, descendants, and ended tasks"
+);
+
+assert.equal(
+  taskHierarchyPath({ task: hierarchyTasks[2], tasks: hierarchyTasks }),
+  "Root / Phase / Leaf",
+  "hierarchy path should show the full nested chain"
 );
 
 console.log("task option policy tests passed");

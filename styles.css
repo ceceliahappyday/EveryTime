@@ -630,7 +630,13 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   padding: 7px 0;
   border-top: 1px solid var(--line-soft);
 }
-.project-gantt-label { min-width: 0; }
+.project-gantt-label { min-width: 0; padding-left: calc(var(--task-depth, 0) * 14px); }
+.project-gantt-label::before {
+  content: "";
+  display: inline-block;
+  width: calc(var(--task-depth, 0) * 10px);
+  max-width: 40px;
+}
 .project-gantt-label strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
 .project-gantt-label span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
 .project-gantt-lane {

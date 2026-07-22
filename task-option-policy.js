@@ -11,14 +11,52 @@
     return true;
   }
 
-  function entryTaskOptionLabel({ task, selectedDate, hasChildren = false }) {
-    const kind = hasChildren ? "主计划" : "待办";
+  function entryTaskOptionLabel({ task, selectedDate, hasChildren = false, hierarchyPath = "" }) {
+    const kind = hasChildren ? "计划" : "待办";
     const date = task?.dueDate ? (task.dueDate === selectedDate ? "今天" : task.dueDate.slice(5)) : "未计划";
-    return `${kind} · ${date} · ${task?.title || "未命名任务"}`;
+    const title = hierarchyPath || task?.title || "未命名任务";
+    return `${kind} · ${date} · ${title}`;
+  }
+
+  function descendantTaskIds({ tasks = [], parentId, visited = new Set() }) {
+    if (!parentId || visited.has(parentId)) return [];
+    visited.add(parentId);
+    return tasks
+      .filter(task => task.parentId === parentId)
+      .flatMap(task => [task.id, ...descendantTaskIds({ tasks, parentId: task.id, visited })]);
+  }
+
+  function parentTaskOptionCandidates({ tasks = [], editingTaskId = "", isHiddenFutureRecurringInstance = () => false }) {
+    const blockedIds = new Set([
+      editingTaskId,
+      ...descendantTaskIds({ tasks, parentId: editingTaskId })
+    ].filter(Boolean));
+    return tasks
+      .filter(task => task?.id && !blockedIds.has(task.id))
+      .filter(task => !["done", "closed"].includes(task.status))
+      .filter(task => !isHiddenFutureRecurringInstance(task))
+      .sort((a, b) => taskHierarchyPath({ task: a, tasks }).localeCompare(taskHierarchyPath({ task: b, tasks })));
+  }
+
+  function taskHierarchyPath({ task, tasks = [], separator = " / " }) {
+    if (!task) return "";
+    const byId = new Map(tasks.map(item => [item.id, item]));
+    const chain = [];
+    const visited = new Set();
+    let current = task;
+    while (current && !visited.has(current.id)) {
+      chain.unshift(current.title || "未命名任务");
+      visited.add(current.id);
+      current = current.parentId ? byId.get(current.parentId) : null;
+    }
+    return chain.join(separator);
   }
 
   return {
     shouldIncludeEntryTaskOption,
-    entryTaskOptionLabel
+    entryTaskOptionLabel,
+    descendantTaskIds,
+    parentTaskOptionCandidates,
+    taskHierarchyPath
   };
 });
