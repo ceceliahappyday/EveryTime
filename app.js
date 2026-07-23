@@ -46,6 +46,7 @@ const state = {
   taskView: "day",
   projectScale: "day",
   projectCollapsedGroups: new Set(),
+  ganttCollapsedGroups: new Set(),
   projectCollapsedSections: new Set(),
   projectCollapsedTasks: new Set(),
   editingTaskId: null,
@@ -234,6 +235,7 @@ function bindEvents() {
     state.filter = button.dataset.filter;
     el.taskTabs.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
     renderTasks();
+    if (state.taskView === "project") renderSchedule();
   });
 
   el.previousWeek.addEventListener("click", () => moveSelectedDate(-7));
@@ -647,9 +649,10 @@ function orderedTasks(tasks) {
 }
 
 function renderProjectTaskList(tasks) {
-  el.taskTabs.classList.add("hidden");
+  el.taskTabs.classList.remove("hidden");
   const projects = getProjectSummaries(tasks);
   el.taskCount.textContent = projects.length;
+  updateProjectStats(projects);
   const totalHours = projects.reduce((sum, project) => sum + project.totalHours, 0);
   const avgProgress = projects.length
     ? Math.round(projects.reduce((sum, project) => sum + ProjectSummaryPolicy.projectProgressPercent(project), 0) / projects.length)
@@ -675,6 +678,17 @@ function renderProjectTaskList(tasks) {
   });
 }
 
+function updateProjectStats(projects) {
+  const counts = projectStatusGroups(projects).reduce((result, group) => {
+    result[group.status] = group.projects.length;
+    return result;
+  }, {});
+  el.unplannedCount.textContent = counts.unplanned || 0;
+  el.openCount.textContent = counts.planned || 0;
+  el.doneCount.textContent = counts.in_progress || 0;
+  el.closedCount.textContent = counts.ended || 0;
+}
+
 function createProjectCard(project) {
   const card = document.createElement("article");
   card.className = `project-card project-card-compact ${project.status}`;
@@ -695,7 +709,12 @@ function toggleProjectGroup(status) {
   if (state.projectCollapsedGroups.has(status)) state.projectCollapsedGroups.delete(status);
   else state.projectCollapsedGroups.add(status);
   renderTasks();
-  if (state.taskView === "project") renderSchedule();
+}
+
+function toggleGanttGroup(status) {
+  if (state.ganttCollapsedGroups.has(status)) state.ganttCollapsedGroups.delete(status);
+  else state.ganttCollapsedGroups.add(status);
+  renderSchedule();
 }
 
 function projectStatusGroups(projects) {
@@ -1235,11 +1254,12 @@ function renderSchedule() {
 }
 
 function renderProjectSchedule() {
-  const projects = getProjectSummaries();
+  const allProjects = getProjectSummaries();
+  const projects = ProjectCollapsePolicy.filterProjectsForStatus(allProjects, state.filter);
   el.timeline.innerHTML = "";
   el.timeline.className = "project-gantt";
   if (!projects.length) {
-    el.timeline.innerHTML = `<div class="empty-state">还没有可展示的项目进度</div>`;
+    el.timeline.innerHTML = `<div class="empty-state">当前状态下还没有可展示的项目进度</div>`;
     el.loggedHours.textContent = "0h";
     el.freeHours.textContent = "—";
     return;
@@ -1271,12 +1291,12 @@ function renderProjectSchedule() {
   el.timeline.appendChild(header);
   projectStatusGroups(projects).forEach(group => {
     if (!group.projects.length) return;
-    const groupCollapsed = state.projectCollapsedGroups.has(group.status);
+    const groupCollapsed = state.ganttCollapsedGroups.has(group.status);
     const groupNode = document.createElement("section");
     groupNode.className = `project-gantt-group ${group.status} ${groupCollapsed ? "collapsed" : ""}`;
     groupNode.innerHTML = `<button class="project-gantt-group-heading" type="button"><strong><i>${groupCollapsed ? "▸" : "▾"}</i>${group.label}</strong><span>${group.projects.length} 项</span></button>`;
     groupNode.querySelector(".project-gantt-group-heading").addEventListener("click", () => {
-      toggleProjectGroup(group.status);
+      toggleGanttGroup(group.status);
     });
     if (groupCollapsed) {
       el.timeline.appendChild(groupNode);

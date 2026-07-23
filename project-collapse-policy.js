@@ -9,6 +9,11 @@
     return tasks.filter(task => !hasCollapsedAncestor(task, byId, collapsed));
   }
 
+  function filterProjectsForStatus(projects = [], status = "all") {
+    if (!status || status === "all") return projects;
+    return projects.filter(project => project.status === status);
+  }
+
   function hasCollapsedAncestor(task, byId, collapsedIds) {
     const visited = new Set();
     let current = task;
@@ -21,6 +26,7 @@
   }
 
   return {
+    filterProjectsForStatus,
     visibleTreeItems
   };
 });

@@ -321,6 +321,11 @@ button.task-group-heading {
   color: currentColor;
   font-style: normal;
 }
+.task-list.project-view .task-group-heading {
+  position: static;
+  margin-top: 6px;
+  background: transparent;
+}
 .month-calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .month-weekday { padding: 5px 0; color: var(--muted); text-align: center; font-size: 9px; }
 .month-cell { min-height: 55px; padding: 5px; border: 1px solid var(--line-soft); border-radius: 8px; background: #fff; cursor: pointer; }
