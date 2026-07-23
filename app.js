@@ -68,7 +68,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "todayButton", "weekDays", "taskCount", "taskList", "unplannedCount", "openCount", "doneCount", "closedCount", "exportButton",
     "plannedHours", "progressLabel", "progressBar", "scheduleTitle", "loggedHours", "freeHours",
     "timeline", "timelineWrap", "quickAddButton", "toggleCompact", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "viewSwitcher",
-    "taskTabs", "taskViewTitle", "taskDialog", "taskEditForm", "taskDialogEyebrow", "taskDialogTitle",
+    "taskTabs", "allCount", "taskViewTitle", "taskDialog", "taskEditForm", "taskDialogEyebrow", "taskDialogTitle",
     "taskDetailSummary",
     "taskTitleInput", "taskDueDate", "taskDueTime", "taskOwner", "taskParent", "taskPriority",
     "taskProgress", "taskProgressValue", "taskStatus", "taskMonthlyRecurring", "taskRecurringUntil",
@@ -513,6 +513,17 @@ function renderTasks() {
     return;
   }
 
+  if (state.filter === "all") {
+    const allTasks = orderedTasks(allVisibleTasks.filter(isTodoListTask));
+    updateTaskStats(allTasks);
+    if (!allTasks.length) {
+      el.taskList.innerHTML = `<div class="empty-state">还没有任务</div>`;
+      return;
+    }
+    allTasks.forEach(task => el.taskList.appendChild(createTaskCard(task)));
+    return;
+  }
+
   if (state.taskView === "month") {
     const monthTasks = tasksInMonth(fromDateKey(state.selectedDate));
     updateTaskStats(monthTasks.concat(allVisibleTasks.filter(isUnplannedTask)));
@@ -650,9 +661,10 @@ function orderedTasks(tasks) {
 
 function renderProjectTaskList(tasks) {
   el.taskTabs.classList.remove("hidden");
-  const projects = getProjectSummaries(tasks);
+  const allProjects = getProjectSummaries(tasks);
+  const projects = ProjectCollapsePolicy.filterProjectsForStatus(allProjects, state.filter);
   el.taskCount.textContent = projects.length;
-  updateProjectStats(projects);
+  updateProjectStats(allProjects);
   const totalHours = projects.reduce((sum, project) => sum + project.totalHours, 0);
   const avgProgress = projects.length
     ? Math.round(projects.reduce((sum, project) => sum + ProjectSummaryPolicy.projectProgressPercent(project), 0) / projects.length)
@@ -687,6 +699,7 @@ function updateProjectStats(projects) {
   el.openCount.textContent = counts.planned || 0;
   el.doneCount.textContent = counts.in_progress || 0;
   el.closedCount.textContent = counts.ended || 0;
+  el.allCount.textContent = projects.length;
 }
 
 function createProjectCard(project) {
@@ -742,7 +755,8 @@ function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
     return ProjectSummaryPolicy.summarizeProject({
       parent: root,
       children,
-      getTaskDuration
+      getTaskDuration,
+      getTaskScheduledHours
     });
   });
 }
@@ -854,7 +868,7 @@ function createTaskCard(task) {
         ${task.recurrence?.frequency === "monthly" ? `<span>↻ 每月重复</span>` : ""}
         ${task.status === "planned" && schedule ? `<span>已安排 ${formatDateTime(schedule.firstStartIso)}</span>` : ""}
       </div>
-      ${task.status === "in_progress" || task.progress > 0 ? `<div class="task-progress-track" title="进度 ${task.progress || 0}%"><i style="width:${task.progress || 0}%"></i></div>` : ""}
+      ${task.progress > 0 ? `<div class="task-progress-track" title="进度 ${task.progress || 0}%"><i style="width:${task.progress || 0}%"></i></div>` : ""}
     </div>
     <button class="task-menu" title="编辑待办">•••</button>`;
 
@@ -892,6 +906,7 @@ function updateTaskStats(tasks) {
   el.openCount.textContent = groups.planned.length;
   el.doneCount.textContent = groups.inProgress.length;
   el.closedCount.textContent = groups.ended.length;
+  el.allCount.textContent = tasks.length;
   el.taskCount.textContent = tasks.length;
   const activeTotal = groups.planned.length + groups.inProgress.length + groups.ended.length;
   const completed = tasks.filter(task => task.status === "done").length;
@@ -1309,8 +1324,7 @@ function renderProjectSchedule() {
       section.className = `project-gantt-section ${project.status} ${sectionCollapsed ? "collapsed" : ""}`;
       section.innerHTML = `<header>
         <div>
-          <h3><button class="project-collapse-button" type="button">${sectionCollapsed ? "▸" : "▾"}</button>${escapeHtml(project.parent.title)}</h3>
-          <p>${projectStatusLabel(project.status)} · ${project.taskCount} 个任务 · 完成 ${project.doneCount} 个 · ${formatHours(project.totalHours)} · 进度 ${progress}%</p>
+          <h3><button class="project-collapse-button" type="button">${sectionCollapsed ? "▸" : "▾"}</button>${escapeHtml(project.parent.title)} <small>${projectStatusLabel(project.status)} · ${project.taskCount} 项 · ${formatHours(project.totalHours)} · ${progress}%</small></h3>
         </div>
         <button class="soft-button" type="button">详情</button>
       </header>`;
@@ -1335,17 +1349,23 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "") {
   const row = document.createElement("div");
   row.className = `project-gantt-row ${task.status}`;
   row.style.setProperty("--task-depth", getTaskDepth(task, rootId));
-  const span = taskTimelineSpan(task, buckets, scale);
+  const span = taskActualTimelineSpan(task, buckets, scale);
+  const cutoff = task.dueDate ? taskTimelineOffset(task.dueDate, buckets, scale) : null;
   const entries = getTaskScheduleEntries(task.id);
   const hasChildren = getChildTasks(task.id).length > 0;
   const collapsed = state.projectCollapsedTasks.has(task.id);
+  const progress = ProjectSummaryPolicy.taskProgressPercent({
+    status: task.status,
+    investedHours: getTaskDuration(task.id),
+    scheduledHours: getTaskScheduledHours(task.id)
+  });
   row.innerHTML = `
     <div class="project-gantt-label">
-      <strong>${hasChildren ? `<button class="project-collapse-button task-tree-toggle" type="button">${collapsed ? "▸" : "▾"}</button>` : `<span class="task-tree-spacer"></span>`}${escapeHtml(task.title)}</strong>
-      <span>${statusLabel(task.status)} · ${formatHours(getTaskDuration(task.id))}</span>
+      <strong>${hasChildren ? `<button class="project-collapse-button task-tree-toggle" type="button">${collapsed ? "▸" : "▾"}</button>` : `<span class="task-tree-spacer"></span>`}${escapeHtml(task.title)} <small>${statusLabel(task.status)} · ${progress}%</small></strong>
     </div>
     <div class="project-gantt-lane">
-      <i style="left:${span.left}%;width:${span.width}%"></i>
+      ${span ? `<i class="gantt-actual-bar" style="left:${span.left}%;width:${span.width}%"><b>${statusLabel(task.status)} ${progress}%</b></i>` : ""}
+      ${cutoff === null ? "" : `<u class="gantt-cutoff-line" style="left:${cutoff}%" title="目标截止：${formatDue(task)}"></u>`}
       ${entries.map(item => `<em style="left:${taskEntryOffset(item.dateKey, buckets, scale)}%" title="${item.dateKey} ${formatTime(item.entry.start)}-${formatTime(item.entry.end)}"></em>`).join("")}
     </div>`;
   row.querySelector(".task-tree-toggle")?.addEventListener("click", event => {
@@ -1354,6 +1374,25 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "") {
   });
   row.addEventListener("dblclick", () => openTaskDialog(task));
   return row;
+}
+
+function taskTimelineOffset(dateKey, buckets, scale = "day") {
+  const keys = buckets.map(bucket => bucket.key);
+  const index = Math.max(0, keys.indexOf(projectBucketKey(dateKey, scale)));
+  return buckets.length ? ((index + .5) / buckets.length) * 100 : 0;
+}
+
+function taskActualTimelineSpan(task, buckets, scale = "day") {
+  const actualDates = getTaskScheduleEntries(task.id)
+    .filter(item => getEntryInvestedHours(item.dateKey, item.entry) > 0)
+    .map(item => projectBucketKey(item.dateKey, scale));
+  if (!actualDates.length || !buckets.length) return null;
+  const keys = buckets.map(bucket => bucket.key);
+  const firstKey = actualDates.slice().sort()[0];
+  const lastKey = actualDates.slice().sort().at(-1);
+  const first = Math.max(0, keys.indexOf(firstKey));
+  const last = Math.max(first, keys.indexOf(lastKey));
+  return { left: (first / buckets.length) * 100, width: Math.max(((last - first + 1) / buckets.length) * 100, 4) };
 }
 
 function toggleProjectSection(projectId) {
@@ -1854,12 +1893,11 @@ function updateTaskProgressFromSchedule(task) {
   const previous = task.progress || 0;
   const scheduled = getTaskScheduledHours(task.id);
   const invested = getTaskDuration(task.id);
-  if (!scheduled || !invested) {
-    if (task.status === "planned") task.progress = 0;
-    return task.progress !== previous;
-  }
-  const autoProgress = Math.min(95, Math.max(5, Math.round(invested / scheduled * 95)));
-  task.progress = Math.max(task.progress || 0, autoProgress);
+  task.progress = ProjectSummaryPolicy.taskProgressPercent({
+    status: task.status,
+    investedHours: invested,
+    scheduledHours: scheduled
+  });
   return task.progress !== previous;
 }
 
@@ -1916,7 +1954,7 @@ function applyAutomaticTaskStatus(task, now = new Date()) {
   task.startedAt = nextStartedAt;
   if (updateTaskProgressFromSchedule(task)) changed = true;
   const beforeStatusProgress = task.progress || 0;
-  if (nextStatus === "in_progress") task.progress = Math.max(task.progress || 0, 5);
+  if (nextStatus === "in_progress") updateTaskProgressFromSchedule(task);
   else if (!schedule?.hasStarted) task.progress = 0;
   if ((task.progress || 0) !== beforeStatusProgress) changed = true;
   if (changed) task.updatedAt = now.toISOString();
@@ -2000,6 +2038,7 @@ function getChildTasks(parentId) {
 
 function matchesFilter(task, filter) {
   if (!isTodoListTask(task)) return false;
+  if (filter === "all") return true;
   if (filter === "unplanned") return isUnplannedTask(task);
   if (filter === "ended") return task.status === "done" || task.status === "closed";
   if (filter === "planned") return task.status === "planned" && !isUnplannedTask(task) && !isContainerOnlyTask(task);

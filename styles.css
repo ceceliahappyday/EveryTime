@@ -642,6 +642,7 @@ button.task-group-heading {
   min-width: 0;
 }
 .project-gantt-section h3 button { flex: 0 0 auto; }
+.project-gantt-section h3 small { color: var(--muted); font-size: 9px; font-weight: 700; }
 .project-gantt-section p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
 .project-gantt-group { margin-bottom: 16px; }
 .project-gantt-group-heading {
@@ -711,6 +712,12 @@ button.task-group-heading {
   text-overflow: ellipsis;
   font-size: 12px;
 }
+.project-gantt-label strong small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+}
 .task-tree-spacer {
   flex: 0 0 20px;
   width: 20px;
@@ -732,6 +739,32 @@ button.task-group-heading {
   border-radius: 999px;
   background: linear-gradient(90deg,#76c4b8,#5d7f9e);
 }
+.project-gantt-lane i.gantt-actual-bar {
+  display: flex;
+  align-items: center;
+  min-width: 14px;
+  overflow: hidden;
+  padding: 0 7px;
+  color: #fff;
+  white-space: nowrap;
+}
+.project-gantt-lane i.gantt-actual-bar b {
+  overflow: hidden;
+  font-size: 8px;
+  font-style: normal;
+  text-overflow: ellipsis;
+}
+.project-gantt-lane u.gantt-cutoff-line {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 2px;
+  border-left: 2px dashed #e2b56d;
+  text-decoration: none;
+  opacity: .95;
+}
+.project-gantt-row.planned .project-gantt-lane,
+.project-gantt-row.unplanned .project-gantt-lane { background: rgba(220,232,224,.18); }
 .project-gantt-row.done .project-gantt-lane i,
 .project-gantt-row.closed .project-gantt-lane i { background: linear-gradient(90deg,#8ac48f,#4c845b); }
 .project-gantt-row.planned .project-gantt-lane i { background: linear-gradient(90deg,#d6b478,#aa7b39); }
