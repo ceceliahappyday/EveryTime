@@ -52,6 +52,7 @@ assert.deepEqual(summary.statusCounts, {
 assert.equal(classifyProjectStatus([{ status: "planned" }, { status: "unplanned" }]), "planned");
 assert.equal(classifyProjectStatus([{ status: "done" }, { status: "closed" }]), "ended");
 assert.equal(classifyProjectStatus([{ status: "unplanned" }]), "unplanned");
+assert.equal(classifyProjectStatus([{ status: "in_progress", completedAt: "2026-07-08T10:00:00.000Z" }]), "ended");
 
 assert.equal(taskProgressPercent({ status: "planned", investedHours: 0, scheduledHours: 2 }), 0);
 assert.equal(taskProgressPercent({ status: "in_progress", investedHours: 1, scheduledHours: 2 }), 50);

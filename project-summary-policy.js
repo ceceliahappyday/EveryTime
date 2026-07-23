@@ -7,7 +7,7 @@
     const taskCount = children.length;
     const doneCount = children.filter(task => ["done", "closed"].includes(task.status)).length;
     const statusCounts = children.reduce((counts, task) => {
-      const status = normalizeStatus(task.status);
+      const status = statusForTask(task);
       counts[status] += 1;
       return counts;
     }, { unplanned: 0, planned: 0, in_progress: 0, ended: 0 });
@@ -47,7 +47,7 @@
   }
 
   function taskProgressPercent({ status, investedHours = 0, scheduledHours = 0 }) {
-    if (status === "done" || status === "closed") return 100;
+    if (["done", "closed", "ended"].includes(status)) return 100;
     if (!investedHours || !scheduledHours) return 0;
     return Math.round(Math.min(95, (investedHours / scheduledHours) * 100));
   }
@@ -59,8 +59,13 @@
     return "planned";
   }
 
+  function statusForTask(task = {}) {
+    if (task.completedAt || task.status === "done" || task.status === "closed") return "ended";
+    return normalizeStatus(task.status);
+  }
+
   function classifyProjectStatus(tasks = []) {
-    const statuses = tasks.map(task => normalizeStatus(task.status));
+    const statuses = tasks.map(statusForTask);
     if (statuses.includes("in_progress")) return "in_progress";
     if (statuses.length && statuses.every(status => status === "ended")) return "ended";
     if (statuses.includes("planned")) return "planned";

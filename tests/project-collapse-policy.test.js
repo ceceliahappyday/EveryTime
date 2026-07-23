@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const { filterProjectsForStatus, visibleTreeItems } = require("../project-collapse-policy");
+const { filterProjectsForStatus, visibleTreeItems, shouldRenderSingleRow } = require("../project-collapse-policy");
 
 const tasks = [
   { id: "phase-1", title: "阶段一", parentId: "project" },
@@ -12,6 +12,17 @@ assert.deepEqual(
   visibleTreeItems({ tasks, collapsedIds: new Set(["phase-1"]) }).map(task => task.id),
   ["phase-1", "phase-2"],
   "collapsed task should remain visible while descendants are hidden"
+);
+
+assert.equal(
+  shouldRenderSingleRow({ parent: { id: "solo" }, children: [{ id: "solo" }] }),
+  true,
+  "a task without parent or children should render as one gantt row"
+);
+assert.equal(
+  shouldRenderSingleRow({ parent: { id: "project" }, children: [{ id: "child" }] }),
+  false,
+  "hierarchical projects should keep a project header and child tree"
 );
 
 assert.deepEqual(

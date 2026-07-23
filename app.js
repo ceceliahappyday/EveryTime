@@ -144,8 +144,12 @@ function migrateData() {
       task.recurrence ||= null;
       task.recurrenceGroupId ||= "";
       if (task.status === "closed") {
-      task.status = "done";
-      task.completedAt ||= task.updatedAt || new Date().toISOString();
+        task.status = "done";
+        task.completedAt ||= task.updatedAt || new Date().toISOString();
+      }
+      if (task.completedAt) {
+        task.status = "done";
+        task.progress = 100;
       }
       task.startOverrideAt ||= "";
     });
@@ -707,9 +711,15 @@ function createProjectCard(project) {
   card.className = `project-card project-card-compact ${project.status}`;
   card.innerHTML = `
     <div>
-      <strong>${escapeHtml(project.parent.title)}</strong>
+      <strong><button class="task-check project-task-check" title="标记任务已关闭"></button>${escapeHtml(project.parent.title)}</strong>
     </div>
     <button class="task-menu" title="查看项目详情">•••</button>`;
+  const check = card.querySelector(".project-task-check");
+  check.classList.toggle("completed", ["done", "closed"].includes(project.parent.status));
+  check.addEventListener("click", event => {
+    event.stopPropagation();
+    toggleTaskCompletion(project.parent);
+  });
   card.querySelector(".task-menu").addEventListener("click", event => {
     event.stopPropagation();
     openTaskDialog(project.parent);
@@ -1301,7 +1311,7 @@ function renderProjectSchedule() {
   el.timeline.appendChild(toolbar);
   const header = document.createElement("div");
   header.className = "project-gantt-days";
-  header.style.gridTemplateColumns = `180px repeat(${buckets.length}, minmax(${state.projectScale === "day" ? 34 : 58}px, 1fr))`;
+  header.style.gridTemplateColumns = `minmax(140px, 28%) repeat(${buckets.length}, minmax(${state.projectScale === "day" ? 34 : 58}px, 1fr))`;
   header.innerHTML = `<span>任务</span>${buckets.map(bucket => `<span>${bucket.label}</span>`).join("")}`;
   el.timeline.appendChild(header);
   projectStatusGroups(projects).forEach(group => {
@@ -1319,6 +1329,10 @@ function renderProjectSchedule() {
     }
     group.projects.forEach(project => {
       const progress = ProjectSummaryPolicy.projectProgressPercent(project);
+      if (ProjectCollapsePolicy.shouldRenderSingleRow(project)) {
+        groupNode.appendChild(createProjectGanttRow(project.parent, buckets, state.projectScale));
+        return;
+      }
       const sectionCollapsed = state.projectCollapsedSections.has(project.parent.id);
       const section = document.createElement("section");
       section.className = `project-gantt-section ${project.status} ${sectionCollapsed ? "collapsed" : ""}`;
@@ -1374,6 +1388,22 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "") {
   });
   row.addEventListener("dblclick", () => openTaskDialog(task));
   return row;
+}
+
+function toggleTaskCompletion(task) {
+  if (!task) return;
+  const closing = !["done", "closed"].includes(task.status);
+  task.status = closing ? "done" : getAutomaticTaskStatus(task.id);
+  task.completedAt = closing ? new Date().toISOString() : "";
+  task.progress = closing ? 100 : ProjectSummaryPolicy.taskProgressPercent({
+    status: task.status,
+    investedHours: getTaskDuration(task.id),
+    scheduledHours: getTaskScheduledHours(task.id)
+  });
+  task.updatedAt = new Date().toISOString();
+  saveData();
+  render();
+  showToast(closing ? "任务已关闭" : "任务已恢复");
 }
 
 function taskTimelineOffset(dateKey, buckets, scale = "day") {
@@ -1944,6 +1974,13 @@ function getAutomaticTaskStatusForPayload(taskId, payload, now = new Date()) {
 
 function applyAutomaticTaskStatus(task, now = new Date()) {
   if (!task || ["done", "closed"].includes(task.status)) return false;
+  if (task.completedAt) {
+    const changed = task.status !== "done" || task.progress !== 100;
+    task.status = "done";
+    task.progress = 100;
+    if (changed) task.updatedAt = now.toISOString();
+    return changed;
+  }
   const schedule = getTaskScheduleInfo(task.id, now);
   const manualStart = task.startOverrideAt ? new Date(task.startOverrideAt) : null;
   const manualStarted = manualStart && manualStart <= now;

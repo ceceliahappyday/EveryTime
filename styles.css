@@ -393,6 +393,10 @@ button.task-group-heading {
   align-items: center;
 }
 .project-card-compact strong { font-size: 13px; line-height: 1.35; }
+.project-card-compact strong { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.project-task-check { flex: 0 0 19px; margin: 0; }
+.project-task-check.completed { color: #fff; background: var(--accent); border-color: var(--accent); }
+.project-task-check.completed::after { content: "✓"; font-size: 12px; }
 .project-card strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
 .project-card span,
 .project-card small { display: block; overflow: hidden; margin-top: 6px; color: var(--muted); white-space: nowrap; text-overflow: ellipsis; font-size: 10px; }
@@ -517,7 +521,8 @@ button.task-group-heading {
   transition: scrollbar-color .18s ease;
 }
 .timeline-wrap:has(.week-schedule),
-.timeline-wrap:has(.schedule-month-calendar) {
+.timeline-wrap:has(.schedule-month-calendar),
+.timeline-wrap:has(.project-gantt) {
   overflow-x: auto;
 }
 .timeline-wrap:hover,
@@ -569,7 +574,8 @@ button.task-group-heading {
 }
 .timeline { position: relative; min-height: calc(var(--hour-height) * 15); padding-bottom: 20px; }
 .project-gantt {
-  min-width: 760px;
+  width: max-content;
+  min-width: 100%;
   padding: 2px 4px 24px;
 }
 .project-gantt-toolbar {
@@ -688,7 +694,7 @@ button.task-group-heading {
 }
 .project-gantt-row {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
+  grid-template-columns: minmax(140px, 28%) minmax(0, 1fr);
   gap: 10px;
   align-items: center;
   min-height: 42px;
@@ -1753,7 +1759,7 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
     padding: 16px 14px;
     overflow-y: auto;
   }
-  .project-gantt { min-width: 680px; }
+  .project-gantt { min-width: 100%; }
   .task-panel-footer {
     position: static;
     margin-top: 12px;

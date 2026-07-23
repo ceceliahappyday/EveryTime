@@ -14,6 +14,10 @@
     return projects.filter(project => project.status === status);
   }
 
+  function shouldRenderSingleRow(project) {
+    return project?.parent?.id && project.children?.length === 1 && project.children[0]?.id === project.parent.id;
+  }
+
   function hasCollapsedAncestor(task, byId, collapsedIds) {
     const visited = new Set();
     let current = task;
@@ -27,6 +31,7 @@
 
   return {
     filterProjectsForStatus,
+    shouldRenderSingleRow,
     visibleTreeItems
   };
 });
