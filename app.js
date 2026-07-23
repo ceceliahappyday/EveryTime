@@ -45,6 +45,9 @@ const state = {
   filter: "planned",
   taskView: "day",
   projectScale: "day",
+  projectCollapsedGroups: new Set(),
+  projectCollapsedSections: new Set(),
+  projectCollapsedTasks: new Set(),
   editingTaskId: null,
   editingEntryId: null,
   selectedColor: "sage",
@@ -453,6 +456,10 @@ function render() {
   el.todaySummary.textContent = isToday(date) ? "专注当下，把事情一件件做好" : `查看 ${date.getMonth() + 1}月${date.getDate()}日 的工作安排`;
   document.body.classList.toggle("month-mode", state.taskView === "month");
   document.body.classList.toggle("project-mode", state.taskView === "project");
+  el.viewSwitcher.querySelectorAll("button[data-view]").forEach(button => {
+    button.classList.toggle("active", button.dataset.view === state.taskView);
+  });
+  el.viewSwitcher.scrollIntoView({ block: "nearest", inline: "nearest" });
   renderWeek();
   renderTasks();
   renderSchedule();
@@ -656,32 +663,24 @@ function renderProjectTaskList(tasks) {
   }
   projectStatusGroups(projects).forEach(group => {
     if (!group.projects.length) return;
-    const heading = document.createElement("div");
+    const collapsed = state.projectCollapsedGroups.has(group.status);
+    const heading = document.createElement("button");
     heading.className = `task-group-heading project-status-heading ${group.status}`;
-    heading.innerHTML = `<strong>${group.label}</strong><span>${group.projects.length} 项</span>`;
+    heading.type = "button";
+    heading.innerHTML = `<strong><i>${collapsed ? "▸" : "▾"}</i>${group.label}</strong><span>${group.projects.length} 项</span>`;
+    heading.addEventListener("click", () => toggleProjectGroup(group.status));
     el.taskList.appendChild(heading);
+    if (collapsed) return;
     group.projects.forEach(project => el.taskList.appendChild(createProjectCard(project)));
   });
 }
 
 function createProjectCard(project) {
   const card = document.createElement("article");
-  card.className = `project-card ${project.status}`;
-  const progress = ProjectSummaryPolicy.projectProgressPercent(project);
-  const firstStart = project.firstStartIso ? formatDateTime(project.firstStartIso) : "未开始";
-  const completed = project.lastCompletedIso ? formatDateTime(project.lastCompletedIso) : "未完成";
+  card.className = `project-card project-card-compact ${project.status}`;
   card.innerHTML = `
     <div>
       <strong>${escapeHtml(project.parent.title)}</strong>
-      <span class="project-status-row">
-        <b>${projectStatusLabel(project.status)}</b>
-        <i>计划 ${project.statusCounts.planned}</i>
-        <i>进行 ${project.statusCounts.in_progress}</i>
-        <i>结束 ${project.statusCounts.ended}</i>
-      </span>
-      <span>${project.taskCount} 个任务 · 完成 ${project.doneCount} 个 · ${formatHours(project.totalHours)}</span>
-      <small>开始 ${firstStart} · 最近完成 ${completed}</small>
-      <div class="task-progress-track" title="项目进度 ${progress}%"><i style="width:${progress}%"></i></div>
     </div>
     <button class="task-menu" title="查看项目详情">•••</button>`;
   card.querySelector(".task-menu").addEventListener("click", event => {
@@ -690,6 +689,13 @@ function createProjectCard(project) {
   });
   card.addEventListener("dblclick", () => openTaskDialog(project.parent));
   return card;
+}
+
+function toggleProjectGroup(status) {
+  if (state.projectCollapsedGroups.has(status)) state.projectCollapsedGroups.delete(status);
+  else state.projectCollapsedGroups.add(status);
+  renderTasks();
+  if (state.taskView === "project") renderSchedule();
 }
 
 function projectStatusGroups(projects) {
@@ -1265,22 +1271,40 @@ function renderProjectSchedule() {
   el.timeline.appendChild(header);
   projectStatusGroups(projects).forEach(group => {
     if (!group.projects.length) return;
+    const groupCollapsed = state.projectCollapsedGroups.has(group.status);
     const groupNode = document.createElement("section");
-    groupNode.className = `project-gantt-group ${group.status}`;
-    groupNode.innerHTML = `<div class="project-gantt-group-heading"><strong>${group.label}</strong><span>${group.projects.length} 项</span></div>`;
+    groupNode.className = `project-gantt-group ${group.status} ${groupCollapsed ? "collapsed" : ""}`;
+    groupNode.innerHTML = `<button class="project-gantt-group-heading" type="button"><strong><i>${groupCollapsed ? "▸" : "▾"}</i>${group.label}</strong><span>${group.projects.length} 项</span></button>`;
+    groupNode.querySelector(".project-gantt-group-heading").addEventListener("click", () => {
+      toggleProjectGroup(group.status);
+    });
+    if (groupCollapsed) {
+      el.timeline.appendChild(groupNode);
+      return;
+    }
     group.projects.forEach(project => {
       const progress = ProjectSummaryPolicy.projectProgressPercent(project);
+      const sectionCollapsed = state.projectCollapsedSections.has(project.parent.id);
       const section = document.createElement("section");
-      section.className = `project-gantt-section ${project.status}`;
+      section.className = `project-gantt-section ${project.status} ${sectionCollapsed ? "collapsed" : ""}`;
       section.innerHTML = `<header>
         <div>
-          <h3>${escapeHtml(project.parent.title)}</h3>
+          <h3><button class="project-collapse-button" type="button">${sectionCollapsed ? "▸" : "▾"}</button>${escapeHtml(project.parent.title)}</h3>
           <p>${projectStatusLabel(project.status)} · ${project.taskCount} 个任务 · 完成 ${project.doneCount} 个 · ${formatHours(project.totalHours)} · 进度 ${progress}%</p>
         </div>
         <button class="soft-button" type="button">详情</button>
       </header>`;
-      section.querySelector("button").addEventListener("click", () => openTaskDialog(project.parent));
-      project.children.forEach(task => section.appendChild(createProjectGanttRow(task, buckets, state.projectScale, project.parent.id)));
+      section.querySelector(".project-collapse-button").addEventListener("click", event => {
+        event.stopPropagation();
+        toggleProjectSection(project.parent.id);
+      });
+      section.querySelector(".soft-button").addEventListener("click", () => openTaskDialog(project.parent));
+      if (!sectionCollapsed) {
+        ProjectCollapsePolicy.visibleTreeItems({
+          tasks: project.children,
+          collapsedIds: state.projectCollapsedTasks
+        }).forEach(task => section.appendChild(createProjectGanttRow(task, buckets, state.projectScale, project.parent.id)));
+      }
       groupNode.appendChild(section);
     });
     el.timeline.appendChild(groupNode);
@@ -1293,17 +1317,35 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "") {
   row.style.setProperty("--task-depth", getTaskDepth(task, rootId));
   const span = taskTimelineSpan(task, buckets, scale);
   const entries = getTaskScheduleEntries(task.id);
+  const hasChildren = getChildTasks(task.id).length > 0;
+  const collapsed = state.projectCollapsedTasks.has(task.id);
   row.innerHTML = `
     <div class="project-gantt-label">
-      <strong>${escapeHtml(task.title)}</strong>
+      <strong>${hasChildren ? `<button class="project-collapse-button task-tree-toggle" type="button">${collapsed ? "▸" : "▾"}</button>` : `<span class="task-tree-spacer"></span>`}${escapeHtml(task.title)}</strong>
       <span>${statusLabel(task.status)} · ${formatHours(getTaskDuration(task.id))}</span>
     </div>
     <div class="project-gantt-lane">
       <i style="left:${span.left}%;width:${span.width}%"></i>
       ${entries.map(item => `<em style="left:${taskEntryOffset(item.dateKey, buckets, scale)}%" title="${item.dateKey} ${formatTime(item.entry.start)}-${formatTime(item.entry.end)}"></em>`).join("")}
     </div>`;
+  row.querySelector(".task-tree-toggle")?.addEventListener("click", event => {
+    event.stopPropagation();
+    toggleProjectTask(task.id);
+  });
   row.addEventListener("dblclick", () => openTaskDialog(task));
   return row;
+}
+
+function toggleProjectSection(projectId) {
+  if (state.projectCollapsedSections.has(projectId)) state.projectCollapsedSections.delete(projectId);
+  else state.projectCollapsedSections.add(projectId);
+  renderSchedule();
+}
+
+function toggleProjectTask(taskId) {
+  if (state.projectCollapsedTasks.has(taskId)) state.projectCollapsedTasks.delete(taskId);
+  else state.projectCollapsedTasks.add(taskId);
+  renderSchedule();
 }
 
 function getTaskDepth(task, rootId = "") {

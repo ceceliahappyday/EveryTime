@@ -89,7 +89,7 @@ button { color: inherit; }
 
 .date-controls { justify-content: center; gap: 10px; min-width: 180px; }
 .header-actions {
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 10px;
   min-width: 0;
   overflow-x: auto;
@@ -109,8 +109,13 @@ body.in-desktop .window-controls { display: flex; }
 .window-controls button:hover { color: var(--ink); background: rgba(120,130,124,.16); }
 .window-controls .window-close:hover { color: #fff; background: #b94c48; }
 .header-view-switcher {
+  position: sticky;
+  left: 0;
+  z-index: 12;
+  flex: 0 0 auto;
   display: grid; grid-template-columns: repeat(4, 38px); gap: 3px;
   padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: #eeede8;
+  box-shadow: 8px 0 18px rgba(248,247,243,.75);
 }
 .header-view-switcher button { padding: 7px 3px; color: var(--muted); background: transparent; border-radius: 7px; font-size: 10px; }
 .header-view-switcher button.active { color: #fff; background: var(--accent); font-weight: 700; }
@@ -302,7 +307,20 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between;
   padding: 8px 4px 6px; color: var(--muted); background: #f8f7f3; font-size: 10px;
 }
+button.task-group-heading {
+  width: 100%;
+  align-items: center;
+  border: 0;
+  text-align: left;
+}
 .task-group-heading strong { color: var(--ink); font-size: 11px; }
+.task-group-heading strong i {
+  display: inline-block;
+  width: 14px;
+  margin-right: 2px;
+  color: currentColor;
+  font-style: normal;
+}
 .month-calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .month-weekday { padding: 5px 0; color: var(--muted); text-align: center; font-size: 9px; }
 .month-cell { min-height: 55px; padding: 5px; border: 1px solid var(--line-soft); border-radius: 8px; background: #fff; cursor: pointer; }
@@ -364,6 +382,12 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   background: rgba(255,255,255,.70);
   box-shadow: 0 7px 18px rgba(58,61,54,.05);
 }
+.project-card-compact {
+  margin-bottom: 8px;
+  padding: 11px 12px;
+  align-items: center;
+}
+.project-card-compact strong { font-size: 13px; line-height: 1.35; }
 .project-card strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
 .project-card span,
 .project-card small { display: block; overflow: hidden; margin-top: 6px; color: var(--muted); white-space: nowrap; text-overflow: ellipsis; font-size: 10px; }
@@ -606,12 +630,20 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   margin-bottom: 12px;
 }
 .project-gantt-section h3 { margin: 0; font-size: 15px; }
+.project-gantt-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.project-gantt-section h3 button { flex: 0 0 auto; }
 .project-gantt-section p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
 .project-gantt-group { margin-bottom: 16px; }
 .project-gantt-group-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
   margin: 12px 0 8px;
   padding: 8px 10px;
   border: 1px solid var(--line-soft);
@@ -619,8 +651,35 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   color: var(--muted);
   background: rgba(255,255,255,.58);
   font-size: 10px;
+  text-align: left;
 }
 .project-gantt-group-heading strong { color: var(--ink); font-size: 12px; }
+.project-gantt-group-heading strong i {
+  display: inline-block;
+  width: 14px;
+  margin-right: 3px;
+  color: currentColor;
+  font-style: normal;
+}
+.project-collapse-button,
+.task-tree-toggle {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--muted);
+  background: rgba(255,255,255,.54);
+  border: 1px solid var(--line-soft);
+  font-size: 11px;
+  line-height: 1;
+}
+.project-collapse-button:hover,
+.task-tree-toggle:hover {
+  color: var(--ink);
+  border-color: var(--line);
+  background: rgba(255,255,255,.82);
+}
 .project-gantt-row {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr);
@@ -637,7 +696,21 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   width: calc(var(--task-depth, 0) * 10px);
   max-width: 40px;
 }
-.project-gantt-label strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+.project-gantt-label strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+.task-tree-spacer {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+}
 .project-gantt-label span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
 .project-gantt-lane {
   position: relative;
@@ -1157,6 +1230,7 @@ body.in-desktop.glass-mode .task-group-heading { background: transparent; }
 body.in-desktop.glass-mode .task-panel-footer,
 body.in-desktop.glass-mode .view-switcher,
 body.in-desktop.glass-mode .header-view-switcher { background: rgba(0,0,0,.30); }
+body.in-desktop.glass-mode .header-view-switcher { box-shadow: 8px 0 18px rgba(0,0,0,.32); }
 body.in-desktop.glass-mode.desktop-locked .app-shell { opacity: .58; }
 body.in-desktop.glass-mode .task-tabs button.active { color: #fff; background: rgba(71,135,153,.24); }
 body.in-desktop.glass-mode .task-tabs button { color: #a9bac7; }
@@ -1317,6 +1391,17 @@ body.in-desktop.glass-mode .project-gantt-section p,
 body.in-desktop.glass-mode .project-gantt-label span { color: #d2dee6; }
 body.in-desktop.glass-mode .project-gantt-group-heading strong,
 body.in-desktop.glass-mode .project-gantt-toolbar strong { color: #f4fbff; }
+body.in-desktop.glass-mode .project-collapse-button,
+body.in-desktop.glass-mode .task-tree-toggle {
+  color: #d2e5ef;
+  background: rgba(0,0,0,.18);
+  border-color: rgba(172,211,233,.30);
+}
+body.in-desktop.glass-mode .project-collapse-button:hover,
+body.in-desktop.glass-mode .task-tree-toggle:hover {
+  color: #fff;
+  background: rgba(73,145,166,.28);
+}
 body.in-desktop.glass-mode .project-gantt-lane { background: rgba(255,255,255,.10); }
 body.in-desktop.glass-mode input,
 body.in-desktop.glass-mode select,
