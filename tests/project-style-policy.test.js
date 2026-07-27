@@ -21,4 +21,10 @@ assert.doesNotMatch(
   "gantt should not create an oversized draggable horizontal surface"
 );
 
+assert.match(
+  styles,
+  /\.project-gantt-days\s*\{[^}]*width:\s*max-content[^}]*min-width:\s*100%/s,
+  "gantt header should keep all date columns available inside the horizontal scroll area"
+);
+
 console.log("project style policy tests passed");

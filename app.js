@@ -1323,7 +1323,9 @@ function renderProjectSchedule() {
   el.timeline.appendChild(toolbar);
   const header = document.createElement("div");
   header.className = "project-gantt-days";
-  header.style.gridTemplateColumns = `minmax(140px, 28%) repeat(${buckets.length}, minmax(${state.projectScale === "day" ? 34 : 58}px, 1fr))`;
+  const ganttLabelWidth = 180;
+  const ganttBucketWidth = state.projectScale === "day" ? 44 : 72;
+  header.style.gridTemplateColumns = `${ganttLabelWidth}px repeat(${buckets.length}, ${ganttBucketWidth}px)`;
   header.innerHTML = `<span>任务</span>${buckets.map(bucket => `<span>${bucket.label}</span>`).join("")}`;
   el.timeline.appendChild(header);
   projectStatusGroups(projects).forEach(group => {
@@ -1374,6 +1376,7 @@ function renderProjectSchedule() {
 function createProjectGanttRow(task, buckets, scale = "day", rootId = "") {
   const row = document.createElement("div");
   row.className = `project-gantt-row ${task.status}`;
+  row.style.gridTemplateColumns = `${180}px minmax(0, 1fr)`;
   row.style.setProperty("--task-depth", getTaskDepth(task, rootId));
   const span = taskActualTimelineSpan(task, buckets, scale);
   const cutoff = task.dueDate ? taskTimelineOffset(task.dueDate, buckets, scale) : null;

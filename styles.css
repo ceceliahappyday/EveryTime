@@ -611,6 +611,8 @@ button.task-group-heading {
 }
 .project-scale-switcher button.active { color: #fff; background: var(--accent); font-weight: 800; }
 .project-gantt-days {
+  width: max-content;
+  min-width: 100%;
   position: sticky;
   top: 48px;
   z-index: 5;
@@ -628,6 +630,8 @@ button.task-group-heading {
 }
 .project-gantt-days span:first-child { color: var(--ink); font-size: 10px; }
 .project-gantt-section {
+  width: max-content;
+  min-width: 100%;
   margin-bottom: 14px;
   padding: 13px;
   border: 1px solid var(--line-soft);
@@ -651,7 +655,7 @@ button.task-group-heading {
 .project-gantt-section h3 button { flex: 0 0 auto; }
 .project-gantt-section h3 small { color: var(--muted); font-size: 9px; font-weight: 700; }
 .project-gantt-section p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
-.project-gantt-group { margin-bottom: 16px; }
+.project-gantt-group { width: max-content; min-width: 100%; margin-bottom: 16px; }
 .project-gantt-group-heading {
   display: flex;
   justify-content: space-between;
