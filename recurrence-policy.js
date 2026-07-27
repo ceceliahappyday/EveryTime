@@ -40,9 +40,31 @@
     });
   }
 
+  function dedupeRecurringTasksForProject(tasks = [], currentMonth = "") {
+    const recurring = tasks.filter(task => task?.recurrence?.frequency === "monthly" && task.dueDate);
+    const preferred = new Map();
+    recurring.forEach(task => {
+      const key = String(task.title || "").trim().toLocaleLowerCase();
+      const current = preferred.get(key);
+      if (!current || (task.dueDate.slice(0, 7) === currentMonth && current.dueDate.slice(0, 7) !== currentMonth) || task.dueDate < current.dueDate) {
+        preferred.set(key, task);
+      }
+    });
+    const keepIds = new Set([...preferred.values()].map(task => task.id));
+    const aliases = new Map();
+    recurring.forEach(task => {
+      const keep = preferred.get(String(task.title || "").trim().toLocaleLowerCase());
+      if (keep && keep.id !== task.id) aliases.set(task.id, keep.id);
+    });
+    return tasks
+      .filter(task => task?.recurrence?.frequency !== "monthly" || !task.dueDate || keepIds.has(task.id))
+      .map(task => aliases.has(task.parentId) ? { ...task, parentId: aliases.get(task.parentId) } : task);
+  }
+
   return {
     currentMonthKey,
     dedupeRecurringTasksForDisplay,
+    dedupeRecurringTasksForProject,
     shouldGenerateRecurringMonth,
     isFutureRecurringInstance
   };

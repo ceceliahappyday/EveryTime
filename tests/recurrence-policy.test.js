@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const { shouldGenerateRecurringMonth, dedupeRecurringTasksForDisplay } = require("../recurrence-policy");
+const { shouldGenerateRecurringMonth, dedupeRecurringTasksForDisplay, dedupeRecurringTasksForProject } = require("../recurrence-policy");
 
 assert.equal(
   shouldGenerateRecurringMonth({
@@ -21,6 +21,11 @@ assert.deepEqual(
   dedupeRecurringTasksForDisplay(recurringTasks).map(task => task.id),
   ["template", "next-month"],
   "one recurring task instance should be shown per month while preserving other months"
+);
+assert.deepEqual(
+  dedupeRecurringTasksForProject(recurringTasks, "2026-07").map(task => task.id),
+  ["template"],
+  "project view should show one logical recurring task across months"
 );
 
 assert.equal(

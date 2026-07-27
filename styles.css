@@ -32,6 +32,7 @@ body {
     var(--paper);
 }
 body.in-desktop { background: transparent; }
+body.in-desktop .app-shell { width: calc(100% - 40px); max-width: none; }
 body.in-desktop:not(.glass-mode) .app-shell { background: rgba(7, 24, 36, .72); }
 body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
 .topbar { -webkit-app-region: drag; }
@@ -759,6 +760,26 @@ button.task-group-heading {
   color: #fff;
   white-space: nowrap;
 }
+.gantt-lane-status {
+  position: absolute;
+  z-index: 2;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  padding: 2px 6px;
+  border: 1px solid rgba(255,255,255,.32);
+  border-radius: 999px;
+  color: #eaf5f8;
+  background: rgba(20, 38, 48, .62);
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.gantt-lane-status.has-actual { left: auto; right: 8px; }
 .project-gantt-lane i.gantt-actual-bar b {
   overflow: hidden;
   font-size: 8px;
@@ -1810,4 +1831,16 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
   .task-menu { grid-column: 2; justify-self: end; margin-top: -4px; }
   .form-row { grid-template-columns: 1fr; gap: 8px; }
   .task-detail-summary { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  .modal { width: calc(100% - 16px); }
+  .modal form { padding: 16px; }
+  .modal-actions { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .modal-actions > span { display: none; }
+  .modal-actions .danger-button,
+  .modal-actions #closeTaskButton { grid-column: span 1; }
+  .modal-actions [data-close-dialog] { grid-column: 1; }
+  .modal-actions .primary-button { grid-column: 2; }
+  .modal-actions > button { min-width: 0; width: 100%; }
 }

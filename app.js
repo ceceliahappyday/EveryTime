@@ -764,7 +764,10 @@ function projectStatusLabel(status) {
 }
 
 function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
-  const visible = RecurringPolicy.dedupeRecurringTasksForDisplay(uniqueTasks(tasks).filter(task => !isHiddenFutureRecurringInstance(task)));
+  const visible = RecurringPolicy.dedupeRecurringTasksForProject(
+    uniqueTasks(tasks).filter(task => !isHiddenFutureRecurringInstance(task)),
+    RecurringPolicy.currentMonthKey()
+  );
   const visibleIds = new Set(visible.map(task => task.id));
   const roots = visible
     .filter(task => !task.parentId || !visibleIds.has(task.parentId))
@@ -1393,7 +1396,8 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "") {
       <strong>${hasChildren ? `<button class="project-collapse-button task-tree-toggle" type="button">${collapsed ? "▸" : "▾"}</button>` : `<span class="task-tree-spacer"></span>`}${escapeHtml(task.title)} <small>${statusLabel(task.status)} · ${progress}%</small></strong>
     </div>
     <div class="project-gantt-lane">
-      ${span ? `<i class="gantt-actual-bar" style="left:${span.left}%;width:${span.width}%"><b>${statusLabel(task.status)} ${progress}%</b></i>` : ""}
+      ${span ? `<i class="gantt-actual-bar" style="left:${span.left}%;width:${span.width}%"></i>` : ""}
+      <span class="gantt-lane-status${span ? " has-actual" : ""}">${statusLabel(task.status)} · ${progress}%</span>
       ${cutoff === null ? "" : `<u class="gantt-cutoff-line" style="left:${cutoff}%" title="目标截止：${formatDue(task)}"></u>`}
       ${entries.map(item => `<em style="left:${taskEntryOffset(item.dateKey, buckets, scale)}%" title="${item.dateKey} ${formatTime(item.entry.start)}-${formatTime(item.entry.end)}"></em>`).join("")}
     </div>`;

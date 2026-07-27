@@ -26,5 +26,15 @@ assert.match(
   /\.project-gantt-days\s*\{[^}]*width:\s*max-content[^}]*min-width:\s*100%/s,
   "gantt header should keep all date columns available inside the horizontal scroll area"
 );
+assert.match(
+  styles,
+  /\.gantt-lane-status\s*\{/s,
+  "gantt status should remain visible even when there is no colored actual bar"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode\s+\.app-shell|body\.in-desktop\s+\.app-shell/s,
+  "desktop shell should be allowed to use the resized window width"
+);
 
 console.log("project style policy tests passed");
