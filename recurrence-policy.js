@@ -19,8 +19,30 @@
     return !!taskMonth && !!currentMonth && taskMonth > currentMonth;
   }
 
+  function dedupeRecurringTasksForDisplay(tasks = []) {
+    const seen = new Map();
+    const aliases = new Map();
+    const kept = tasks.filter(task => {
+      if (task?.recurrence?.frequency !== "monthly" || !task.dueDate) return true;
+      const title = String(task.title || "").trim().toLocaleLowerCase();
+      const key = `${title}|${task.dueDate.slice(0, 7)}`;
+      if (seen.has(key)) {
+        aliases.set(task.id, seen.get(key));
+        return false;
+      }
+      seen.set(key, task.id);
+      return true;
+    });
+    return kept.map(task => {
+      const parentId = aliases.get(task.parentId);
+      if (!parentId) return task;
+      return { ...task, parentId };
+    });
+  }
+
   return {
     currentMonthKey,
+    dedupeRecurringTasksForDisplay,
     shouldGenerateRecurringMonth,
     isFutureRecurringInstance
   };

@@ -85,6 +85,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     "settingCompact", "settingStartAtLogin", "settingsAppVersion", "settingsDataPath", "settingsExportPath"
   ].forEach(id => el[id] = document.getElementById(id));
 
+  if (!el.closeTaskButton) {
+    el.closeTaskButton = document.createElement("button");
+    el.closeTaskButton.type = "button";
+    el.closeTaskButton.className = "soft-button hidden";
+    el.closeTaskButton.id = "closeTaskButton";
+    el.closeTaskButton.textContent = "关闭任务";
+    el.deleteTaskButton.parentElement.insertBefore(el.closeTaskButton, el.deleteTaskButton.nextSibling);
+  }
+
   await initPersistentStorage();
   migrateData();
   ensureEntryTaskLinks();
@@ -260,6 +269,7 @@ function bindEvents() {
     saveTask();
   });
   el.deleteTaskButton.addEventListener("click", deleteEditingTask);
+  el.closeTaskButton.addEventListener("click", closeEditingTask);
   el.taskProgress.addEventListener("input", () => el.taskProgressValue.textContent = `${el.taskProgress.value}%`);
   el.taskStatus.addEventListener("change", updateProgressAvailability);
   el.taskParent.addEventListener("change", updateParentRequirements);
@@ -508,9 +518,9 @@ function renderTasks() {
   el.taskList.innerHTML = "";
   el.taskTabs.classList.remove("hidden");
   el.taskTabs.querySelectorAll("button").forEach(item => item.classList.toggle("active", item.dataset.filter === state.filter));
-  const allVisibleTasks = getAllTasks()
+  const allVisibleTasks = RecurringPolicy.dedupeRecurringTasksForDisplay(getAllTasks()
     .map(({ task }) => task)
-    .filter(task => !isHiddenFutureRecurringInstance(task));
+    .filter(task => !isHiddenFutureRecurringInstance(task)));
 
   if (state.taskView === "project") {
     renderProjectTaskList(allVisibleTasks);
@@ -754,7 +764,7 @@ function projectStatusLabel(status) {
 }
 
 function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
-  const visible = uniqueTasks(tasks).filter(task => !isHiddenFutureRecurringInstance(task));
+  const visible = RecurringPolicy.dedupeRecurringTasksForDisplay(uniqueTasks(tasks).filter(task => !isHiddenFutureRecurringInstance(task)));
   const visibleIds = new Set(visible.map(task => task.id));
   const roots = visible
     .filter(task => !task.parentId || !visibleIds.has(task.parentId))
@@ -958,7 +968,7 @@ function tasksForDateScope(dateKey) {
     const linked = findTask(entry.taskId)?.task;
     if (linked && !isHiddenFutureRecurringInstance(linked)) tasks.push(linked);
   });
-  return uniqueTasks(tasks);
+  return RecurringPolicy.dedupeRecurringTasksForDisplay(uniqueTasks(tasks));
 }
 
 function isTaskStartedOnDate(task, dateKey) {
@@ -1036,6 +1046,8 @@ function openTaskDialog(task = null) {
   fillParentOptions(task);
   el.taskParent.value = task?.parentId || "";
   el.deleteTaskButton.classList.toggle("hidden", !task);
+  el.closeTaskButton.classList.toggle("hidden", !task);
+  el.closeTaskButton.textContent = task && ["done", "closed"].includes(task.status) ? "恢复任务" : "关闭任务";
   updateProgressAvailability();
   updateParentRequirements();
   updateRecurringOptions();
@@ -1390,6 +1402,13 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "") {
   return row;
 }
 
+function closeEditingTask() {
+  const task = state.editingTaskId ? findTask(state.editingTaskId)?.task : null;
+  if (!task) return;
+  el.taskDialog.close();
+  toggleTaskCompletion(task);
+}
+
 function toggleTaskCompletion(task) {
   if (!task) return;
   const closing = !["done", "closed"].includes(task.status);
@@ -1640,7 +1659,9 @@ function taskTracesForDate(dateKey) {
   completedTasksForDate(dateKey).forEach(task => {
     traces.set(task.id, traces.get(task.id) || { task });
   });
-  return [...traces.values()].sort((a, b) => `${a.task.dueDate || ""} ${a.task.dueTime || ""}`.localeCompare(`${b.task.dueDate || ""} ${b.task.dueTime || ""}`));
+  return RecurringPolicy.dedupeRecurringTasksForDisplay([...traces.values()].map(item => item.task))
+    .map(task => ({ task }))
+    .sort((a, b) => `${a.task.dueDate || ""} ${a.task.dueTime || ""}`.localeCompare(`${b.task.dueDate || ""} ${b.task.dueTime || ""}`));
 }
 
 function renderTaskTraceList(traces, mode) {

@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const { shouldGenerateRecurringMonth } = require("../recurrence-policy");
+const { shouldGenerateRecurringMonth, dedupeRecurringTasksForDisplay } = require("../recurrence-policy");
 
 assert.equal(
   shouldGenerateRecurringMonth({
@@ -10,6 +10,17 @@ assert.equal(
   }),
   false,
   "viewing a future month must not pre-generate recurring task instances"
+);
+
+const recurringTasks = [
+  { id: "template", title: "月度工作复盘", dueDate: "2026-07-25", recurrence: { frequency: "monthly" }, recurrenceGroupId: "monthly-review" },
+  { id: "instance", title: "月度工作复盘", dueDate: "2026-07-25", recurrence: { frequency: "monthly" }, recurrenceGroupId: "monthly-review" },
+  { id: "next-month", title: "月度工作复盘", dueDate: "2026-08-25", recurrence: { frequency: "monthly" }, recurrenceGroupId: "monthly-review" }
+];
+assert.deepEqual(
+  dedupeRecurringTasksForDisplay(recurringTasks).map(task => task.id),
+  ["template", "next-month"],
+  "one recurring task instance should be shown per month while preserving other months"
 );
 
 assert.equal(
