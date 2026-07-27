@@ -574,8 +574,9 @@ button.task-group-heading {
 }
 .timeline { position: relative; min-height: calc(var(--hour-height) * 15); padding-bottom: 20px; }
 .project-gantt {
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 2px 4px 24px;
 }
 .project-gantt-toolbar {

@@ -10,4 +10,15 @@ assert.match(
   "project status headings should scroll with the project list instead of sticking over cards"
 );
 
+assert.match(
+  styles,
+  /\.project-gantt\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s,
+  "gantt container should stay inside the visible panel instead of expanding to content width"
+);
+assert.doesNotMatch(
+  styles,
+  /\.project-gantt\s*\{[^}]*width:\s*max-content/s,
+  "gantt should not create an oversized draggable horizontal surface"
+);
+
 console.log("project style policy tests passed");
