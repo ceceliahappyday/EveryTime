@@ -36,5 +36,15 @@ assert.match(
   /body\.in-desktop\.glass-mode\s+\.app-shell|body\.in-desktop\s+\.app-shell/s,
   "desktop shell should be allowed to use the resized window width"
 );
+assert.match(
+  styles,
+  /body\.in-desktop\s+\.topbar\s*\{/s,
+  "desktop topbar should use a compact responsive grid inside a resized window"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\s+\.header-actions\s+\.primary-button\s*\{[^}]*min-width:/s,
+  "desktop quick-add button should remain fully visible"
+);
 
 console.log("project style policy tests passed");

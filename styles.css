@@ -55,7 +55,7 @@ button { color: inherit; }
 .topbar {
   height: 96px;
   display: grid;
-  grid-template-columns: minmax(230px, .8fr) minmax(180px, auto) minmax(0, 1.6fr);
+  grid-template-columns: minmax(260px, .8fr) minmax(250px, auto) minmax(0, 1.6fr);
   column-gap: 16px;
   align-items: center;
   padding: 0 28px;
@@ -65,6 +65,7 @@ button { color: inherit; }
 
 .brand, .date-controls, .header-actions { min-width: 0; display: flex; align-items: center; }
 .brand { gap: 13px; }
+.brand > div:last-child { min-width: 0; }
 .brand-mark {
   width: 42px; height: 42px; display: grid; place-items: center;
   border-radius: 13px; color: #fff; background: var(--accent);
@@ -101,6 +102,7 @@ button { color: inherit; }
 .header-actions::-webkit-scrollbar { width: 0; height: 0; }
 .header-actions > * { flex: 0 0 auto; }
 .header-actions button { white-space: nowrap; }
+.header-actions .primary-button { min-width: 122px; }
 .window-controls { gap: 3px; margin-left: 2px; }
 body.in-desktop .window-controls { display: flex; }
 .window-controls button {
@@ -1717,6 +1719,26 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
   .header-actions > .soft-button::first-letter { font-size: 13px; }
   .primary-button { padding-left: 13px; padding-right: 13px; }
 }
+
+/* The desktop window can be narrower than the physical monitor. Keep the
+   complete command row usable inside that resized shell. */
+body.in-desktop .topbar {
+  grid-template-columns: minmax(220px, .72fr) minmax(230px, auto) minmax(0, 1.28fr);
+  column-gap: 8px;
+  padding-inline: 18px;
+}
+body.in-desktop .header-actions { gap: 5px; }
+body.in-desktop .header-actions > .soft-button {
+  padding-inline: 9px;
+  font-size: 0;
+}
+body.in-desktop .header-actions > .soft-button::first-letter { font-size: 14px; }
+body.in-desktop .header-actions .primary-button {
+  min-width: 112px;
+  padding-inline: 10px;
+  font-size: 12px;
+}
+body.in-desktop .header-actions .window-controls { gap: 1px; }
 
 @media (max-width: 1120px) {
   .topbar { grid-template-columns: auto 1fr; padding: 0 18px; }
