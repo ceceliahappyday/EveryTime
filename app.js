@@ -75,7 +75,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "recurringOptions", "taskActualStart", "taskActualEnd",
     "taskBusinessBackground", "taskProblemReason", "taskDeliveryNote", "businessBackgroundLabel",
     "problemReasonLabel", "taskDescription",
-    "deleteTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle",
+    "deleteTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle", "entryType",
     "entryTaskLink", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast", "pinWindow", "desktopLock", "glassMode",
     "updateProgress", "updateProgressText", "updateProgressBar",
@@ -134,6 +134,11 @@ function migrateData() {
     day.tasks ||= [];
     day.entries ||= [];
     day.note ||= "";
+    day.entries.forEach(entry => {
+      entry.entryType ||= entry.taskId ? "task_work" : "calendar";
+      entry.note ||= "";
+      entry.color ||= "sage";
+    });
     day.tasks.forEach(task => {
       task.dueDate ??= dateKey;
       task.dueTime ??= "18:00";
@@ -167,21 +172,8 @@ function migrateData() {
 }
 
 function ensureEntryTaskLinks() {
-  let changed = false;
-  Object.entries(state.data).forEach(([dateKey, day]) => {
-    (day.entries || []).forEach(entry => {
-      if (entry.taskId || !entry.title?.trim()) return;
-      const task = createTaskFromEntryPayload({
-        title: entry.title,
-        start: entry.start,
-        end: entry.end,
-        note: entry.note || ""
-      }, dateKey, "从日程自动补建，确保左侧待办状态与右侧日程一致。");
-      entry.taskId = task.id;
-      changed = true;
-    });
-  });
-  if (changed) saveData();
+  // Historical entries without a task link remain calendar-only records.
+  // New task links are created explicitly from the entry type selector.
 }
 
 function saveData() {
@@ -291,6 +283,7 @@ function bindEvents() {
     event.preventDefault();
     saveEntry();
   });
+  el.entryType.addEventListener("change", updateEntryTypeControls);
   el.entryStart.addEventListener("change", () => {
     if (Number(el.entryEnd.value) <= Number(el.entryStart.value)) el.entryEnd.value = Math.min(Number(el.entryStart.value) + 1, 22);
   });
@@ -1506,7 +1499,7 @@ function renderDayTimeline() {
     item.style.height = `${Math.max(height, 38)}px`;
     item.style.setProperty("--entry-column", column);
     item.style.setProperty("--entry-columns", columns);
-    item.innerHTML = `<strong>${escapeHtml(entry.title)}</strong>
+    item.innerHTML = `<strong>${escapeHtml(entry.title)} <small class="schedule-entry-type">${entry.taskId ? "任务投入" : "会议 / 日程"}</small></strong>
       <span>${formatTime(entry.start)} – ${formatTime(entry.end)} · ${formatHours(entry.end - entry.start)}</span>
       ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}`;
     item.addEventListener("click", () => openEntryDialog(entry.start, entry));
@@ -1576,7 +1569,8 @@ function renderWeekSchedule() {
     const taskTraces = taskTracesForDate(key);
     column.innerHTML = `<h4>${WEEKDAY_NAMES[date.getDay()]} · ${date.getMonth() + 1}/${date.getDate()}</h4>
       <button type="button" class="week-add-task" data-date="${key}">＋ 新建待办</button>
-      ${renderTaskTraceList(taskTraces, "week")}`;
+      ${renderTaskTraceList(taskTraces, "week")}
+      ${renderCalendarEntryList(getCalendarEntriesForDate(key), "week")}`;
     column.querySelector(".week-add-task").addEventListener("click", event => {
       event.stopPropagation();
       openTaskDialogForDate(key);
@@ -1589,6 +1583,7 @@ function renderWeekSchedule() {
     });
     if (!taskTraces.length) column.insertAdjacentHTML("beforeend", `<div class="empty-state">暂无任务</div>`);
     bindDueTaskList(column, key);
+    bindCalendarEntryList(column, key);
     column.addEventListener("dblclick", event => {
       if (event.target === column) {
         state.selectedDate = key;
@@ -1627,6 +1622,7 @@ function renderMonthSchedule() {
     if (isToday(date)) cell.classList.add("today");
     cell.innerHTML = `<header><span>${date.getDate()}</span><span>${holidayLabel(key)}</span></header>
       ${renderTaskTraceList(taskTraces, "month")}
+      ${renderCalendarEntryList(getCalendarEntriesForDate(key), "month")}
       `;
     bindScheduleDrop(cell, key, 9);
     cell.addEventListener("click", () => {
@@ -1636,6 +1632,7 @@ function renderMonthSchedule() {
       render();
     });
     bindDueTaskList(cell, key);
+    bindCalendarEntryList(cell, key);
     el.timeline.appendChild(cell);
   }
   el.loggedHours.textContent = `${trimNumber(logged)}h`;
@@ -1750,7 +1747,7 @@ function bindScheduleDrop(target, dateKey, hour) {
 
 function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
   getDay(dateKey).entries.push({
-    id: crypto.randomUUID(), taskId: task.id, title: task.title,
+    id: crypto.randomUUID(), entryType: "task_work", taskId: task.id, title: task.title,
     start: hour, end: Math.min(hour + 1, 22), note: "", color: "sage"
   });
   applyAutomaticTaskStatus(task);
@@ -1763,10 +1760,12 @@ function openEntryDialog(hour, entry = null) {
   el.entryEyebrow.textContent = entry ? "EDIT ENTRY" : "NEW ENTRY";
   el.entryDialogTitle.textContent = entry ? "编辑日程" : "添加日程";
   el.entryTitle.value = entry?.title || "";
+  el.entryType.value = entry?.entryType || (entry?.taskId ? "task_work" : "calendar");
   fillEntryTaskOptions(entry);
   el.entryStart.value = entry?.start ?? hour;
   el.entryEnd.value = entry?.end ?? Math.min(hour + 1, 22);
   el.entryNote.value = entry?.note || "";
+  updateEntryTypeControls();
   el.deleteEntryButton.classList.toggle("hidden", !entry);
   el.colorPicker.querySelectorAll("button").forEach(item => item.classList.toggle("selected", item.dataset.color === state.selectedColor));
   el.entryDialog.showModal();
@@ -1776,13 +1775,14 @@ function openEntryDialog(hour, entry = null) {
 function saveEntry() {
   const payload = {
     title: el.entryTitle.value.trim(), start: Number(el.entryStart.value), end: Number(el.entryEnd.value),
-    note: el.entryNote.value.trim(), color: state.selectedColor
+    note: el.entryNote.value.trim(), color: state.selectedColor,
+    entryType: el.entryType.value === "task_work" ? "task_work" : "calendar"
   };
   if (!payload.title || payload.end <= payload.start) return showToast("请检查事项和时间");
   const day = getDay();
   const existingEntry = state.editingEntryId ? day.entries.find(entry => entry.id === state.editingEntryId) : null;
   const previousTaskId = existingEntry?.taskId || "";
-  payload.taskId = resolveEntryTaskLink(payload, existingEntry);
+  payload.taskId = payload.entryType === "task_work" ? resolveEntryTaskLink(payload, existingEntry) : "";
   if (state.editingEntryId) Object.assign(existingEntry, payload);
   else day.entries.push({ id: crypto.randomUUID(), ...payload });
   [previousTaskId, payload.taskId].filter(Boolean).forEach(taskId => {
@@ -1805,7 +1805,7 @@ function focusLinkedTaskFilter(taskId) {
 
 function fillEntryTaskOptions(entry = null) {
   el.entryTaskLink.innerHTML = "";
-  el.entryTaskLink.add(new Option("自动创建为待办（推荐）", "__create__"));
+  el.entryTaskLink.add(new Option("新建待办并关联", "__create__"));
   const tasks = getAllTasks().map(({ task }) => task);
   getAllTasks()
     .filter(({ task }) => TaskOptionPolicy.shouldIncludeEntryTaskOption({
@@ -1823,6 +1823,38 @@ function fillEntryTaskOptions(entry = null) {
       }), task.id));
     });
   el.entryTaskLink.value = entry?.taskId || "__create__";
+}
+
+function getCalendarEntriesForDate(dateKey) {
+  return (getDay(dateKey).entries || [])
+    .filter(entry => !entry.taskId)
+    .sort((a, b) => a.start - b.start);
+}
+
+function renderCalendarEntryList(entries, mode) {
+  if (!entries.length) return "";
+  return `<div class="calendar-entry-list ${mode}" title="会议和日程">
+    ${entries.map(entry => `<div class="calendar-entry-item" data-entry-id="${entry.id}" title="${escapeHtml(entry.title)}">
+      <span>会议 / 日程</span><strong>${escapeHtml(entry.title)}</strong><small>${formatTime(entry.start)}–${formatTime(entry.end)}</small>
+    </div>`).join("")}
+  </div>`;
+}
+
+function bindCalendarEntryList(container, dateKey) {
+  container.querySelectorAll(".calendar-entry-item").forEach(item => {
+    item.addEventListener("click", event => {
+      event.stopPropagation();
+      const entry = getDay(dateKey).entries.find(candidate => candidate.id === item.dataset.entryId);
+      if (entry) openEntryDialog(entry.start, entry);
+    });
+  });
+}
+
+function updateEntryTypeControls() {
+  const taskWork = el.entryType.value === "task_work";
+  el.entryTaskLink.disabled = !taskWork;
+  el.entryTaskLink.closest("label")?.classList.toggle("disabled-field", !taskWork);
+  if (!taskWork) el.entryTaskLink.value = "";
 }
 
 function resolveEntryTaskLink(entryPayload, existingEntry = null) {
