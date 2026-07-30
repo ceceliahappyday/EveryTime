@@ -63,6 +63,8 @@ GitHub Actions 会自动：
 3. 发布到 GitHub Releases。
 4. 上传自动更新需要的 `latest.yml` 元数据。
 
+注意：`npm run dist` 只生成本地安装包，不会发布 GitHub Release；只有推送 `v*.*.*` 标签并且 GitHub Actions 成功完成后，自动更新才可用。Release 必须同时包含安装包、`.blockmap` 和 `latest.yml`。
+
 APP 安装版启动后会通过 GitHub Releases 检查新版本，并询问用户是否下载和安装。
 
 ## 安全约定

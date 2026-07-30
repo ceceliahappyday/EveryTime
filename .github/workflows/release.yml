@@ -31,6 +31,12 @@ jobs:
       - name: Publish GitHub Release assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: EveryTime ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
           files: |
             dist/EveryTime-Setup-*.exe
             dist/EveryTime-Setup-*.exe.blockmap

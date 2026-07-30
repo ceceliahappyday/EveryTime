@@ -268,10 +268,18 @@ function configureAutoUpdater() {
   });
   autoUpdater.on("error", error => {
     mainWindow?.setProgressBar(-1);
-    sendUpdateProgress({ state: "error", percent: 0, message: `更新失败：${error?.message || String(error)}` });
+    const message = `更新失败：${error?.message || String(error)}`;
+    sendUpdateProgress({ state: "error", percent: 0, message });
     if (manualUpdateCheck) {
       manualUpdateCheck = false;
-      dialog.showErrorBox("检查更新失败", error?.message || String(error));
+      dialog.showErrorBox("检查更新失败", message);
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showMessageBox(mainWindow, {
+        type: "warning",
+        title: "自动更新暂不可用",
+        message,
+        detail: "请确认 GitHub Releases 中存在最新版本的安装包、latest.yml 和 blockmap 文件。"
+      });
     }
   });
 }
