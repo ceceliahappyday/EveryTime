@@ -548,8 +548,16 @@ function renderTasks() {
       return;
     }
     const grouped = {};
-    datesInMonth(fromDateKey(state.selectedDate)).forEach(dateKey => {
-      const tasks = tasksForDateScope(dateKey).filter(task => matchesFilter(task, state.filter));
+    const monthDates = datesInMonth(fromDateKey(state.selectedDate));
+    const tasksByDate = Object.fromEntries(monthDates.map(dateKey => [dateKey, tasksForDateScope(dateKey)]));
+    const monthCanonicalTasks = RecurringPolicy.dedupeRecurringTasksForDisplay(
+      uniqueTasks(Object.values(tasksByDate).flat())
+    );
+    const canonicalIds = new Set(monthCanonicalTasks.map(task => task.id));
+    monthDates.forEach(dateKey => {
+      const tasks = tasksByDate[dateKey]
+        .filter(task => canonicalIds.has(task.id))
+        .filter(task => matchesFilter(task, state.filter));
       if (tasks.length) grouped[dateKey] = tasks;
     });
     Object.keys(grouped).sort().forEach(key => {
