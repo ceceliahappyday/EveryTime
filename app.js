@@ -626,6 +626,25 @@ function renderTasks() {
     }
     return;
   }
+  if (state.taskView === "day" && state.filter === "in_progress") {
+    const activeTasks = orderedTasks(allVisibleTasks.filter(task =>
+      task.status === "in_progress" && isTodoListTask(task)
+    ));
+    updateTaskStats(activeTasks.concat(allVisibleTasks.filter(isUnplannedTask)));
+    if (activeTasks.length) {
+      const heading = document.createElement("div");
+      heading.className = "task-group-heading";
+      heading.innerHTML = `<strong>进行中的任务（可继续安排）</strong><span>${activeTasks.length} 项</span>`;
+      el.taskList.appendChild(heading);
+      activeTasks.forEach(task => el.taskList.appendChild(createTaskCard(task)));
+    } else {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.innerHTML = "当前没有进行中的任务<br>把任务拖入日程后，会在这里持续显示直到关闭";
+      el.taskList.appendChild(empty);
+    }
+    return;
+  }
   dates.forEach(key => {
     const tasks = tasksForDateScope(key).filter(task => matchesFilter(task, state.filter));
     if (state.taskView === "week") {
