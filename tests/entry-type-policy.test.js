@@ -11,6 +11,7 @@ assert.match(app, /payload\.taskId = payload\.entryType === "task_work"/, "calen
 assert.match(app, /entryType: "task_work", taskId: task\.id/, "dragging a task into the calendar should remain task work");
 assert.doesNotMatch(app, /从日程自动补建，确保左侧待办状态与右侧日程一致/, "unlinked calendar events should not be silently promoted to todos");
 assert.match(app, /state\.taskView === "day" && state\.filter === "in_progress"/, "day view should have a global ongoing-task pool");
-assert.match(app, /task\.status === "in_progress" && isTodoListTask\(task\)/, "unfinished work should remain draggable across dates until closed");
+assert.match(app, /isTodoListTask\(task\) && isOngoingTask\(task\)/, "unfinished work should remain draggable across dates until closed");
+assert.match(app, /getTaskScheduleInfo\(task\.id\)\?\.hasStarted/, "a historical started worklog should keep the task discoverable");
 
 console.log("entry type policy tests passed");

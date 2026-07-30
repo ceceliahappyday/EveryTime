@@ -627,9 +627,9 @@ function renderTasks() {
     return;
   }
   if (state.taskView === "day" && state.filter === "in_progress") {
-    const activeTasks = orderedTasks(allVisibleTasks.filter(task =>
-      task.status === "in_progress" && isTodoListTask(task)
-    ));
+    const activeTasks = orderedTasks(getAllTasks()
+      .map(({ task }) => task)
+      .filter(task => isTodoListTask(task) && isOngoingTask(task)));
     updateTaskStats(activeTasks.concat(allVisibleTasks.filter(isUnplannedTask)));
     if (activeTasks.length) {
       const heading = document.createElement("div");
@@ -2012,6 +2012,12 @@ function updateTaskProgressFromSchedule(task) {
 
 function hasScheduledEntry(taskId) {
   return Object.values(state.data).some(day => (day.entries || []).some(entry => entry.taskId === taskId));
+}
+
+function isOngoingTask(task) {
+  if (!task || ["done", "closed"].includes(task.status)) return false;
+  if (task.status === "in_progress") return true;
+  return Boolean(getTaskScheduleInfo(task.id)?.hasStarted);
 }
 
 function getTaskScheduleInfo(taskId, now = new Date()) {
