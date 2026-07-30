@@ -504,7 +504,42 @@ function taskDatesForView() {
   return [];
 }
 
+function renderUnifiedTodoList() {
+  const allTasks = RecurringPolicy.dedupeRecurringTasksForProject(
+    uniqueTasks(getAllTasks()
+      .map(({ task }) => task)
+      .filter(task => !isHiddenFutureRecurringInstance(task) || isOngoingTask(task))),
+    RecurringPolicy.currentMonthKey()
+  ).filter(isTodoListTask);
+  const tasks = orderedTasks(state.filter === "all"
+    ? allTasks
+    : allTasks.filter(task => matchesUnifiedTaskFilter(task, state.filter)));
+
+  el.taskViewTitle.textContent = "待办清单";
+  el.taskList.className = "task-list unified-view";
+  el.taskList.innerHTML = "";
+  el.taskTabs.classList.remove("hidden");
+  el.taskTabs.querySelectorAll("button").forEach(item =>
+    item.classList.toggle("active", item.dataset.filter === state.filter)
+  );
+  updateTaskStats(allTasks);
+
+  if (!tasks.length) {
+    el.taskList.innerHTML = `<div class="empty-state">当前分类没有待办任务<br>会议和普通日程只显示在右侧日程中</div>`;
+    return;
+  }
+  tasks.forEach(task => el.taskList.appendChild(createTaskCard(task)));
+}
+
+function matchesUnifiedTaskFilter(task, filter) {
+  if (filter === "in_progress") return isOngoingTask(task);
+  return matchesFilter(task, filter);
+}
+
 function renderTasks() {
+  renderUnifiedTodoList();
+  return;
+
   const titles = { day: "当天待办", week: "本周待办", month: "月度计划", project: "项目清单" };
   el.taskViewTitle.textContent = titles[state.taskView];
   el.taskList.className = `task-list ${state.taskView}-view`;
