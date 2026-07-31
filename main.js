@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage, safeStorage } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { autoUpdater } = require("electron-updater");
@@ -68,14 +68,24 @@ app.whenReady().then(() => {
   ipcMain.handle("window:get-glass", () => glass);
   ipcMain.handle("window:toggle-glass", () => setGlass(!glass));
   ipcMain.handle("app:get-settings", () => ({
-    ...loadSettings(),
+    ...publicSettings(),
     glass,
     locked,
     pinned: mainWindow?.isAlwaysOnTop() || false,
     compact: !!loadSettings().compact,
     startAtLogin: app.getLoginItemSettings().openAtLogin
   }));
-  ipcMain.handle("app:save-settings", (_event, nextSettings) => saveSettings(nextSettings || {}));
+  ipcMain.handle("app:save-settings", (_event, nextSettings) => {
+    const incoming = { ...(nextSettings || {}) };
+    if (Object.prototype.hasOwnProperty.call(incoming, "aiApiKey")) {
+      const key = String(incoming.aiApiKey || "").trim();
+      delete incoming.aiApiKey;
+      incoming.aiApiKeyEncrypted = key ? encryptAiKey(key) : null;
+    }
+    saveSettings(incoming);
+    return { ...publicSettings(), pinned: mainWindow?.isAlwaysOnTop() || false, startAtLogin: app.getLoginItemSettings().openAtLogin };
+  });
+  ipcMain.handle("ai:ask", async (_event, payload) => askOpenAI(payload || {}));
   ipcMain.handle("app:get-version", () => app.getVersion());
   ipcMain.handle("app:get-paths", () => ({
     dataFile: plannerDataPath(),
@@ -181,13 +191,60 @@ function defaultExportDir() {
 
 function loadSettings() {
   const file = settingsPath();
-  const defaults = { glass: true, pinned: false, locked: false, compact: false, startAtLogin: false };
+  const defaults = { glass: true, pinned: false, locked: false, compact: false, startAtLogin: false, aiEnabled: false, aiModel: "gpt-5.6-sol" };
   if (!fs.existsSync(file)) return defaults;
   try {
     return { ...defaults, ...JSON.parse(fs.readFileSync(file, "utf8")) };
   } catch {
     return defaults;
   }
+}
+
+function encryptAiKey(value) {
+  if (!value) return null;
+  return safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(value).toString("base64") : value;
+}
+
+function decryptAiKey(settings) {
+  if (!settings?.aiApiKeyEncrypted) return "";
+  try {
+    return safeStorage.isEncryptionAvailable()
+      ? safeStorage.decryptString(Buffer.from(settings.aiApiKeyEncrypted, "base64"))
+      : settings.aiApiKeyEncrypted;
+  } catch { return ""; }
+}
+
+function publicSettings() {
+  const settings = loadSettings();
+  const { aiApiKeyEncrypted, ...safeSettings } = settings;
+  return { ...safeSettings, aiConfigured: Boolean(aiApiKeyEncrypted) };
+}
+
+function extractResponseText(payload) {
+  if (typeof payload?.output_text === "string") return payload.output_text.trim();
+  return (payload?.output || []).flatMap(item => item.content || [])
+    .map(item => item.text || item.value || "").filter(Boolean).join("\n").trim();
+}
+
+async function askOpenAI(payload) {
+  const settings = loadSettings();
+  if (settings.aiEnabled === false) throw new Error("请先在设置中启用 AI 任务助手");
+  const apiKey = decryptAiKey(settings);
+  if (!apiKey) throw new Error("请先在设置中填写 OpenAI API Key");
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: settings.aiModel || "gpt-5.6-sol", store: false,
+      input: [
+        { role: "system", content: [{ type: "input_text", text: "你是 EveryTime 的任务数据助手。只根据用户提供的任务、日程和工时数据回答。不要编造数据；找不到时明确说没有找到。用简洁清晰的中文回答，优先列出任务名称、状态、日期和工时。你只能做任务查询、定位未完成任务和指定期间工作总结。" }] },
+        { role: "user", content: [{ type: "input_text", text: `用户问题：${String(payload?.question || "").slice(0, 4000)}\n\n数据范围：${String(payload?.rangeLabel || "未指定")}\n\n应用数据：${JSON.stringify(payload?.context || {}).slice(0, 120000)}` }] }
+      ]
+    })
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body?.error?.message || `AI 请求失败（${response.status}）`);
+  return extractResponseText(body) || "AI 没有返回可显示的结果。";
 }
 
 function saveSettings(nextSettings) {

@@ -39,6 +39,7 @@
         </div>
         <button class="soft-button" id="exportButton" title="导出全部任务和日程">⇩ 导出</button>
         <button class="soft-button" id="progressReviewButton" title="集中更新进行中任务">↻ 更新进度</button>
+        <button class="soft-button" id="aiAssistantButton" title="查询任务和生成工作总结">✦ AI助手</button>
         <button class="soft-button desktop-only" id="glassMode" title="切换磨砂玻璃桌面组件外观">◫ 玻璃模式</button>
         <button class="soft-button desktop-only" id="desktopLock" title="降低界面存在感，但保持可编辑">◌ 低干扰</button>
         <button class="soft-button desktop-only" id="pinWindow" title="让窗口保持在最前">📌 置顶</button>
@@ -331,6 +332,13 @@
       </div>
       <div class="settings-list">
         <label class="checkbox-setting">
+          <input type="checkbox" id="settingAiEnabled" />
+          <span>启用 AI 任务助手（只读取本应用数据）</span>
+        </label>
+        <label><span>OpenAI API Key（仅本机保存）</span><input id="settingAiApiKey" type="password" autocomplete="off" placeholder="sk-…" /></label>
+        <label><span>AI 模型</span><input id="settingAiModel" value="gpt-5.6-sol" /></label>
+        <p class="form-hint" id="aiKeyStatus">API Key 未配置</p>
+        <label class="checkbox-setting">
           <input type="checkbox" id="settingGlass" />
           <span>启动时使用玻璃背景</span>
         </label>
@@ -362,6 +370,25 @@
         <button type="button" class="soft-button" data-close-dialog="settingsDialog">取消</button>
         <button type="submit" class="primary-button">保存设置</button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal ai-modal" id="aiDialog">
+    <form method="dialog" id="aiForm">
+      <div class="modal-header">
+        <div><span class="eyebrow">AI ASSISTANT</span><h3>AI 任务助手</h3></div>
+        <button type="button" class="close-button" data-close-dialog="aiDialog">×</button>
+      </div>
+      <div class="ai-quick-actions" id="aiQuickActions">
+        <button type="button" class="soft-button" data-ai-prompt="请列出当前所有未完成的任务，并按状态和截止时间整理。">哪些任务未完成</button>
+        <button type="button" class="soft-button" data-ai-prompt="请总结本周的工作完成情况、实际投入工时和未完成事项。">本周工作总结</button>
+        <button type="button" class="soft-button" data-ai-prompt="请根据下面的日期范围生成工作总结。">生成指定期间总结</button>
+      </div>
+      <div class="ai-range"><label><span>开始日期</span><input type="date" id="aiPeriodStart" /></label><label><span>结束日期</span><input type="date" id="aiPeriodEnd" /></label></div>
+      <label><span>你想查询什么</span><textarea id="aiPrompt" rows="3" placeholder="例如：找出本月还没有关闭、但已经投入过时间的任务"></textarea></label>
+      <div class="ai-status" id="aiStatus"></div>
+      <div class="ai-result" id="aiResult">AI 结果会显示在这里。</div>
+      <div class="modal-actions"><button type="button" class="soft-button" id="aiCopyButton">复制结果</button><span></span><button type="button" class="soft-button" data-close-dialog="aiDialog">取消</button><button type="submit" class="primary-button">提交查询</button></div>
     </form>
   </dialog>
 

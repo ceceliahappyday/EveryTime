@@ -79,10 +79,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     "entryTaskLink", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast", "pinWindow", "desktopLock", "glassMode",
     "updateProgress", "updateProgressText", "updateProgressBar",
-    "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "closeWindow",
+    "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "settingsButton", "settingsDialog", "settingsForm", "settingGlass", "settingPinned", "settingLocked",
-    "settingCompact", "settingStartAtLogin", "settingsAppVersion", "settingsDataPath", "settingsExportPath"
+    "settingCompact", "settingStartAtLogin", "settingAiEnabled", "settingAiApiKey", "settingAiModel", "aiKeyStatus", "settingsAppVersion", "settingsDataPath", "settingsExportPath"
   ].forEach(id => el[id] = document.getElementById(id));
 
   if (!el.closeTaskButton) {
@@ -368,6 +368,20 @@ async function initDesktop() {
   el.minimizeWindow.addEventListener("click", () => window.desktopAPI.minimize());
   el.closeWindow.addEventListener("click", () => window.desktopAPI.quit());
   el.settingsButton?.addEventListener("click", openSettingsDialog);
+  el.aiAssistantButton?.addEventListener("click", openAiDialog);
+  el.aiQuickActions?.addEventListener("click", event => {
+    const button = event.target.closest("[data-ai-prompt]");
+    if (!button) return;
+    el.aiPrompt.value = button.dataset.aiPrompt;
+    if (button.textContent.includes("本周")) setAiRangeForWeek();
+    el.aiPrompt.focus();
+  });
+  el.aiForm?.addEventListener("submit", event => { event.preventDefault(); askAi(); });
+  el.aiCopyButton?.addEventListener("click", async () => {
+    if (!el.aiResult?.textContent) return;
+    await navigator.clipboard?.writeText(el.aiResult.textContent);
+    showToast("AI 结果已复制");
+  });
   el.settingsForm?.addEventListener("submit", event => {
     event.preventDefault();
     saveDesktopSettings();
@@ -429,6 +443,10 @@ async function openSettingsDialog() {
   el.settingLocked.checked = !!settings?.locked;
   el.settingCompact.checked = document.body.classList.contains("compact") || !!settings?.compact;
   el.settingStartAtLogin.checked = !!settings?.startAtLogin;
+  el.settingAiEnabled.checked = !!settings?.aiEnabled;
+  el.settingAiApiKey.value = "";
+  el.settingAiModel.value = settings?.aiModel || "gpt-5.6-sol";
+  el.aiKeyStatus.textContent = settings?.aiConfigured ? "API Key 已配置（输入新 Key 可替换）" : "API Key 未配置";
   el.settingsAppVersion.textContent = el.appVersionBadge?.textContent || await window.desktopAPI.getVersion?.().then(version => `v${version}`).catch(() => "读取失败");
   el.settingsDataPath.textContent = paths?.dataFile || "当前用户数据目录";
   el.settingsExportPath.textContent = paths?.exportDir || "文档目录";
@@ -442,7 +460,10 @@ async function saveDesktopSettings() {
     pinned: el.settingPinned.checked,
     locked: el.settingLocked.checked,
     compact: el.settingCompact.checked,
-    startAtLogin: el.settingStartAtLogin.checked
+    startAtLogin: el.settingStartAtLogin.checked,
+    aiEnabled: el.settingAiEnabled.checked,
+    aiModel: el.settingAiModel.value.trim() || "gpt-5.6-sol",
+    ...(el.settingAiApiKey.value.trim() ? { aiApiKey: el.settingAiApiKey.value.trim() } : {})
   };
   const saved = await window.desktopAPI.saveSettings(nextSettings);
   document.body.classList.toggle("compact", !!saved?.compact);
@@ -450,6 +471,62 @@ async function saveDesktopSettings() {
   el.settingsDialog.close();
   render();
   showToast("设置已保存");
+}
+
+function setAiRangeForWeek() {
+  const date = fromDateKey(state.selectedDate);
+  const monday = getMonday(date);
+  const end = new Date(monday); end.setDate(end.getDate() + 6);
+  el.aiPeriodStart.value = toDateKey(monday);
+  el.aiPeriodEnd.value = toDateKey(end);
+}
+
+function openAiDialog() {
+  const date = fromDateKey(state.selectedDate);
+  const first = new Date(date.getFullYear(), date.getMonth(), 1);
+  const last = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  el.aiPeriodStart.value = toDateKey(first);
+  el.aiPeriodEnd.value = toDateKey(last);
+  el.aiPrompt.value = "";
+  el.aiStatus.textContent = "仅使用 EveryTime 内的任务、日程和工时数据。";
+  el.aiResult.textContent = "AI 结果会显示在这里。";
+  el.aiDialog.showModal();
+}
+
+function buildAiContext(startKey, endKey) {
+  const tasks = uniqueTasks(getAllTasks().map(({ task }) => task)).map(task => {
+    const entries = getTaskScheduleEntries(task.id).filter(item => item.dateKey >= startKey && item.dateKey <= endKey);
+    const scheduledHours = entries.reduce((sum, item) => sum + (item.entry.end - item.entry.start), 0);
+    const actualHours = entries.reduce((sum, item) => sum + getEntryInvestedHours(item.dateKey, item.entry), 0);
+    return {
+      id: task.id, title: task.title, status: task.status, priority: task.priority, owner: task.owner,
+      dueDate: task.dueDate || "", dueTime: task.dueTime || "", parentId: task.parentId || "",
+      createdAt: task.createdAt || "", updatedAt: task.updatedAt || "", completedAt: task.completedAt || "",
+      scheduleCount: entries.length, scheduledHours: Number(scheduledHours.toFixed(2)), actualHours: Number(actualHours.toFixed(2)),
+      notes: entries.map(item => ({ date: item.dateKey, start: formatTime(item.entry.start), end: formatTime(item.entry.end), note: item.entry.note || "" }))
+    };
+  });
+  const entries = Object.entries(state.data).flatMap(([date, day]) => (day.entries || [])
+    .filter(entry => date >= startKey && date <= endKey)
+    .map(entry => ({ date, title: entry.title, entryType: entry.entryType || "calendar", start: formatTime(entry.start), end: formatTime(entry.end), note: entry.note || "", taskId: entry.taskId || "" })));
+  return { period: { start: startKey, end: endKey }, tasks, calendarEntries: entries, dayNotes: Object.entries(state.data).filter(([date, day]) => date >= startKey && date <= endKey && day.note).map(([date, day]) => ({ date, note: day.note })) };
+}
+
+async function askAi() {
+  const question = el.aiPrompt.value.trim();
+  if (!question) { el.aiStatus.textContent = "请先输入问题。"; return; }
+  const startKey = el.aiPeriodStart.value || "1900-01-01";
+  const endKey = el.aiPeriodEnd.value || "2999-12-31";
+  el.aiStatus.textContent = "正在整理本地任务数据并请求 AI…";
+  el.aiResult.textContent = "处理中，请稍候…";
+  try {
+    const result = await window.desktopAPI.aiAsk({ question, rangeLabel: `${startKey} 至 ${endKey}`, context: buildAiContext(startKey, endKey) });
+    el.aiResult.textContent = result;
+    el.aiStatus.textContent = "已完成。结果只来自当前应用数据。";
+  } catch (error) {
+    el.aiStatus.textContent = error?.message || "AI 请求失败";
+    el.aiResult.textContent = "请检查设置中的 API Key、模型名称和网络连接。";
+  }
 }
 
 function render() {

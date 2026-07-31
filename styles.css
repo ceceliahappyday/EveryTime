@@ -13,6 +13,13 @@
   --hour-height: 82px;
 }
 
+.ai-modal { width: min(760px, calc(100vw - 32px)); }
+.ai-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.ai-range { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ai-status { min-height: 24px; color: var(--muted-text); font-size: 13px; margin-top: 10px; }
+.ai-result { min-height: 180px; max-height: 40vh; overflow: auto; white-space: pre-wrap; line-height: 1.7; padding: 14px; border: 1px solid rgba(160,220,220,.35); border-radius: 12px; background: rgba(0,0,0,.38); color: #f2f7fa; }
+@media (max-width: 620px) { .ai-range { grid-template-columns: 1fr; } .ai-quick-actions .soft-button { width: 100%; } }
+
 * { box-sizing: border-box; }
 html.desktop-shell, html.desktop-shell body { background: transparent !important; }
 html.desktop-shell .app-shell {

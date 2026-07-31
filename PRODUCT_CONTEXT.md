@@ -118,3 +118,9 @@ EveryTime 同时包含三种能力，但三者必须分开：
 - 国家节假日目前是应用内置数据，不等同于实时联网更新。
 - 多设备云同步尚未完成，GitHub Releases 只负责软件发布，不负责用户数据同步。
 - 会议参与人、地点、提醒、会议链接等字段还可以继续扩展。
+## AI assistant policy (v2.0.37)
+- AI is an optional, focused assistant for EveryTime data only: unfinished-task answers, task search/location, and date-range work summaries.
+- The user enters their own OpenAI API Key in Settings. The key is handled by Electron main process, encrypted with Windows safeStorage when available, and never returned to the renderer.
+- Requests use the OpenAI Responses API with `store: false`; only a reduced task/calendar/work-log context is sent, not the full local database.
+- AI cannot create, edit, close, delete, or sync tasks, and is not a general-purpose chatbot.
+- If AI is disabled or no key is configured, the rest of the planner remains fully usable offline.
