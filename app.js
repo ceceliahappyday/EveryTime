@@ -1506,11 +1506,19 @@ function renderProjectSchedule() {
     });
     el.timeline.appendChild(groupNode);
   });
+  bindProjectDrop(el.timeline, buckets, ganttBucketWidth);
 }
 
 function createProjectGanttRow(task, buckets, scale = "day", rootId = "") {
   const row = document.createElement("div");
   row.className = `project-gantt-row ${task.status}`;
+  row.draggable = !["done", "closed"].includes(task.status);
+  row.addEventListener("dragstart", event => {
+    event.dataTransfer.setData("text/task-id", task.id);
+    event.dataTransfer.effectAllowed = "copy";
+    row.classList.add("dragging");
+  });
+  row.addEventListener("dragend", () => row.classList.remove("dragging"));
   row.style.gridTemplateColumns = `${180}px minmax(0, 1fr)`;
   row.style.setProperty("--task-depth", getTaskDepth(task, rootId));
   const span = taskActualTimelineSpan(task, buckets, scale);
@@ -1632,6 +1640,8 @@ function renderDayTimeline() {
     const top = (entry.start - HOURS[0]) * getHourHeight() + 3;
     const height = (entry.end - entry.start) * getHourHeight() - 6;
     item.className = `schedule-entry ${entry.color || "sage"}`;
+    item.draggable = true;
+    item.dataset.entryId = entry.id;
     if (columns >= 3) item.classList.add("dense");
     if (columns >= 4) item.classList.add("very-dense");
     item.style.top = `${top}px`;
@@ -1642,6 +1652,13 @@ function renderDayTimeline() {
       <span>${formatTime(entry.start)} – ${formatTime(entry.end)} · ${formatHours(entry.end - entry.start)}</span>
       ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}`;
     item.addEventListener("click", () => openEntryDialog(entry.start, entry));
+    item.addEventListener("dragstart", event => {
+      event.stopPropagation();
+      event.dataTransfer.setData("text/entry-id", entry.id);
+      event.dataTransfer.effectAllowed = "copy";
+      item.classList.add("dragging");
+    });
+    item.addEventListener("dragend", () => item.classList.remove("dragging"));
     el.timeline.appendChild(item);
   });
   if (isToday(fromDateKey(state.selectedDate))) {
@@ -1856,6 +1873,15 @@ function renderCompletedTaskList(tasks, mode) {
 
 function bindDueTaskList(container, dateKey) {
   container.querySelectorAll(".due-task-item, .completed-task-item, .task-trace-item").forEach(item => {
+    const linked = findTask(item.dataset.taskId)?.task;
+    item.draggable = Boolean(linked && !["done", "closed"].includes(linked.status));
+    item.addEventListener("dragstart", event => {
+      const taskId = item.dataset.taskId;
+      event.dataTransfer.setData("text/task-id", taskId);
+      event.dataTransfer.effectAllowed = "copy";
+      item.classList.add("dragging");
+    });
+    item.addEventListener("dragend", () => item.classList.remove("dragging"));
     item.addEventListener("click", event => {
       event.stopPropagation();
       state.selectedDate = dateKey;
@@ -1879,8 +1905,50 @@ function bindScheduleDrop(target, dateKey, hour) {
     event.preventDefault();
     event.stopPropagation();
     target.classList.remove("drag-over");
-    const found = findTask(event.dataTransfer.getData("text/task-id"));
+    const taskId = event.dataTransfer.getData("text/task-id");
+    const entryId = event.dataTransfer.getData("text/entry-id");
+    const found = findTask(taskId);
     if (found) createEntryFromTask(found.task, hour, dateKey);
+    else if (entryId) copyEntryToDate(entryId, dateKey, hour);
+  });
+}
+
+function findEntry(entryId) {
+  return Object.entries(state.data).flatMap(([dateKey, day]) => (day.entries || []).map(entry => ({ dateKey, entry })))
+    .find(item => item.entry.id === entryId);
+}
+
+function copyEntryToDate(entryId, dateKey, hour) {
+  const found = findEntry(entryId);
+  if (!found) return;
+  const duration = Math.max(0.25, Number(found.entry.end) - Number(found.entry.start));
+  const entry = { ...found.entry, id: crypto.randomUUID(), start: hour, end: Math.min(hour + duration, 22) };
+  getDay(dateKey).entries.push(entry);
+  if (entry.taskId) {
+    const task = findTask(entry.taskId)?.task;
+    if (task) applyAutomaticTaskStatus(task);
+  }
+  saveData(); render();
+  showToast(`已复制到 ${dateKey.slice(5)} ${formatTime(hour)}`);
+}
+
+function bindProjectDrop(target, buckets, bucketWidth = 44) {
+  target.addEventListener("dragover", event => { event.preventDefault(); target.classList.add("drag-over"); });
+  target.addEventListener("dragleave", () => target.classList.remove("drag-over"));
+  target.addEventListener("drop", event => {
+    event.preventDefault();
+    target.classList.remove("drag-over");
+    const rect = target.getBoundingClientRect();
+    const labelWidth = 180;
+    const scrollLeft = target.scrollLeft || target.parentElement?.scrollLeft || 0;
+    const index = Math.max(0, Math.min(buckets.length - 1, Math.floor((event.clientX - rect.left + scrollLeft - labelWidth) / bucketWidth)));
+    const dateKey = buckets[index]?.key || state.selectedDate;
+    const hour = 9;
+    const taskId = event.dataTransfer.getData("text/task-id");
+    const entryId = event.dataTransfer.getData("text/entry-id");
+    const found = findTask(taskId);
+    if (found) createEntryFromTask(found.task, hour, dateKey);
+    else if (entryId) copyEntryToDate(entryId, dateKey, hour);
   });
 }
 
