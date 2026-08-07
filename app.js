@@ -140,6 +140,7 @@ function migrateData() {
       entry.color ||= "sage";
     });
     day.tasks.forEach(task => {
+      task.parentId ||= task.parentTaskId || task.parentTask || task.parent || "";
       task.dueDate ??= dateKey;
       task.dueTime ??= "18:00";
       task.owner ||= "我";
@@ -201,6 +202,14 @@ function getAllTasks() {
 
 function findTask(id) {
   return getAllTasks().find(item => item.task.id === id);
+}
+
+function findTaskRecords(id) {
+  return getAllTasks().filter(item => item.task.id === id);
+}
+
+function updateTaskRecords(id, updater) {
+  findTaskRecords(id).forEach(({ task }) => updater(task));
 }
 
 function bindEvents() {
@@ -1029,11 +1038,7 @@ function createTaskCard(task) {
 
   card.querySelector(".task-check").addEventListener("click", event => {
     event.stopPropagation();
-    task.status = task.status === "done" ? getAutomaticTaskStatus(task.id) : "done";
-    task.progress = task.status === "done" ? 100 : Math.min(task.progress || 0, 95);
-    task.completedAt = ["done", "closed"].includes(task.status) ? new Date().toISOString() : "";
-    task.updatedAt = new Date().toISOString();
-    saveData(); render(); showToast(task.status === "done" ? "任务已完成" : "任务已恢复");
+    toggleTaskCompletion(task);
   });
   card.querySelector(".task-menu").addEventListener("click", event => {
     event.stopPropagation();
@@ -1559,14 +1564,18 @@ function closeEditingTask() {
 function toggleTaskCompletion(task) {
   if (!task) return;
   const closing = !["done", "closed"].includes(task.status);
-  task.status = closing ? "done" : getAutomaticTaskStatus(task.id);
-  task.completedAt = closing ? new Date().toISOString() : "";
-  task.progress = closing ? 100 : ProjectSummaryPolicy.taskProgressPercent({
-    status: task.status,
-    investedHours: getTaskDuration(task.id),
-    scheduledHours: getTaskScheduledHours(task.id)
+  const now = new Date().toISOString();
+  const nextStatus = closing ? "done" : getAutomaticTaskStatus(task.id);
+  updateTaskRecords(task.id, record => {
+    record.status = nextStatus;
+    record.completedAt = closing ? now : "";
+    record.progress = closing ? 100 : ProjectSummaryPolicy.taskProgressPercent({
+      status: nextStatus,
+      investedHours: getTaskDuration(task.id),
+      scheduledHours: getTaskScheduledHours(task.id)
+    });
+    record.updatedAt = now;
   });
-  task.updatedAt = new Date().toISOString();
   saveData();
   render();
   showToast(closing ? "任务已关闭" : "任务已恢复");
@@ -2341,9 +2350,9 @@ function hasOwnPlanningAnchor(task) {
 
 function getChildTasks(parentId) {
   if (!parentId) return [];
-  return getAllTasks()
+  return uniqueTasks(getAllTasks()
     .map(({ task }) => task)
-    .filter(task => task.parentId === parentId);
+    .filter(task => (task.parentId || task.parentTaskId || task.parentTask || task.parent || "") === parentId));
 }
 
 function matchesFilter(task, filter) {
