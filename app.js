@@ -321,6 +321,8 @@ function bindEvents() {
     el.timelineWrap.classList.add("is-scrolling");
     timelineScrollBarTimer = setTimeout(() => el.timelineWrap.classList.remove("is-scrolling"), 700);
   }, { passive: true });
+  window.addEventListener("dragend", clearScheduleDragOver);
+  window.addEventListener("drop", clearScheduleDragOver);
   el.taskList.addEventListener("scroll", () => {
     clearTimeout(taskListScrollBarTimer);
     el.taskList.classList.add("is-scrolling");
@@ -1637,9 +1639,9 @@ function renderDayTimeline() {
     slot.addEventListener("dragover", event => { event.preventDefault(); slot.classList.add("drag-over"); });
     slot.addEventListener("dragleave", () => slot.classList.remove("drag-over"));
     slot.addEventListener("drop", event => {
-      event.preventDefault(); slot.classList.remove("drag-over");
-      const found = findTask(event.dataTransfer.getData("text/task-id"));
-      if (found) createEntryFromTask(found.task, hour);
+      event.preventDefault();
+      clearScheduleDragOver();
+      handleScheduleDropData(state.selectedDate, hour, event);
     });
     el.timeline.appendChild(row);
   });
@@ -1913,13 +1915,22 @@ function bindScheduleDrop(target, dateKey, hour) {
   target.addEventListener("drop", event => {
     event.preventDefault();
     event.stopPropagation();
-    target.classList.remove("drag-over");
-    const taskId = event.dataTransfer.getData("text/task-id");
-    const entryId = event.dataTransfer.getData("text/entry-id");
-    const found = findTask(taskId);
-    if (found) createEntryFromTask(found.task, hour, dateKey);
-    else if (entryId) copyEntryToDate(entryId, dateKey, hour);
+    clearScheduleDragOver();
+    handleScheduleDropData(dateKey, hour, event);
   });
+}
+
+function clearScheduleDragOver() {
+  document.querySelectorAll(".drag-over").forEach(node => node.classList.remove("drag-over"));
+}
+
+function handleScheduleDropData(dateKey, hour, event) {
+  const taskId = event.dataTransfer.getData("text/task-id");
+  const entryId = event.dataTransfer.getData("text/entry-id");
+  const found = findTask(taskId);
+  if (found) return createEntryFromTask(found.task, hour, dateKey);
+  if (entryId) return copyEntryToDate(entryId, dateKey, hour);
+  return false;
 }
 
 function findEntry(entryId) {
@@ -1930,15 +1941,17 @@ function findEntry(entryId) {
 function copyEntryToDate(entryId, dateKey, hour) {
   const found = findEntry(entryId);
   if (!found) return;
-  const duration = Math.max(0.25, Number(found.entry.end) - Number(found.entry.start));
-  const entry = { ...found.entry, id: crypto.randomUUID(), start: hour, end: Math.min(hour + duration, 22) };
-  getDay(dateKey).entries.push(entry);
-  if (entry.taskId) {
-    const task = findTask(entry.taskId)?.task;
-    if (task) applyAutomaticTaskStatus(task);
+  const placement = window.TaskWorkPolicy?.copyPlacement(found.entry, hour, 22);
+  if (!placement) {
+    showToast("该投入记录的时间范围无效，或目标时间不能放置");
+    return false;
   }
+  const entry = { ...found.entry, id: crypto.randomUUID(), ...placement };
+  getDay(dateKey).entries.push(entry);
+  if (entry.taskId) refreshTaskStatusForId(entry.taskId);
   saveData(); render();
   showToast(`已复制到 ${dateKey.slice(5)} ${formatTime(hour)}`);
+  return true;
 }
 
 function bindProjectDrop(target, buckets, bucketWidth = 44) {
@@ -1962,12 +1975,18 @@ function bindProjectDrop(target, buckets, bucketWidth = 44) {
 }
 
 function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
+  const placement = window.TaskWorkPolicy?.copyPlacement({ start: 0, end: 1 }, hour, 22);
+  if (!placement) {
+    showToast("该时间点不能放置新的投入记录");
+    return false;
+  }
   getDay(dateKey).entries.push({
     id: crypto.randomUUID(), entryType: "task_work", taskId: task.id, title: task.title,
-    start: hour, end: Math.min(hour + 1, 22), note: "", color: "sage"
+    ...placement, note: "", color: "sage"
   });
-  applyAutomaticTaskStatus(task);
+  refreshTaskStatusForId(task.id);
   saveData(); render(); showToast(`已安排到 ${dateKey.slice(5)} ${formatTime(hour)}`);
+  return true;
 }
 
 function openEntryDialog(hour, entry = null) {
@@ -2002,11 +2021,8 @@ function saveEntry() {
   if (state.editingEntryId) Object.assign(existingEntry, payload);
   else day.entries.push({ id: crypto.randomUUID(), ...payload });
   [previousTaskId, payload.taskId].filter(Boolean).forEach(taskId => {
-    const linked = findTask(taskId)?.task;
-    if (linked && !["done", "closed"].includes(linked.status)) {
-      applyAutomaticTaskStatus(linked);
-      if (payload.note) linked.updatedAt = new Date().toISOString();
-    }
+    refreshTaskStatusForId(taskId);
+    if (payload.note) updateTaskRecords(taskId, task => { task.updatedAt = new Date().toISOString(); });
   });
   focusLinkedTaskFilter(payload.taskId);
   saveData(); el.entryDialog.close(); render();
@@ -2242,8 +2258,8 @@ function getAutomaticTaskStatus(taskId, now = new Date()) {
   const found = findTask(taskId)?.task;
   const manualStart = found?.startOverrideAt ? new Date(found.startOverrideAt) : null;
   if (manualStart && manualStart <= now) return "in_progress";
-  const schedule = getTaskScheduleInfo(taskId, now);
-  return schedule?.hasStarted ? "in_progress" : "planned";
+  const entries = getTaskScheduleEntries(taskId);
+  return window.TaskWorkPolicy?.statusForEntries(entries, now) || "planned";
 }
 
 function getAutomaticTaskStatusForPayload(taskId, payload, now = new Date()) {
@@ -2277,6 +2293,14 @@ function applyAutomaticTaskStatus(task, now = new Date()) {
   else if (!schedule?.hasStarted) task.progress = 0;
   if ((task.progress || 0) !== beforeStatusProgress) changed = true;
   if (changed) task.updatedAt = now.toISOString();
+  return changed;
+}
+
+function refreshTaskStatusForId(taskId, now = new Date()) {
+  let changed = false;
+  findTaskRecords(taskId).forEach(({ task }) => {
+    if (applyAutomaticTaskStatus(task, now)) changed = true;
+  });
   return changed;
 }
 
