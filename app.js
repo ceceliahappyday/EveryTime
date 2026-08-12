@@ -45,6 +45,9 @@ const state = {
   filter: "planned",
   taskView: "day",
   projectScale: "day",
+  projectFutureDays: 30,
+  projectScrollLeft: null,
+  projectViewNeedsAnchor: false,
   projectCollapsedGroups: new Set(),
   ganttCollapsedGroups: new Set(),
   projectCollapsedSections: new Set(),
@@ -238,7 +241,9 @@ function bindEvents() {
   el.viewSwitcher.addEventListener("click", event => {
     const button = event.target.closest("button[data-view]");
     if (!button) return;
+    const previousView = state.taskView;
     state.taskView = button.dataset.view;
+    state.projectViewNeedsAnchor = state.taskView === "project" && previousView !== "project";
     el.viewSwitcher.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
     render();
   });
@@ -320,6 +325,19 @@ function bindEvents() {
     clearTimeout(timelineScrollBarTimer);
     el.timelineWrap.classList.add("is-scrolling");
     timelineScrollBarTimer = setTimeout(() => el.timelineWrap.classList.remove("is-scrolling"), 700);
+    if (state.taskView === "project") {
+      state.projectScrollLeft = el.timelineWrap.scrollLeft;
+      const nearRight = el.timelineWrap.scrollLeft + el.timelineWrap.clientWidth >= el.timelineWrap.scrollWidth - 180;
+      if (nearRight && !state.projectExpanding && state.projectFutureDays < 3650) {
+        state.projectExpanding = true;
+        state.projectFutureDays += 30;
+        renderSchedule();
+        requestAnimationFrame(() => {
+          state.projectExpanding = false;
+          el.timelineWrap.scrollLeft = state.projectScrollLeft || 0;
+        });
+      }
+    }
   }, { passive: true });
   window.addEventListener("dragend", clearScheduleDragOver);
   window.addEventListener("drop", clearScheduleDragOver);
@@ -944,8 +962,14 @@ function getTaskScheduleEntries(taskId) {
 function projectTimelineBuckets(projects, scale = "day") {
   const points = projects.flatMap(project => project.children.flatMap(task => taskTimelineDateKeys(task)));
   const fallback = state.selectedDate;
-  const min = points.length ? points.sort()[0] : fallback;
-  const max = points.length ? points.sort().at(-1) : fallback;
+  const current = fromDateKey(fallback);
+  const min = points.length ? [points.sort()[0], fallback].sort()[0] : fallback;
+  const futureDays = state.projectFutureDays || 30;
+  const futureDate = addDays(current, futureDays);
+  const futureKey = toDateKey(futureDate);
+  // Keep all history, but only materialize the current period plus the configured
+  // future window. The scroll handler expands this window by 30 days on demand.
+  const max = futureKey;
   const buckets = [];
   if (scale === "month") {
     let cursor = new Date(fromDateKey(min).getFullYear(), fromDateKey(min).getMonth(), 1);
@@ -955,7 +979,7 @@ function projectTimelineBuckets(projects, scale = "day") {
       buckets.push({ key, label: `${cursor.getMonth() + 1}月` });
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
     }
-    return buckets.slice(0, 36);
+    return buckets;
   }
   if (scale === "week") {
     let cursor = getMonday(fromDateKey(min));
@@ -965,7 +989,7 @@ function projectTimelineBuckets(projects, scale = "day") {
       buckets.push({ key, label: `${cursor.getMonth() + 1}/${cursor.getDate()}周` });
       cursor = addDays(cursor, 7);
     }
-    return buckets.slice(0, 80);
+    return buckets;
   }
   const start = addDays(fromDateKey(min), -1);
   const end = addDays(fromDateKey(max), 1);
@@ -973,7 +997,7 @@ function projectTimelineBuckets(projects, scale = "day") {
     const key = toDateKey(cursor);
     buckets.push({ key, label: key.slice(5).replace("-", "/") });
   }
-  return buckets.slice(0, 120);
+  return buckets;
 }
 
 function taskTimelineDateKeys(task) {
@@ -1459,6 +1483,7 @@ function renderProjectSchedule() {
     button.classList.toggle("active", button.dataset.scale === state.projectScale);
     button.addEventListener("click", () => {
       state.projectScale = button.dataset.scale;
+      state.projectViewNeedsAnchor = true;
       renderSchedule();
     });
   });
@@ -1514,6 +1539,24 @@ function renderProjectSchedule() {
     el.timeline.appendChild(groupNode);
   });
   bindProjectDrop(el.timeline, buckets, ganttBucketWidth);
+  if (state.projectViewNeedsAnchor) {
+    state.projectViewNeedsAnchor = false;
+    requestAnimationFrame(() => {
+      const currentKey = state.projectScale === "month"
+        ? state.selectedDate.slice(0, 7)
+        : state.projectScale === "week"
+          ? toDateKey(getMonday(fromDateKey(state.selectedDate)))
+          : state.selectedDate;
+      el.timelineWrap.scrollLeft = ProjectViewPolicy.anchorScrollLeft({
+        buckets,
+        anchorKey: currentKey,
+        bucketWidth: ganttBucketWidth
+      });
+    });
+  } else if (state.projectScrollLeft !== null) {
+    const savedScrollLeft = state.projectScrollLeft;
+    requestAnimationFrame(() => { el.timelineWrap.scrollLeft = savedScrollLeft; });
+  }
 }
 
 function createProjectGanttRow(task, buckets, scale = "day", rootId = "") {
@@ -1594,12 +1637,13 @@ function taskActualTimelineSpan(task, buckets, scale = "day") {
     .filter(item => getEntryInvestedHours(item.dateKey, item.entry) > 0)
     .map(item => projectBucketKey(item.dateKey, scale));
   if (!actualDates.length || !buckets.length) return null;
-  const keys = buckets.map(bucket => bucket.key);
-  const firstKey = actualDates.slice().sort()[0];
-  const lastKey = actualDates.slice().sort().at(-1);
-  const first = Math.max(0, keys.indexOf(firstKey));
-  const last = Math.max(first, keys.indexOf(lastKey));
-  return { left: (first / buckets.length) * 100, width: Math.max(((last - first + 1) / buckets.length) * 100, 4) };
+  const span = ProjectViewPolicy.timelineSpanForBuckets(
+    actualDates,
+    buckets,
+    dateKey => projectBucketKey(dateKey, scale)
+  );
+  if (!span) return null;
+  return { left: span.leftRatio * 100, width: Math.max(span.widthRatio * 100, 4) };
 }
 
 function toggleProjectSection(projectId) {
@@ -2704,6 +2748,7 @@ function formatDue(task) {
 function moveSelectedDate(days) { selectDate(addDays(fromDateKey(state.selectedDate), days)); }
 function selectDate(date) {
   state.selectedDate = toDateKey(date);
+  if (state.taskView === "project" && isToday(date)) state.projectViewNeedsAnchor = true;
   render();
   el.timelineWrap.scrollTop = 0;
 }
