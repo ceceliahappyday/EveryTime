@@ -55,3 +55,8 @@ EveryTime 是桌面浮窗式的任务、日程投入和项目进度工具。任�
 - 不得提前批量生成未来月份固定任务。
 - 不得发布更新时清空用户记录、替换数据文件或修改 STORAGE_KEY。
 - 不得把 API Key 写入 renderer、HTML、日志、GitHub 或导出数据。
+- Windows startup policy (v2.0.41): the canonical login item name is `EveryTime`; repeated registration is idempotent.
+- Known legacy aliases are limited to `EveryTime`, `今日日程`, `today-daily-planner`, and `Today Daily Planner`.
+- Cleanup is user-scope only (`HKCU` Run / StartupApproved), and only removes an exact known alias after verifying an EveryTime executable path. Never modify `HKLM`, require admin rights, or delete unrelated entries.
+- Startup registration uses the current executable path, disables verified EveryTime aliases when switched off, and the main process holds a single-instance lock.
+- `startup-policy.js` is a CommonJS main-process module and must not be loaded by `index.html`.

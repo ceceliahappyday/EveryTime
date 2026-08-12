@@ -1,14 +1,17 @@
 const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage, safeStorage } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const { execFileSync } = require("child_process");
 const { autoUpdater } = require("electron-updater");
 const ExcelJS = require("exceljs");
+const StartupPolicy = require("./startup-policy.js");
 
 let mainWindow;
 let locked = false;
 let glass = true;
 let tray;
 let manualUpdateCheck = false;
+const singleInstanceLock = app.requestSingleInstanceLock();
 const dataFileName = "planner-data.json";
 const windowStateFileName = "window-state.json";
 const settingsFileName = "settings.json";
@@ -17,6 +20,17 @@ const trayIconPath = path.join(__dirname, "assets", "icons", "app-icon.png");
 
 if (process.platform === "win32") {
   app.setAppUserModelId("com.local.todayDailyPlanner");
+}
+
+if (!singleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", (_event, _commandLine, _workingDirectory) => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
 }
 
 function createWindow() {
@@ -52,11 +66,11 @@ function createWindow() {
   mainWindow.on("close", saveWindowState);
 }
 
-app.whenReady().then(() => {
+if (singleInstanceLock) app.whenReady().then(() => {
   const settings = loadSettings();
   glass = settings.glass !== false;
   locked = !!settings.locked;
-  app.setLoginItemSettings({ openAtLogin: !!settings.startAtLogin });
+  configureLoginItem(settings.startAtLogin);
   ipcMain.handle("window:get-pinned", () => mainWindow.isAlwaysOnTop());
   ipcMain.handle("window:toggle-pinned", () => {
     const next = !mainWindow.isAlwaysOnTop();
@@ -185,6 +199,53 @@ function settingsPath() {
   return path.join(app.getPath("userData"), settingsFileName);
 }
 
+const startupRunKey = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+const startupApprovedRunKey = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run";
+
+function queryRunValue(name) {
+  if (process.platform !== "win32") return "";
+  try {
+    const output = execFileSync("reg.exe", ["query", startupRunKey, "/v", name], { encoding: "utf8", windowsHide: true });
+    const line = output.split(/\r?\n/).find(item => /\sREG_\w+\s+/i.test(item));
+    return line ? line.replace(/^.*?\sREG_\w+\s+/i, "").trim() : "";
+  } catch { return ""; }
+}
+
+function deleteRegistryValue(key, name) {
+  if (process.platform !== "win32") return false;
+  try {
+    execFileSync("reg.exe", ["delete", key, "/v", name, "/f"], { stdio: "ignore", windowsHide: true });
+    return true;
+  } catch { return false; }
+}
+
+function cleanupKnownStartupEntries() {
+  if (process.platform !== "win32") return;
+  StartupPolicy.aliases.filter(name => name !== StartupPolicy.canonicalName).forEach(name => {
+    try {
+      app.setLoginItemSettings({ openAtLogin: false, name, path: app.getPath("exe") });
+    } catch { /* best-effort cleanup; registry verification below is authoritative */ }
+  });
+  const entries = StartupPolicy.aliases.map(name => ({ name, command: queryRunValue(name) }));
+  StartupPolicy.cleanupPlan(entries, app.getPath("exe")).forEach(entry => {
+    deleteRegistryValue(startupRunKey, entry.name);
+    deleteRegistryValue(startupApprovedRunKey, entry.name);
+  });
+}
+
+function configureLoginItem(openAtLogin) {
+  cleanupKnownStartupEntries();
+  app.setLoginItemSettings({
+    openAtLogin: !!openAtLogin,
+    name: StartupPolicy.canonicalName,
+    path: app.getPath("exe")
+  });
+  if (!openAtLogin) {
+    deleteRegistryValue(startupRunKey, StartupPolicy.canonicalName);
+    deleteRegistryValue(startupApprovedRunKey, StartupPolicy.canonicalName);
+  }
+}
+
 function defaultExportDir() {
   return fs.existsSync("D:\\") ? "D:\\今日日程APP\\导出" : path.join(app.getPath("documents"), "今日日程APP", "导出");
 }
@@ -251,7 +312,7 @@ function saveSettings(nextSettings) {
   const settings = { ...loadSettings(), ...nextSettings };
   glass = settings.glass !== false;
   locked = !!settings.locked;
-  app.setLoginItemSettings({ openAtLogin: !!settings.startAtLogin });
+  configureLoginItem(settings.startAtLogin);
   if (mainWindow) {
     mainWindow.setAlwaysOnTop(!!settings.pinned, settings.pinned ? "floating" : "normal");
     mainWindow.webContents.send("window:glass-changed", glass);
