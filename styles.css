@@ -532,6 +532,12 @@ button.task-group-heading {
   scrollbar-width: thin;
   transition: scrollbar-color .18s ease;
 }
+.project-horizontal-scrollbar { height: 9px; margin-top: 5px; overflow-x: auto; overflow-y: hidden; scrollbar-color: rgba(132,174,197,.68) transparent; }
+.project-horizontal-scrollbar.hidden { display: none; }
+.project-horizontal-scrollbar::-webkit-scrollbar { height: 7px; }
+.project-horizontal-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.project-horizontal-scrollbar::-webkit-scrollbar-thumb { border-radius: 8px; background: rgba(132,174,197,.68); }
+.project-horizontal-scrollbar-inner { height: 1px; }
 .timeline-wrap:has(.week-schedule),
 .timeline-wrap:has(.schedule-month-calendar),
 .timeline-wrap:has(.project-gantt) {

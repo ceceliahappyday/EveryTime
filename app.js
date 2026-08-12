@@ -45,8 +45,9 @@ const state = {
   filter: "planned",
   taskView: "day",
   projectScale: "day",
-  projectFutureDays: 30,
   projectScrollLeft: null,
+  projectHorizontalSyncing: false,
+  projectAnchorDate: null,
   projectViewNeedsAnchor: false,
   projectCollapsedGroups: new Set(),
   ganttCollapsedGroups: new Set(),
@@ -70,7 +71,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "appVersionBadge",
     "todayButton", "weekDays", "taskCount", "taskList", "unplannedCount", "openCount", "doneCount", "closedCount", "exportButton",
     "plannedHours", "progressLabel", "progressBar", "scheduleTitle", "loggedHours", "freeHours",
-    "timeline", "timelineWrap", "quickAddButton", "toggleCompact", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "viewSwitcher",
+    "timeline", "timelineWrap", "projectHorizontalScrollbar", "projectHorizontalScrollbarInner", "quickAddButton", "toggleCompact", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "viewSwitcher",
     "taskTabs", "allCount", "taskViewTitle", "taskDialog", "taskEditForm", "taskDialogEyebrow", "taskDialogTitle",
     "taskDetailSummary",
     "taskTitleInput", "taskDueDate", "taskDueTime", "taskOwner", "taskParent", "taskPriority",
@@ -244,6 +245,7 @@ function bindEvents() {
     const previousView = state.taskView;
     state.taskView = button.dataset.view;
     state.projectViewNeedsAnchor = state.taskView === "project" && previousView !== "project";
+    if (state.projectViewNeedsAnchor) state.projectAnchorDate = toDateKey(new Date());
     el.viewSwitcher.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
     render();
   });
@@ -325,19 +327,15 @@ function bindEvents() {
     clearTimeout(timelineScrollBarTimer);
     el.timelineWrap.classList.add("is-scrolling");
     timelineScrollBarTimer = setTimeout(() => el.timelineWrap.classList.remove("is-scrolling"), 700);
-    if (state.taskView === "project") {
+    if (state.taskView === "project" && !state.projectHorizontalSyncing) {
       state.projectScrollLeft = el.timelineWrap.scrollLeft;
-      const nearRight = el.timelineWrap.scrollLeft + el.timelineWrap.clientWidth >= el.timelineWrap.scrollWidth - 180;
-      if (nearRight && !state.projectExpanding && state.projectFutureDays < 3650) {
-        state.projectExpanding = true;
-        state.projectFutureDays += 30;
-        renderSchedule();
-        requestAnimationFrame(() => {
-          state.projectExpanding = false;
-          el.timelineWrap.scrollLeft = state.projectScrollLeft || 0;
-        });
-      }
+      syncProjectHorizontalScrollbar("fromTimeline");
     }
+  }, { passive: true });
+  el.projectHorizontalScrollbar.addEventListener("scroll", () => {
+    if (state.projectHorizontalSyncing || state.taskView !== "project") return;
+    state.projectScrollLeft = el.projectHorizontalScrollbar.scrollLeft;
+    syncProjectHorizontalScrollbar("fromTop");
   }, { passive: true });
   window.addEventListener("dragend", clearScheduleDragOver);
   window.addEventListener("drop", clearScheduleDragOver);
@@ -960,16 +958,12 @@ function getTaskScheduleEntries(taskId) {
 }
 
 function projectTimelineBuckets(projects, scale = "day") {
-  const points = projects.flatMap(project => project.children.flatMap(task => taskTimelineDateKeys(task)));
+  const points = projects.flatMap(project => project.children.flatMap(task => [task, ...getDescendantTasks(task.id)].flatMap(item => taskTimelineDateKeys(item))));
   const fallback = state.selectedDate;
-  const current = fromDateKey(fallback);
   const min = points.length ? [points.sort()[0], fallback].sort()[0] : fallback;
-  const futureDays = state.projectFutureDays || 30;
-  const futureDate = addDays(current, futureDays);
-  const futureKey = toDateKey(futureDate);
-  // Keep all history, but only materialize the current period plus the configured
-  // future window. The scroll handler expands this window by 30 days on demand.
-  const max = futureKey;
+  const current = fromDateKey(fallback);
+  const futureKey = toDateKey(addDays(current, 30));
+  const max = points.length ? [points.slice().sort().at(-1), futureKey].sort().at(-1) : futureKey;
   const buckets = [];
   if (scale === "month") {
     let cursor = new Date(fromDateKey(min).getFullYear(), fromDateKey(min).getMonth(), 1);
@@ -1539,24 +1533,54 @@ function renderProjectSchedule() {
     el.timeline.appendChild(groupNode);
   });
   bindProjectDrop(el.timeline, buckets, ganttBucketWidth);
+  setupProjectHorizontalScrollbar();
   if (state.projectViewNeedsAnchor) {
     state.projectViewNeedsAnchor = false;
     requestAnimationFrame(() => {
       const currentKey = state.projectScale === "month"
-        ? state.selectedDate.slice(0, 7)
+        ? (state.projectAnchorDate || toDateKey(new Date())).slice(0, 7)
         : state.projectScale === "week"
-          ? toDateKey(getMonday(fromDateKey(state.selectedDate)))
-          : state.selectedDate;
-      el.timelineWrap.scrollLeft = ProjectViewPolicy.anchorScrollLeft({
+          ? toDateKey(getMonday(fromDateKey(state.projectAnchorDate || toDateKey(new Date()))))
+          : (state.projectAnchorDate || toDateKey(new Date()));
+      const viewportWidth = el.timelineWrap.clientWidth || 1;
+      const target = Math.max(0, ProjectViewPolicy.anchorScrollLeft({
         buckets,
         anchorKey: currentKey,
         bucketWidth: ganttBucketWidth
-      });
+      }) - Math.round(viewportWidth * 0.24));
+      setProjectScrollLeft(target);
     });
   } else if (state.projectScrollLeft !== null) {
     const savedScrollLeft = state.projectScrollLeft;
-    requestAnimationFrame(() => { el.timelineWrap.scrollLeft = savedScrollLeft; });
+    requestAnimationFrame(() => setProjectScrollLeft(savedScrollLeft));
   }
+}
+
+function setProjectScrollLeft(value) {
+  state.projectHorizontalSyncing = true;
+  const next = Math.max(0, Number(value) || 0);
+  el.timelineWrap.scrollLeft = next;
+  el.projectHorizontalScrollbar.scrollLeft = next;
+  state.projectScrollLeft = next;
+  requestAnimationFrame(() => { state.projectHorizontalSyncing = false; });
+}
+
+function setupProjectHorizontalScrollbar() {
+  const visible = state.taskView === "project";
+  el.projectHorizontalScrollbar.classList.toggle("hidden", !visible);
+  if (!visible) return;
+  el.projectHorizontalScrollbarInner.style.width = `${Math.max(el.timeline.scrollWidth, el.timelineWrap.clientWidth)}px`;
+  setProjectScrollLeft(state.projectScrollLeft ?? el.timelineWrap.scrollLeft);
+}
+
+function syncProjectHorizontalScrollbar(source = "fromTimeline") {
+  if (!el.projectHorizontalScrollbar || state.projectHorizontalSyncing) return;
+  const target = source === "fromTop" ? el.projectHorizontalScrollbar : el.timelineWrap;
+  const other = source === "fromTop" ? el.timelineWrap : el.projectHorizontalScrollbar;
+  state.projectHorizontalSyncing = true;
+  other.scrollLeft = target.scrollLeft;
+  state.projectScrollLeft = target.scrollLeft;
+  requestAnimationFrame(() => { state.projectHorizontalSyncing = false; });
 }
 
 function createProjectGanttRow(task, buckets, scale = "day", rootId = "") {
@@ -2748,7 +2772,10 @@ function formatDue(task) {
 function moveSelectedDate(days) { selectDate(addDays(fromDateKey(state.selectedDate), days)); }
 function selectDate(date) {
   state.selectedDate = toDateKey(date);
-  if (state.taskView === "project" && isToday(date)) state.projectViewNeedsAnchor = true;
+  if (state.taskView === "project") {
+    state.projectAnchorDate = isToday(date) ? toDateKey(new Date()) : state.selectedDate;
+    if (isToday(date)) state.projectViewNeedsAnchor = true;
+  }
   render();
   el.timelineWrap.scrollTop = 0;
 }

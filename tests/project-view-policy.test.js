@@ -11,6 +11,8 @@ assert.strictEqual(policy.anchorScrollLeft({ buckets, anchorKey: "missing", labe
 assert.strictEqual(policy.futureBucketCount("day"), 30);
 assert.strictEqual(policy.futureBucketCount("week"), 5);
 assert.strictEqual(policy.futureBucketCount("month"), 2);
+assert.strictEqual(policy.anchorScrollLeft({ buckets, anchorKey: "2026-08-01", bucketWidth: 72 }), 144);
+assert.ok(policy.anchorScrollLeft({ buckets, anchorKey: "2026-08-01", bucketWidth: 72 }) < 216);
 assert.deepStrictEqual(policy.timelineSpanForBuckets(
   ["2026-07-03", "2026-07-10"],
   [{ key: "2026-06-29" }, { key: "2026-07-06" }, { key: "2026-07-13" }],
