@@ -1733,22 +1733,30 @@ function renderWeekSchedule() {
     const key = toDateKey(date);
     const column = document.createElement("section");
     column.className = `week-schedule-day${key === state.selectedDate ? " selected" : ""}`;
-    const taskTraces = taskTracesForDate(key);
+    const dayEntries = WeekEntryPolicy.sortEntries(getDay(key).entries || []);
+    const taskEntryIds = new Set(dayEntries.filter(entry => entry.entryType === "task_work" || entry.taskId).map(entry => entry.taskId).filter(Boolean));
+    const hasActualDescendant = task => getAllTasks().some(({ task: candidate }) => taskEntryIds.has(candidate.id) && isAncestorTask(task.id, candidate.id));
+    const taskTraces = taskTracesForDate(key).filter(({ task }) => !taskEntryIds.has(task.id) && !hasActualDescendant(task));
+    const plannedTasks = dueTasksForDate(key).filter(task => !taskEntryIds.has(task.id) && !hasActualDescendant(task));
+    const completedTasks = completedTasksForDate(key).filter(task => !taskEntryIds.has(task.id) && !hasActualDescendant(task));
     column.innerHTML = `<h4>${WEEKDAY_NAMES[date.getDay()]} · ${date.getMonth() + 1}/${date.getDate()}</h4>
       <button type="button" class="week-add-task" data-date="${key}">＋ 新建待办</button>
-      ${renderTaskTraceList(taskTraces, "week")}
+      ${renderWeekTaskWorkList(dayEntries, key)}
+      ${renderDueTaskList(plannedTasks, "week")}
+      ${renderCompletedTaskList(completedTasks, "week")}
       ${renderCalendarEntryList(getCalendarEntriesForDate(key), "week")}`;
     column.querySelector(".week-add-task").addEventListener("click", event => {
       event.stopPropagation();
       openTaskDialogForDate(key);
     });
     bindScheduleDrop(column, key, 9);
-    const entries = [...getDay(key).entries].sort((a, b) => a.start - b.start);
+    bindWeekTaskWorkList(column, key);
+    const entries = dayEntries;
     entries.forEach(entry => {
       logged += getEntryInvestedHours(key, entry);
       scheduled += entry.end - entry.start;
     });
-    if (!taskTraces.length) column.insertAdjacentHTML("beforeend", `<div class="empty-state">暂无任务</div>`);
+    if (!dayEntries.length && !plannedTasks.length && !completedTasks.length) column.insertAdjacentHTML("beforeend", `<div class="empty-state">暂无任务</div>`);
     bindDueTaskList(column, key);
     bindCalendarEntryList(column, key);
     column.addEventListener("dblclick", event => {
@@ -1917,6 +1925,57 @@ function bindScheduleDrop(target, dateKey, hour) {
     event.stopPropagation();
     clearScheduleDragOver();
     handleScheduleDropData(dateKey, hour, event);
+  });
+}
+
+function isAncestorTask(ancestorId, taskId) {
+  if (!ancestorId || !taskId || ancestorId === taskId) return false;
+  const seen = new Set();
+  let current = findTask(taskId)?.task;
+  while (current?.parentId && !seen.has(current.parentId)) {
+    if (current.parentId === ancestorId) return true;
+    seen.add(current.parentId);
+    current = findTask(current.parentId)?.task;
+  }
+  return false;
+}
+
+function renderWeekTaskWorkList(entries, dateKey) {
+  const taskEntries = entries.filter(entry => entry.entryType === "task_work" || entry.taskId);
+  if (!taskEntries.length) return "";
+  const tasks = getAllTasks().map(({ task }) => task);
+  return `<div class="week-task-work-list" title="当天投入明细">
+    <div class="week-task-work-heading">实际投入</div>
+    ${taskEntries.map(entry => {
+      const task = entry.taskId ? findTask(entry.taskId)?.task : null;
+      const title = WeekEntryPolicy.entryTitle(entry, task);
+      const parent = WeekEntryPolicy.parentPath(task, tasks);
+      const hours = WeekEntryPolicy.durationHours(entry);
+      return `<div class="week-task-work-item ${task?.status || "planned"}" draggable="true" data-entry-id="${escapeHtml(entry.id)}" title="${escapeHtml(entry.note || title)}">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${formatTime(entry.start)}–${formatTime(entry.end)} · ${trimNumber(hours)}小时</span>
+        <small>${escapeHtml(task ? statusLabel(task.status) : "投入")}</small>
+        ${parent ? `<small>${escapeHtml(parent)}</small>` : ""}
+        ${entry.note ? `<p>${escapeHtml(String(entry.note).slice(0, 80))}</p>` : ""}
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function bindWeekTaskWorkList(container, dateKey) {
+  container.querySelectorAll(".week-task-work-item").forEach(item => {
+    item.addEventListener("click", event => {
+      event.stopPropagation();
+      const found = findEntry(item.dataset.entryId);
+      if (found) openEntryDialog(found.entry.start, found.entry);
+    });
+    item.addEventListener("dragstart", event => {
+      event.stopPropagation();
+      event.dataTransfer.setData("text/entry-id", item.dataset.entryId);
+      event.dataTransfer.effectAllowed = "copy";
+      item.classList.add("dragging");
+    });
+    item.addEventListener("dragend", () => item.classList.remove("dragging"));
   });
 }
 

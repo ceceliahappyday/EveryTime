@@ -997,6 +997,15 @@ button.task-group-heading {
 .week-entry span { display: block; color: var(--muted); font-size: 8px; }
 .week-entry p { margin: 5px 0 0; color: var(--ink); font-size: 8px; line-height: 1.45; }
 .week-entry.task-entry { border-left-color: #5d7f9e; }
+.week-task-work-list { margin: 6px 0 9px; padding: 6px; border: 1px solid rgba(93, 166, 176, .34); border-radius: 9px; background: rgba(4, 28, 40, .30); }
+.week-task-work-heading { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+.week-task-work-item { margin-top: 5px; padding: 7px 8px; border-left: 3px solid #69bdb7; border-radius: 7px; background: rgba(35, 126, 135, .28); cursor: pointer; }
+.week-task-work-item:hover { background: rgba(61, 161, 167, .42); }
+.week-task-work-item strong, .week-task-work-item span, .week-task-work-item small, .week-task-work-item p { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.week-task-work-item strong { font-size: 10px; }
+.week-task-work-item span { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.week-task-work-item small { margin-top: 3px; color: #b9d8d5; font-size: 8px; }
+.week-task-work-item p { margin: 4px 0 0; color: var(--ink); font-size: 8px; }
 .schedule-month-calendar {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));

@@ -60,3 +60,4 @@ EveryTime 是桌面浮窗式的任务、日程投入和项目进度工具。任�
 - Cleanup is user-scope only (`HKCU` Run / StartupApproved), and only removes an exact known alias after verifying an EveryTime executable path. Never modify `HKLM`, require admin rights, or delete unrelated entries.
 - Startup registration uses the current executable path, disables verified EveryTime aliases when switched off, and the main process holds a single-instance lock.
 - `startup-policy.js` is a CommonJS main-process module and must not be loaded by `index.html`.
+- Week view is an actual work-entry detail surface: each `task_work`/linked entry is shown separately by start time with leaf title, duration, note, and parent breadcrumb. Parent tasks must not replace a leaf entry or reappear as an actual-work card when a descendant has that day's entry; due-only items remain under an explicit plan/deadline label.

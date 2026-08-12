@@ -30,3 +30,4 @@
 - 增加可执行的 task-work 行为测试，覆盖复制、边界、零时长和多投入状态。
 - v2.0.40 已完成安装包构建，准备提交 GitHub Release。
 - 2026-08-12: Added explicit CommonJS startup policy, canonical `EveryTime` login registration, conservative legacy-alias cleanup, single-instance locking, and executable regression checks. No task data or STORAGE_KEY changes.
+- 2026-08-12: v2.0.42 fixed week-view work-entry rendering. Linked task-work entries now show leaf titles, time range, duration, notes, and parent breadcrumbs; multiple same-day entries remain separate and clickable/draggable. Due-only items are visually separated as plan/deadline prompts.
