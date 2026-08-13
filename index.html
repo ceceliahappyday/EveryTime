@@ -146,7 +146,14 @@
 
       <label>
         <span>关联待办</span>
-        <select id="entryTaskLink"></select>
+        <select id="entryTaskLink" class="visually-hidden-select" tabindex="-1" aria-hidden="true"></select>
+        <div class="entry-task-combobox" id="entryTaskCombobox">
+          <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">新建待办并关联</button>
+          <div class="entry-task-popup hidden" id="entryTaskPopup">
+            <input id="entryTaskSearch" type="search" autocomplete="off" placeholder="搜索任务名称、父级路径或状态…" aria-label="搜索关联待办" aria-controls="entryTaskOptions" />
+            <div id="entryTaskOptions" class="entry-task-options" role="listbox"></div>
+          </div>
+        </div>
       </label>
 
       <div class="form-row">

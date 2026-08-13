@@ -538,6 +538,22 @@ button.task-group-heading {
 .project-horizontal-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .project-horizontal-scrollbar::-webkit-scrollbar-thumb { border-radius: 8px; background: rgba(132,174,197,.68); }
 .project-horizontal-scrollbar-inner { height: 1px; }
+.visually-hidden-select { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.entry-task-combobox { position: relative; min-width: 0; }
+.entry-task-combobox.disabled { opacity: .42; }
+.entry-task-trigger { width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: rgba(255,255,255,.72); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.entry-task-popup { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 5px); padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: rgba(250,249,246,.98); box-shadow: 0 18px 45px rgba(0,0,0,.28); }
+.entry-task-popup.hidden { display: none; }
+.entry-task-popup input { width: 100%; margin-bottom: 7px; }
+.entry-task-options { max-height: min(280px, 38vh); overflow-y: auto; display: grid; gap: 4px; }
+.entry-task-option { display: grid; gap: 2px; width: 100%; padding: 8px 9px; border: 1px solid transparent; border-radius: 7px; color: var(--ink); background: transparent; text-align: left; cursor: pointer; }
+.entry-task-option:hover, .entry-task-option.active { border-color: var(--accent); background: rgba(101,180,177,.15); }
+.entry-task-option strong, .entry-task-option span, .entry-task-option small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entry-task-option span, .entry-task-option small { color: var(--muted); font-size: 10px; }
+.entry-task-option span b { color: var(--accent); font-size: 9px; }
+.entry-task-option.create-option { color: var(--accent); border-bottom: 1px solid var(--line-soft); border-radius: 5px; }
+.entry-task-no-results { padding: 12px; color: var(--muted); font-size: 12px; }
+body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entry-task-popup { color: #f3f8fb; background: rgba(0,0,0,.78); border-color: rgba(181,218,239,.45); }
 .timeline-wrap:has(.week-schedule),
 .timeline-wrap:has(.schedule-month-calendar),
 .timeline-wrap:has(.project-gantt) {

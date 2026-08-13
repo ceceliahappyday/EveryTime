@@ -80,7 +80,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "taskBusinessBackground", "taskProblemReason", "taskDeliveryNote", "businessBackgroundLabel",
     "problemReasonLabel", "taskDescription",
     "deleteTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle", "entryType",
-    "entryTaskLink", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
+    "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast", "pinWindow", "desktopLock", "glassMode",
     "updateProgress", "updateProgressText", "updateProgressBar",
     "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
@@ -300,6 +300,7 @@ function bindEvents() {
     saveEntry();
   });
   el.entryType.addEventListener("change", updateEntryTypeControls);
+  bindEntryTaskCombobox();
   el.entryStart.addEventListener("change", () => {
     if (Number(el.entryEnd.value) <= Number(el.entryStart.value)) el.entryEnd.value = Math.min(Number(el.entryStart.value) + 1, 22);
   });
@@ -2165,24 +2166,51 @@ function focusLinkedTaskFilter(taskId) {
 function fillEntryTaskOptions(entry = null) {
   el.entryTaskLink.innerHTML = "";
   el.entryTaskLink.add(new Option("新建待办并关联", "__create__"));
-  const tasks = getAllTasks().map(({ task }) => task);
-  getAllTasks()
-    .filter(({ task }) => TaskOptionPolicy.shouldIncludeEntryTaskOption({
-      task,
-      isHiddenFutureRecurringInstance: isHiddenFutureRecurringInstance(task),
-      isCurrentLinkedTask: entry?.taskId === task.id
-    }))
-    .sort((a, b) => `${a.task.dueDate} ${a.task.dueTime}`.localeCompare(`${b.task.dueDate} ${b.task.dueTime}`))
-    .forEach(({ task }) => {
-      el.entryTaskLink.add(new Option(TaskOptionPolicy.entryTaskOptionLabel({
-        task,
-        selectedDate: state.selectedDate,
-        hasChildren: hasChildTasks(task.id),
-        hierarchyPath: TaskOptionPolicy.taskHierarchyPath({ task, tasks, separator: " › " })
-      }), task.id));
-    });
+  getAllTasks().map(({ task }) => task).forEach(task => {
+    if (TaskOptionPolicy.shouldIncludeEntryTaskOption({ task, isHiddenFutureRecurringInstance: isHiddenFutureRecurringInstance(task), isCurrentLinkedTask: entry?.taskId === task.id })) el.entryTaskLink.add(new Option(task.title, task.id));
+  });
   el.entryTaskLink.value = entry?.taskId || "__create__";
+  renderEntryTaskOptions("");
+  syncEntryTaskTrigger();
 }
+
+let entryTaskActiveIndex = 0;
+function bindEntryTaskCombobox() {
+  el.entryTaskTrigger.addEventListener("click", toggleEntryTaskPopup);
+  el.entryTaskSearch.addEventListener("input", () => { entryTaskActiveIndex = 0; renderEntryTaskOptions(el.entryTaskSearch.value); });
+  el.entryTaskSearch.addEventListener("keydown", event => {
+    const options = el.entryTaskOptions.querySelectorAll('[role="option"]');
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); entryTaskActiveIndex = Math.max(0, Math.min(Math.max(0, options.length - 1), entryTaskActiveIndex + (event.key === "ArrowDown" ? 1 : -1))); updateEntryTaskActiveOption(options); }
+    else if (event.key === "Enter" && options[entryTaskActiveIndex]) { event.preventDefault(); chooseEntryTaskOption(options[entryTaskActiveIndex].dataset.value); }
+    else if (event.key === "Escape") closeEntryTaskPopup();
+  });
+  el.entryTaskTrigger.addEventListener("keydown", event => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); toggleEntryTaskPopup(); }
+    else if (event.key === "Escape") closeEntryTaskPopup();
+  });
+  [el.entryTaskTrigger, el.entryTaskSearch].forEach(control => control.addEventListener("keydown", event => { if (event.key === "Tab") closeEntryTaskPopup(); }));
+  document.addEventListener("click", event => { if (!el.entryTaskCombobox.contains(event.target)) closeEntryTaskPopup(); });
+}
+function toggleEntryTaskPopup() {
+  if (el.entryTaskLink.disabled) return;
+  if (!el.entryTaskPopup.classList.contains("hidden")) return closeEntryTaskPopup();
+  el.entryTaskPopup.classList.remove("hidden"); el.entryTaskTrigger.setAttribute("aria-expanded", "true"); el.entryTaskSearch.value = ""; renderEntryTaskOptions(""); setTimeout(() => el.entryTaskSearch.focus(), 0);
+}
+function closeEntryTaskPopup() { el.entryTaskPopup.classList.add("hidden"); el.entryTaskTrigger.setAttribute("aria-expanded", "false"); if (document.activeElement === el.entryTaskSearch) el.entryTaskTrigger.focus(); }
+function renderEntryTaskOptions(query) {
+  const tasks = getAllTasks().map(({ task }) => task);
+  const results = TaskOptionPolicy.searchTaskCandidates({ tasks, query, selectedId: el.entryTaskLink.value, isHiddenFutureRecurringInstance, statusText: task => statusLabel(task.status), dateText: task => task.dueDate || "未计划" });
+  const create = `<button type="button" class="entry-task-option create-option" role="option" aria-selected="${el.entryTaskLink.value === "__create__"}" data-value="__create__">${query.trim() ? "用当前日程标题新建待办并关联" : "＋ 新建待办并关联"}</button>`;
+  const items = results.map(({ task, meta }) => `<button type="button" class="entry-task-option" role="option" aria-selected="${el.entryTaskLink.value === task.id}" data-value="${escapeHtml(task.id)}" title="${escapeHtml(meta.path)}"><strong>${escapeHtml(task.title)}</strong><span><b>第${meta.depth}层${meta.kind}</b>${meta.parentPath ? ` · ${escapeHtml(meta.parentPath)}` : ""}</span><small>${escapeHtml(statusLabel(task.status))} · ${task.dueDate ? escapeHtml(task.dueDate.slice(5)) : "未计划"}${el.entryTaskLink.value === task.id ? " · ✓ 已关联" : ""}</small></button>`).join("");
+  el.entryTaskOptions.innerHTML = create + (items || `<div class="entry-task-no-results">无匹配任务</div>`);
+  const current = [...el.entryTaskOptions.querySelectorAll('[role="option"]')].findIndex(option => option.getAttribute("aria-selected") === "true");
+  entryTaskActiveIndex = current >= 0 ? current : 0;
+  el.entryTaskOptions.querySelectorAll('[role="option"]').forEach(option => option.addEventListener("click", () => chooseEntryTaskOption(option.dataset.value)));
+  updateEntryTaskActiveOption(el.entryTaskOptions.querySelectorAll('[role="option"]'));
+}
+function updateEntryTaskActiveOption(options) { options.forEach((option, index) => option.classList.toggle("active", index === entryTaskActiveIndex)); }
+function chooseEntryTaskOption(value) { el.entryTaskLink.value = value; syncEntryTaskTrigger(); closeEntryTaskPopup(); }
+function syncEntryTaskTrigger() { const selected = el.entryTaskLink.options[el.entryTaskLink.selectedIndex]; el.entryTaskTrigger.textContent = selected?.textContent || "新建待办并关联"; }
 
 function getCalendarEntriesForDate(dateKey) {
   return (getDay(dateKey).entries || [])
@@ -2213,7 +2241,11 @@ function updateEntryTypeControls() {
   const taskWork = el.entryType.value === "task_work";
   el.entryTaskLink.disabled = !taskWork;
   el.entryTaskLink.closest("label")?.classList.toggle("disabled-field", !taskWork);
+  el.entryTaskCombobox.classList.toggle("disabled", !taskWork);
+  el.entryTaskTrigger.disabled = !taskWork;
   if (!taskWork) el.entryTaskLink.value = "";
+  else if (!el.entryTaskLink.value) el.entryTaskLink.value = "__create__";
+  syncEntryTaskTrigger();
 }
 
 function resolveEntryTaskLink(entryPayload, existingEntry = null) {

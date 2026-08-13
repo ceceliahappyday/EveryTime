@@ -52,11 +52,73 @@
     return chain.join(separator);
   }
 
+  function parentIdOf(task) {
+    return task?.parentId || task?.parentTaskId || task?.parentTask || task?.parent || "";
+  }
+
+  function hierarchyMeta({ task, tasks = [], separator = " › " }) {
+    if (!task) return { depth: 0, parentPath: "", path: "", hasChildren: false, kind: "任务" };
+    const byId = new Map(tasks.map(item => [item.id, item]));
+    const chain = [];
+    const seen = new Set();
+    let current = task;
+    while (current && !seen.has(current.id)) {
+      chain.unshift(current);
+      seen.add(current.id);
+      current = byId.get(parentIdOf(current));
+    }
+    const titles = chain.map(item => item.title || "未命名任务");
+    const hasChildren = tasks.some(item => parentIdOf(item) === task.id);
+    return {
+      depth: Math.max(1, chain.length),
+      parentPath: titles.slice(0, -1).join(separator),
+      path: titles.join(separator),
+      hasChildren,
+      kind: hasChildren ? "计划" : "任务"
+    };
+  }
+
+  function normalizeSearchText(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[›»>\\/|、，,。:：·]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function searchTaskCandidates({ tasks = [], query = "", selectedId = "", isHiddenFutureRecurringInstance = () => false, statusText = task => task.status || "", dateText = task => task.dueDate || "" } = {}) {
+    const normalizedQuery = normalizeSearchText(query);
+    const keywords = normalizedQuery ? normalizedQuery.split(" ").filter(Boolean) : [];
+    return tasks
+      .filter(task => shouldIncludeEntryTaskOption({
+        task,
+        isHiddenFutureRecurringInstance: isHiddenFutureRecurringInstance(task),
+        isCurrentLinkedTask: task.id === selectedId
+      }))
+      .map(task => {
+        const meta = hierarchyMeta({ task, tasks });
+        const searchable = normalizeSearchText([task.title, meta.path, statusText(task), dateText(task)].join(" "));
+        const title = normalizeSearchText(task.title);
+        const matched = keywords.every(keyword => searchable.includes(keyword));
+        let rank = 3;
+        if (normalizedQuery && title === normalizedQuery) rank = 0;
+        else if (normalizedQuery && title.startsWith(normalizedQuery)) rank = 1;
+        else if (normalizedQuery && title.includes(normalizedQuery)) rank = 2;
+        return { task, meta, searchable, matched, rank };
+      })
+      .filter(item => item.matched)
+      .sort((a, b) => a.rank - b.rank || Number(a.meta.hasChildren) - Number(b.meta.hasChildren) || a.meta.path.localeCompare(b.meta.path) || String(a.task.id).localeCompare(String(b.task.id)));
+  }
+
   return {
     shouldIncludeEntryTaskOption,
     entryTaskOptionLabel,
     descendantTaskIds,
     parentTaskOptionCandidates,
-    taskHierarchyPath
+    taskHierarchyPath,
+    parentIdOf,
+    hierarchyMeta,
+    normalizeSearchText,
+    searchTaskCandidates
   };
 });
