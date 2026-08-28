@@ -343,7 +343,10 @@ function configureAutoUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on("checking-for-update", () => {
-    sendUpdateProgress({ state: "checking", percent: 0, message: "正在检查更新…" });
+    // 自动检查保持静默；仅手动检查时显示进度条，避免「最新版本」也误显下载中。
+    if (manualUpdateCheck) {
+      sendUpdateProgress({ state: "checking", percent: 0, message: "正在检查更新…" });
+    }
   });
   autoUpdater.on("update-available", async info => {
     const result = await dialog.showMessageBox(mainWindow, {
@@ -360,6 +363,7 @@ function configureAutoUpdater() {
     if (result.response === 0) {
       sendUpdateProgress({ state: "downloading", percent: 0, message: `正在下载 EveryTime ${info.version}…` });
       autoUpdater.downloadUpdate().catch(error => {
+        sendUpdateProgress({ state: "error", percent: 0, message: `下载更新失败：${error?.message || String(error)}` });
         dialog.showErrorBox("下载更新失败", error?.message || String(error));
       });
     } else {

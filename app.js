@@ -530,11 +530,19 @@ async function renderAppVersion() {
 function bindUpdateProgress() {
   window.desktopAPI?.onUpdateProgress?.(payload => {
     if (!el.updateProgress || !payload) return;
+    if (payload.state === "idle") {
+      el.updateProgress.classList.add("hidden");
+      el.updateProgress.classList.remove("done", "error");
+      el.updateProgressBar.style.width = "0%";
+      return;
+    }
     const percent = Math.max(0, Math.min(100, Number(payload.percent || 0)));
     el.updateProgress.classList.remove("hidden", "done", "error");
     el.updateProgress.classList.toggle("done", payload.state === "downloaded");
     el.updateProgress.classList.toggle("error", payload.state === "error");
-    el.updateProgressText.textContent = payload.message || `正在下载更新… ${Math.round(percent)}%`;
+    el.updateProgressText.textContent = payload.message || (
+      payload.state === "checking" ? "正在检查更新…" : `正在下载更新… ${Math.round(percent)}%`
+    );
     el.updateProgressBar.style.width = `${percent}%`;
     if (payload.state === "downloaded" || payload.state === "error") {
       setTimeout(() => el.updateProgress?.classList.add("hidden"), 6500);
