@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("desktopAPI", {
   saveSettings: settings => ipcRenderer.invoke("app:save-settings", settings),
   aiAsk: payload => ipcRenderer.invoke("ai:ask", payload),
   getVersion: () => ipcRenderer.invoke("app:get-version"),
+  checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),
   getPaths: () => ipcRenderer.invoke("app:get-paths"),
   resizeBy: (width, height) => ipcRenderer.send("window:resize-by", width, height),
   minimize: () => ipcRenderer.invoke("window:minimize"),

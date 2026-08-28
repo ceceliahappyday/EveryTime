@@ -2191,6 +2191,14 @@ body.in-desktop.glass-mode .task-trace-list.month:hover::-webkit-scrollbar-thumb
   background: rgba(248,247,243,.72);
 }
 .settings-info div { min-width: 0; }
+.settings-version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings-version-row > div { flex: 1; min-width: 0; }
+.settings-version-row .soft-button { flex: 0 0 auto; white-space: nowrap; }
 .settings-info span {
   display: block;
   margin-bottom: 4px;

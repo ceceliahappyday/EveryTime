@@ -98,7 +98,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "settingsButton", "settingsDialog", "settingsForm", "settingGlass", "settingPinned", "settingLocked",
-    "settingCompact", "settingStartAtLogin", "settingAiEnabled", "settingAiApiKey", "settingAiModel", "aiKeyStatus", "settingsAppVersion", "settingsDataPath", "settingsExportPath"
+    "settingCompact", "settingStartAtLogin", "settingAiEnabled", "settingAiApiKey", "settingAiModel", "aiKeyStatus",
+    "settingsAppVersion", "checkUpdateButton", "settingsDataPath", "settingsExportPath"
   ].forEach(id => el[id] = document.getElementById(id));
 
   if (!el.closeTaskButton) {
@@ -465,6 +466,18 @@ async function initDesktop() {
   el.minimizeWindow.addEventListener("click", () => window.desktopAPI.minimize());
   el.closeWindow.addEventListener("click", () => window.desktopAPI.quit());
   el.settingsButton?.addEventListener("click", openSettingsDialog);
+  el.checkUpdateButton?.addEventListener("click", async () => {
+    if (!window.desktopAPI?.checkForUpdates) {
+      showToast("当前环境不支持检查更新");
+      return;
+    }
+    showToast("正在检查更新…");
+    try {
+      await window.desktopAPI.checkForUpdates();
+    } catch (error) {
+      showToast(error?.message || "检查更新失败");
+    }
+  });
   el.aiAssistantButton?.addEventListener("click", openAiDialog);
   el.aiQuickActions?.addEventListener("click", event => {
     const button = event.target.closest("[data-ai-prompt]");

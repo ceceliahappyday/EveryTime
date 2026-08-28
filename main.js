@@ -102,6 +102,10 @@ if (singleInstanceLock) app.whenReady().then(() => {
   });
   ipcMain.handle("ai:ask", async (_event, payload) => askOpenAI(payload || {}));
   ipcMain.handle("app:get-version", () => app.getVersion());
+  ipcMain.handle("app:check-for-updates", () => {
+    checkForUpdates(true);
+    return { ok: true, packaged: app.isPackaged, version: app.getVersion() };
+  });
   ipcMain.handle("app:get-paths", () => ({
     dataFile: plannerDataPath(),
     exportDir: defaultExportDir(),
@@ -335,10 +339,13 @@ function persistPartialSettings(partial) {
 }
 
 function configureAutoUpdater() {
+  clearStaleUpdaterCache();
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("checking-for-update", () => {
+    sendUpdateProgress({ state: "checking", percent: 0, message: "正在检查更新…" });
+  });
   autoUpdater.on("update-available", async info => {
-    manualUpdateCheck = false;
     const result = await dialog.showMessageBox(mainWindow, {
       type: "question",
       title: "发现新版本",
@@ -346,14 +353,21 @@ function configureAutoUpdater() {
       detail: "是否现在下载更新？下载完成后会再次询问是否重启并安装。",
       buttons: ["下载更新", "稍后"],
       defaultId: 0,
-      cancelId: 1
+      cancelId: 1,
+      noLink: true
     });
+    manualUpdateCheck = false;
     if (result.response === 0) {
       sendUpdateProgress({ state: "downloading", percent: 0, message: `正在下载 EveryTime ${info.version}…` });
-      autoUpdater.downloadUpdate();
+      autoUpdater.downloadUpdate().catch(error => {
+        dialog.showErrorBox("下载更新失败", error?.message || String(error));
+      });
+    } else {
+      sendUpdateProgress({ state: "idle", percent: 0, message: "" });
     }
   });
   autoUpdater.on("update-not-available", () => {
+    sendUpdateProgress({ state: "idle", percent: 0, message: "" });
     if (manualUpdateCheck) {
       manualUpdateCheck = false;
       dialog.showMessageBox(mainWindow, { type: "info", title: "检查更新", message: "当前已经是最新版本。" });
@@ -378,7 +392,8 @@ function configureAutoUpdater() {
       detail: "是否现在重启并安装？",
       buttons: ["立即安装", "退出时安装"],
       defaultId: 0,
-      cancelId: 1
+      cancelId: 1,
+      noLink: true
     });
     if (result.response === 0) {
       app.isQuitting = true;
@@ -392,18 +407,44 @@ function configureAutoUpdater() {
     if (manualUpdateCheck) {
       manualUpdateCheck = false;
       dialog.showErrorBox("检查更新失败", message);
-    } else if (mainWindow && !mainWindow.isDestroyed()) {
-      dialog.showMessageBox(mainWindow, {
-        type: "warning",
-        title: "自动更新暂不可用",
-        message,
-        detail: "请确认 GitHub Releases 中存在最新版本的安装包、latest.yml 和 blockmap 文件。"
-      });
     }
   });
 }
 
+function clearStaleUpdaterCache() {
+  try {
+    const localAppData = process.env.LOCALAPPDATA || path.join(app.getPath("home"), "AppData", "Local");
+    const pendingDir = path.join(localAppData, "today-daily-planner-updater", "pending");
+    const infoFile = path.join(pendingDir, "update-info.json");
+    if (!fs.existsSync(infoFile)) return;
+    const info = JSON.parse(fs.readFileSync(infoFile, "utf8"));
+    const pendingName = String(info.fileName || "");
+    const match = pendingName.match(/(\d+\.\d+\.\d+)/);
+    if (!match) return;
+    if (compareVersions(match[1], app.getVersion()) <= 0) {
+      fs.rmSync(pendingDir, { recursive: true, force: true });
+    }
+  } catch {}
+}
+
+function compareVersions(a, b) {
+  const pa = String(a).split(".").map(n => Number(n) || 0);
+  const pb = String(b).split(".").map(n => Number(n) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const left = pa[i] || 0;
+    const right = pb[i] || 0;
+    if (left > right) return 1;
+    if (left < right) return -1;
+  }
+  return 0;
+}
+
 function sendUpdateProgress(payload) {
+  if (!payload?.message && payload?.state === "idle") {
+    mainWindow?.webContents.send("app:update-progress", { state: "idle", percent: 0, message: "" });
+    return;
+  }
   mainWindow?.webContents.send("app:update-progress", payload);
 }
 
@@ -417,8 +458,14 @@ function checkForUpdates(manual = false) {
     });
     return;
   }
+  clearStaleUpdaterCache();
+  if (manual) sendUpdateProgress({ state: "checking", percent: 0, message: "正在检查更新…" });
   autoUpdater.checkForUpdates().catch(error => {
-    if (manual) dialog.showErrorBox("检查更新失败", error?.message || String(error));
+    sendUpdateProgress({ state: "error", percent: 0, message: `更新失败：${error?.message || String(error)}` });
+    if (manual) {
+      manualUpdateCheck = false;
+      dialog.showErrorBox("检查更新失败", error?.message || String(error));
+    }
   });
 }
 
