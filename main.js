@@ -17,6 +17,7 @@ const windowStateFileName = "window-state.json";
 const settingsFileName = "settings.json";
 const appIconPath = path.join(__dirname, "assets", "icons", "app-icon.ico");
 const trayIconPath = path.join(__dirname, "assets", "icons", "app-icon.png");
+const skipStartupRegistration = process.argv.includes("--skip-startup-registration");
 
 if (process.platform === "win32") {
   app.setAppUserModelId("com.local.todayDailyPlanner");
@@ -70,7 +71,7 @@ if (singleInstanceLock) app.whenReady().then(() => {
   const settings = loadSettings();
   glass = settings.glass !== false;
   locked = !!settings.locked;
-  configureLoginItem(settings.startAtLogin);
+  if (!skipStartupRegistration) configureLoginItem(settings.startAtLogin);
   ipcMain.handle("window:get-pinned", () => mainWindow.isAlwaysOnTop());
   ipcMain.handle("window:toggle-pinned", () => {
     const next = !mainWindow.isAlwaysOnTop();
@@ -312,7 +313,7 @@ function saveSettings(nextSettings) {
   const settings = { ...loadSettings(), ...nextSettings };
   glass = settings.glass !== false;
   locked = !!settings.locked;
-  configureLoginItem(settings.startAtLogin);
+  if (!skipStartupRegistration) configureLoginItem(settings.startAtLogin);
   if (mainWindow) {
     mainWindow.setAlwaysOnTop(!!settings.pinned, settings.pinned ? "floating" : "normal");
     mainWindow.webContents.send("window:glass-changed", glass);

@@ -49,6 +49,18 @@ assert.deepEqual(summary.statusCounts, {
   ended: 1
 }, "project should summarize children by status");
 
+const nestedParent = { id: "mid", parentId: "p1", title: "中间分组", status: "in_progress" };
+const leafOnlySummary = summarizeProject({
+  parent,
+  children: [nestedParent, ...children],
+  summaryTasks: children,
+  getTaskDuration: taskId => ({ mid: 99, c1: 2.5, c2: 1.25 }[taskId] || 0),
+  getTaskScheduledHours: taskId => ({ mid: 99, c1: 2.5, c2: 2.5 }[taskId] || 0)
+});
+assert.equal(leafOnlySummary.children.length, 3, "full descendants should remain available for tree rendering");
+assert.equal(leafOnlySummary.taskCount, 2, "project count should include concrete leaf tasks only");
+assert.equal(leafOnlySummary.totalHours, 3.75, "parent/intermediate hours must not be double counted");
+
 assert.equal(classifyProjectStatus([{ status: "planned" }, { status: "unplanned" }]), "planned");
 assert.equal(classifyProjectStatus([{ status: "done" }, { status: "closed" }]), "ended");
 assert.equal(classifyProjectStatus([{ status: "unplanned" }]), "unplanned");

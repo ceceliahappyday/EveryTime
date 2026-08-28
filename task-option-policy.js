@@ -86,15 +86,18 @@
       .trim();
   }
 
-  function searchTaskCandidates({ tasks = [], query = "", selectedId = "", isHiddenFutureRecurringInstance = () => false, statusText = task => task.status || "", dateText = task => task.dueDate || "" } = {}) {
+  function searchTaskCandidates({ tasks = [], query = "", selectedId = "", includeEnded = false, leafOnly = false, hasChildTasks = () => false, isHiddenFutureRecurringInstance = () => false, statusText = task => task.status || "", dateText = task => task.dueDate || "" } = {}) {
     const normalizedQuery = normalizeSearchText(query);
     const keywords = normalizedQuery ? normalizedQuery.split(" ").filter(Boolean) : [];
     return tasks
-      .filter(task => shouldIncludeEntryTaskOption({
-        task,
-        isHiddenFutureRecurringInstance: isHiddenFutureRecurringInstance(task),
-        isCurrentLinkedTask: task.id === selectedId
-      }))
+      .filter(task => includeEnded
+        ? Boolean(task) && !isHiddenFutureRecurringInstance(task)
+        : shouldIncludeEntryTaskOption({
+            task,
+            isHiddenFutureRecurringInstance: isHiddenFutureRecurringInstance(task),
+            isCurrentLinkedTask: task.id === selectedId
+          }))
+      .filter(task => !leafOnly || !hasChildTasks(task.id))
       .map(task => {
         const meta = hierarchyMeta({ task, tasks });
         const searchable = normalizeSearchText([task.title, meta.path, statusText(task), dateText(task)].join(" "));

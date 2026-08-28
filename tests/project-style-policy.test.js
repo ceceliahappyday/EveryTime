@@ -23,13 +23,43 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /\.project-gantt-days\s*\{[^}]*width:\s*max-content[^}]*min-width:\s*100%/s,
-  "gantt header should keep all date columns available inside the horizontal scroll area"
+  /\.project-gantt-days\s*\{[^}]*position:\s*sticky/s,
+  "gantt date header should stay visible while task rows scroll vertically"
 );
 assert.match(
   styles,
-  /\.gantt-lane-status\s*\{/s,
-  "gantt status should remain visible even when there is no colored actual bar"
+  /\.project-gantt-chrome\s*\{[^}]*flex:\s*0\s*0\s*auto/s,
+  "gantt toolbar and legend should stay fixed above the scrolling chart area"
+);
+assert.match(
+  styles,
+  /\.project-gantt-hscroll\s*\{[^}]*overflow-x:\s*auto/s,
+  "gantt horizontal scrollbar should stay fixed at the bottom of the chart area"
+);
+assert.match(
+  styles,
+  /\.timeline-wrap:has\(\.project-gantt\)\s*\{[^}]*overflow-x:\s*hidden/s,
+  "project timeline wrapper should not horizontally scroll the toolbar away"
+);
+assert.match(
+  styles,
+  /\.project-gantt-split\s*\{[^}]*display:\s*flex/s,
+  "gantt should use a fixed label pane beside the scrolling chart"
+);
+assert.match(
+  styles,
+  /\.project-gantt-label-pane\s*\{[^}]*flex:\s*0\s*0\s*var\(--gantt-label-width/s,
+  "task titles should stay in a fixed left column while dates scroll"
+);
+assert.match(
+  styles,
+  /\.project-gantt-title strong\s*\{[^}]*text-overflow:\s*ellipsis/s,
+  "gantt titles should truncate inside the fixed label column"
+);
+assert.match(
+  styles,
+  /\.gantt-progress-pct\s*\{/s,
+  "task progress should render on the gantt bar instead of under the title"
 );
 assert.match(
   styles,

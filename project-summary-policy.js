@@ -3,33 +3,34 @@
   if (typeof module === "object" && module.exports) module.exports = policy;
   root.ProjectSummaryPolicy = policy;
 })(typeof globalThis !== "undefined" ? globalThis : window, function () {
-  function summarizeProject({ parent, children = [], getTaskDuration = () => 0, getTaskScheduledHours = () => 0 }) {
-    const taskCount = children.length;
-    const doneCount = children.filter(task => ["done", "closed"].includes(task.status)).length;
-    const statusCounts = children.reduce((counts, task) => {
+  function summarizeProject({ parent, children = [], summaryTasks = children, getTaskDuration = () => 0, getTaskScheduledHours = () => 0 }) {
+    const taskCount = summaryTasks.length;
+    const doneCount = summaryTasks.filter(task => ["done", "closed"].includes(task.status)).length;
+    const statusCounts = summaryTasks.reduce((counts, task) => {
       const status = statusForTask(task);
       counts[status] += 1;
       return counts;
     }, { unplanned: 0, planned: 0, in_progress: 0, ended: 0 });
-    const totalHours = children.reduce((sum, task) => sum + Number(getTaskDuration(task.id) || 0), 0);
-    const scheduledHours = children.reduce((sum, task) => sum + Number(getTaskScheduledHours(task.id) || 0), 0);
-    const taskProgresses = children.map(task => taskProgressPercent({
+    const totalHours = summaryTasks.reduce((sum, task) => sum + Number(getTaskDuration(task.id) || 0), 0);
+    const scheduledHours = summaryTasks.reduce((sum, task) => sum + Number(getTaskScheduledHours(task.id) || 0), 0);
+    const taskProgresses = summaryTasks.map(task => taskProgressPercent({
       status: task.status,
       investedHours: getTaskDuration(task.id),
       scheduledHours: getTaskScheduledHours(task.id)
     }));
-    const starts = children
+    const starts = summaryTasks
       .map(task => task.startOverrideAt || task.startedAt)
       .filter(Boolean)
       .sort();
-    const completions = children
+    const completions = summaryTasks
       .map(task => task.completedAt)
       .filter(Boolean)
       .sort();
     return {
       parent,
       children,
-      status: classifyProjectStatus(children.length ? children : [parent]),
+      summaryTasks,
+      status: classifyProjectStatus(summaryTasks.length ? summaryTasks : [parent]),
       statusCounts,
       taskCount,
       doneCount,

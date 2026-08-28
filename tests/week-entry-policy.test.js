@@ -18,8 +18,10 @@ assert.strictEqual(policy.durationHours(entries[0]), 1.5);
 assert.strictEqual(policy.durationHours({ start: 10, end: 10 }), 0);
 
 const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
-assert.ok(app.includes("renderWeekTaskWorkList(dayEntries, key)"));
-assert.ok(app.includes('dataTransfer.setData("text/entry-id", item.dataset.entryId)'));
-assert.ok(app.includes("openEntryDialog(found.entry.start, found.entry)"));
-assert.ok(app.includes("WeekEntryPolicy.entryTitle(entry, task)"));
+assert.ok(app.includes("renderDayOverviewList(overviewItems, \"week\")"));
+assert.ok(app.includes('if (item.dataset.entryId) event.dataTransfer.setData("text/entry-id", item.dataset.entryId)'));
+assert.ok(app.includes("openEntryDialog(foundEntry.entry.start, foundEntry.entry)"));
+assert.ok(app.includes("taskItems.get(task.id)"));
+assert.ok(app.includes("scheduleOverviewItemsForDate"));
+assert.ok(app.includes("String(entry.title || task.title || \"\").trim()"));
 console.log("week entry policy tests passed");

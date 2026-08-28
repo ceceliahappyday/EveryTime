@@ -72,11 +72,16 @@
           <button type="submit" id="taskAddTrigger" title="快速新增">＋</button>
         </form>
 
+        <div class="task-list-toolbar">
+          <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索待办名称、父级路径或状态…" aria-label="搜索待办清单" />
+          <button type="button" class="soft-button task-continue-yesterday" id="continueYesterdayButton" title="查看昨天有投入、今天可继续的任务">↺ 继续昨天</button>
+        </div>
+
         <div class="task-tabs" id="taskTabs" role="tablist">
           <button data-filter="all">全部任务<span id="allCount">0</span></button>
           <button data-filter="unplanned">未计划 <span id="unplannedCount">0</span></button>
-          <button class="active" data-filter="planned">计划中 <span id="openCount">0</span></button>
-          <button data-filter="in_progress">进行中 <span id="doneCount">0</span></button>
+          <button data-filter="planned">计划中 <span id="openCount">0</span></button>
+          <button class="active" data-filter="in_progress">进行中 <span id="doneCount">0</span></button>
           <button data-filter="ended">已结束 <span id="closedCount">0</span></button>
         </div>
 
@@ -113,13 +118,52 @@
           <p id="dayNoteText"></p>
         </div>
 
-        <div class="project-horizontal-scrollbar hidden" id="projectHorizontalScrollbar" aria-label="项目时间轴横向滚动"><div class="project-horizontal-scrollbar-inner" id="projectHorizontalScrollbarInner"></div></div>
+        <div class="project-gantt-chrome hidden" id="projectGanttChrome"></div>
         <div class="timeline-wrap" id="timelineWrap">
           <div class="timeline" id="timeline"></div>
         </div>
       </section>
     </main>
   </div>
+
+  <dialog class="modal small-modal" id="entryLinkConfirmDialog">
+    <div class="modal-header">
+      <div>
+        <span class="eyebrow">LINK TASK</span>
+        <h3 id="entryLinkConfirmTitle">发现相似待办</h3>
+      </div>
+      <button type="button" class="close-button" data-close-dialog="entryLinkConfirmDialog" aria-label="关闭">×</button>
+    </div>
+    <p class="entry-link-confirm-message" id="entryLinkConfirmMessage"></p>
+    <div class="entry-link-confirm-options" id="entryLinkConfirmOptions"></div>
+    <div class="modal-actions">
+      <span></span>
+      <button type="button" class="soft-button" id="entryLinkConfirmCancel">返回修改</button>
+      <button type="button" class="primary-button" id="entryLinkConfirmCreate">确认新建待办</button>
+    </div>
+  </dialog>
+
+  <dialog class="modal small-modal" id="taskMergeDialog">
+    <form method="dialog" id="taskMergeForm">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">MERGE TASK</span>
+          <h3>合并重复待办</h3>
+        </div>
+        <button type="button" class="close-button" data-close-dialog="taskMergeDialog" aria-label="关闭">×</button>
+      </div>
+      <p class="task-merge-message" id="taskMergeMessage"></p>
+      <label>
+        <span>合并到</span>
+        <select id="taskMergeTarget"></select>
+      </label>
+      <div class="modal-actions">
+        <span></span>
+        <button type="button" class="soft-button" data-close-dialog="taskMergeDialog">取消</button>
+        <button type="submit" class="primary-button">确认合并</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog class="modal" id="entryDialog">
     <form method="dialog" id="entryForm">
@@ -148,7 +192,7 @@
         <span>关联待办</span>
         <select id="entryTaskLink" class="visually-hidden-select" tabindex="-1" aria-hidden="true"></select>
         <div class="entry-task-combobox" id="entryTaskCombobox">
-          <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">新建待办并关联</button>
+          <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">搜索并关联待办…</button>
           <div class="entry-task-popup hidden" id="entryTaskPopup">
             <input id="entryTaskSearch" type="search" autocomplete="off" placeholder="搜索任务名称、父级路径或状态…" aria-label="搜索关联待办" aria-controls="entryTaskOptions" />
             <div id="entryTaskOptions" class="entry-task-options" role="listbox"></div>
@@ -266,6 +310,7 @@
       <label><span>任务说明（可选）</span><textarea id="taskDescription" rows="3" maxlength="240" placeholder="补充交付标准、背景或注意事项"></textarea></label>
       <div class="modal-actions">
         <button type="button" class="danger-button hidden" id="deleteTaskButton">删除待办</button>
+        <button type="button" class="soft-button hidden" id="mergeTaskButton">合并到…</button>
         <span></span>
         <button type="button" class="soft-button" data-close-dialog="taskDialog">取消</button>
         <button type="submit" class="primary-button">保存待办</button>
@@ -409,6 +454,7 @@
 
   <script src="recurrence-policy.js"></script>
   <script src="task-option-policy.js"></script>
+  <script src="todo-list-policy.js"></script>
   <script src="project-summary-policy.js"></script>
   <script src="project-collapse-policy.js"></script>
   <script src="task-work-policy.js"></script>

@@ -16,5 +16,8 @@ const statusText = task => ({ planned: "计划中", in_progress: "进行中", cl
 assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "进行中", statusText })[0].task.id, "child");
 assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "已关闭", selectedId: "ended", statusText })[0].task.id, "ended");
 assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "已关闭", statusText }).length, 0);
+assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "已关闭", includeEnded: true, statusText })[0].task.id, "ended");
+assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "资产", leafOnly: true, hasChildTasks: id => id === "root" || id === "child" })[0].task.id, "leaf");
+assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "准备", leafOnly: true, hasChildTasks: id => id === "root" || id === "child" })[0].task.id, "leaf");
 assert.strictEqual(policy.normalizeSearchText("资产管理 › 员工培训"), "资产管理 员工培训");
 console.log("task option search policy tests passed");
