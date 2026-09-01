@@ -175,4 +175,25 @@ assert.match(
   "day timeline should respect configured work hours"
 );
 
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode \.schedule-entry\.amber\s*\{[^}]*--entry-bg:\s*rgba\(/s,
+  "glass mode amber schedule cards need a dark translucent background like sage"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode \.schedule-entry\.blue\s*\{[^}]*--entry-bg:\s*rgba\(/s,
+  "glass mode blue schedule cards need a dark translucent background like sage"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode \.schedule-entry\.rose\s*\{[^}]*--entry-bg:\s*rgba\(/s,
+  "glass mode rose schedule cards need a dark translucent background like sage"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode \.schedule-entry\.violet\s*\{[^}]*--entry-bg:\s*rgba\(/s,
+  "glass mode violet schedule cards need a dark translucent background like sage"
+);
+
 console.log("project style policy tests passed");

@@ -2103,9 +2103,18 @@ body.in-desktop.glass-mode .schedule-month-item.task-entry {
   color: #e8f4ff;
   background: rgba(91,143,190,.24);
 }
-body.in-desktop.glass-mode .schedule-entry.sage { --entry: #76c4b8; --entry-bg: rgba(43,112,106,.42); }
+body.in-desktop.glass-mode .schedule-entry {
+  color: #f3f8fb;
+  text-shadow: 0 1px 3px rgba(0,0,0,.72);
+}
+body.in-desktop.glass-mode .schedule-entry.sage { --entry: #76c4b8; --entry-bg: rgba(43,112,106,.46); }
+body.in-desktop.glass-mode .schedule-entry.blue { --entry: #8db9e7; --entry-bg: rgba(40,84,122,.46); }
+body.in-desktop.glass-mode .schedule-entry.amber { --entry: #e0b56a; --entry-bg: rgba(118,78,28,.46); }
+body.in-desktop.glass-mode .schedule-entry.rose { --entry: #e09aa0; --entry-bg: rgba(118,52,58,.46); }
+body.in-desktop.glass-mode .schedule-entry.violet { --entry: #b5a8e0; --entry-bg: rgba(72,60,118,.46); }
 body.in-desktop.glass-mode .schedule-entry span,
-body.in-desktop.glass-mode .schedule-entry p { color: #c9d8df; }
+body.in-desktop.glass-mode .schedule-entry p,
+body.in-desktop.glass-mode .schedule-entry-type { color: #d5e6ef; }
 body.in-desktop.glass-mode .time-slot::after { border-color: rgba(190,218,234,.19); }
 body.in-desktop.glass-mode .time-slot { border-color: rgba(190,218,234,.40); }
 body.in-desktop.glass-mode .progress-track,
