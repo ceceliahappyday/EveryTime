@@ -3,6 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const styles = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 
 assert.match(
   styles,
@@ -79,7 +81,17 @@ assert.match(
 
 assert.match(
   styles,
-  /body\.in-desktop \.app-shell\s*\{[^}]*border-radius:\s*18px/s,
+  /body\.in-desktop \.app-shell\s*\{[^}]*margin:\s*0/s,
+  "desktop shell should be full-bleed without outer margin"
+);
+assert.match(
+  styles,
+  /body\.in-desktop \.app-shell\s*\{[^}]*border:\s*0/s,
+  "desktop shell should not show a visible window border"
+);
+assert.match(
+  styles,
+  /body\.in-desktop \.app-shell\s*\{[^}]*border-radius:\s*16px/s,
   "desktop shell should keep soft rounded corners"
 );
 assert.match(
@@ -95,17 +107,72 @@ assert.doesNotMatch(
 assert.match(
   styles,
   /body\.in-desktop \.header-actions\s*\{[^}]*flex-wrap:\s*nowrap/s,
-  "desktop header should stay on one row and densify instead of wrapping"
+  "desktop header should stay on one row"
 );
 assert.match(
   styles,
-  /body\.in-desktop\.shell-narrow \.header-actions \.btn-label\s*\{[^}]*display:\s*none/s,
-  "narrow desktop windows should collapse action labels to icons"
+  /body\.in-desktop\.shell-compact-topbar \.shell-hide-compact\s*\{[^}]*display:\s*none/s,
+  "compact windows should hide secondary header tools instead of wrapping"
 );
-assert.doesNotMatch(
+assert.match(
   styles,
-  /body\.in-desktop\.shell-narrow \.topbar\s*\{[^}]*grid-template-areas:/s,
-  "narrow desktop topbar should not break into multi-row grid areas"
+  /body\.in-desktop\.shell-focus:not\(\.task-panel-open\) \.task-panel\s*\{[^}]*display:\s*none/s,
+  "focus windows should hide the task module until toggled"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus \.workspace\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)/s,
+  "focus schedule-only layout should fill the full workspace height"
+);
+assert.match(
+  styles,
+  /\.date-picker-button\s*\{[^}]*height:\s*40px/s,
+  "date picker should share the same control height as other topbar buttons"
+);
+assert.match(
+  styles,
+  /\.soft-button\s*\{[^}]*height:\s*40px/s,
+  "soft buttons should use a fixed topbar control height"
+);
+assert.match(
+  styles,
+  /\.header-view-switcher\s*\{[^}]*height:\s*40px/s,
+  "view switcher should match the shared topbar control height"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode \.date-picker-button(?:\s*,[^,{]*)*\{[^}]*color:\s*#f4fbff/s,
+  "glass mode date picker text should stay light on dark frosted controls"
+);
+assert.match(
+  styles,
+  /\.date-picker-button\s*\{[^}]*color:\s*var\(--ink\)/s,
+  "date picker should use ink color so glass mode can flip to light text"
+);
+assert.match(
+  styles,
+  /\.day-button\s*\{[^}]*color:\s*var\(--ink\)/s,
+  "week-strip day buttons should use ink color so glass mode can flip to light text"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode \.day-button(?:\s*,[^,{]*)*\{[^}]*color:\s*#f4fbff/s,
+  "glass mode week-strip day labels must stay light on frosted surfaces"
+);
+assert.match(
+  styles,
+  /body\.week-mode \.week-strip/s,
+  "week calendar should hide the day-selection strip like month view"
+);
+assert.match(
+  html,
+  /id="settingWorkStartHour"/,
+  "settings should expose work-hour start control"
+);
+assert.match(
+  app,
+  /ScheduleHoursPolicy\.visibleTimelineHours/,
+  "day timeline should respect configured work hours"
 );
 
 console.log("project style policy tests passed");

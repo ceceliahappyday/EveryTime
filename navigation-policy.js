@@ -11,12 +11,12 @@
 
   function navLabels(view = "day") {
     if (view === "month") {
-      return { prev: "上一月", next: "下一月", pickerHint: "点击选择月份" };
+      return { prev: "上一月", next: "下一月" };
     }
     if (view === "week") {
-      return { prev: "上一周", next: "下一周", pickerHint: "点击选择日期" };
+      return { prev: "上一周", next: "下一周" };
     }
-    return { prev: "上一天", next: "下一天", pickerHint: "点击选择日期" };
+    return { prev: "上一天", next: "下一天" };
   }
 
   function moveDateKey({

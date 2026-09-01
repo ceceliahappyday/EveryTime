@@ -21,9 +21,8 @@
 
       <div class="date-controls" id="dateControls">
         <button class="icon-button date-nav-button" id="dateNavPrev" type="button" aria-label="上一页">←</button>
-        <button class="date-picker-button" id="monthPickerButton" type="button">
+        <button class="date-picker-button" id="monthPickerButton" type="button" aria-label="选择日期" title="选择日期">
           <strong id="monthLabel"></strong>
-          <span id="datePickerHint">选择日期</span>
         </button>
         <input type="date" id="datePicker" aria-label="选择日期" />
         <button class="soft-button" id="todayButton" type="button">回到今天</button>
@@ -31,15 +30,16 @@
       </div>
 
       <div class="header-actions">
+        <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false"><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
         <div class="header-view-switcher" id="viewSwitcher">
           <button class="active" data-view="day" type="button" title="日视图">日</button>
           <button data-view="week" type="button" title="周历总览">周</button>
           <button data-view="month" type="button" title="月历总览">月</button>
           <button data-view="project" type="button" title="项目甘特">项目</button>
         </div>
-        <button class="soft-button" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon" aria-hidden="true">⇩</i><span class="btn-label">导出</span></button>
-        <button class="soft-button" id="progressReviewButton" type="button" title="集中更新进行中任务"><i class="btn-icon" aria-hidden="true">↻</i><span class="btn-label">更新进度</span></button>
-        <button class="soft-button" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon" aria-hidden="true">✦</i><span class="btn-label">AI助手</span></button>
+        <button class="soft-button shell-hide-compact" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon" aria-hidden="true">⇩</i><span class="btn-label">导出</span></button>
+        <button class="soft-button shell-hide-compact" id="progressReviewButton" type="button" title="集中更新有投入的明细待办"><i class="btn-icon" aria-hidden="true">↻</i><span class="btn-label">更新进度</span></button>
+        <button class="soft-button shell-hide-focus" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon" aria-hidden="true">✦</i><span class="btn-label">AI助手</span></button>
         <button class="soft-button desktop-only" id="settingsButton" type="button" title="设置、置顶、玻璃模式与紧凑显示"><i class="btn-icon" aria-hidden="true">⚙</i><span class="btn-label">设置</span></button>
         <button class="primary-button" id="quickAddButton" type="button" title="新建待办"><span class="btn-icon">＋</span><span class="btn-label">新建待办</span></button>
         <div class="window-controls desktop-only">
@@ -250,7 +250,17 @@
       </div>
       <div class="form-row">
         <label><span>责任人</span><input id="taskOwner" maxlength="30" placeholder="例如：我、王芳" /></label>
-        <label><span>归属上级任务</span><select id="taskParent"><option value="">不选择，作为顶层任务</option></select></label>
+        <label>
+          <span>归属上级任务</span>
+          <select id="taskParent" class="visually-hidden-select" tabindex="-1" aria-hidden="true"><option value="">不选择，作为顶层任务</option></select>
+          <div class="entry-task-combobox" id="taskParentCombobox">
+            <button type="button" id="taskParentTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="taskParentOptions">搜索并选择上级任务…</button>
+            <div class="entry-task-popup hidden" id="taskParentPopup">
+              <input id="taskParentSearch" type="search" autocomplete="off" placeholder="搜索任务名称或上级路径…" aria-label="搜索上级任务" aria-controls="taskParentOptions" />
+              <div id="taskParentOptions" class="entry-task-options" role="listbox"></div>
+            </div>
+          </div>
+        </label>
       </div>
       <div class="form-row">
         <label>
@@ -280,7 +290,7 @@
           <span>规则有效至</span>
           <input type="month" id="taskRecurringUntil" />
         </label>
-        <p class="form-hint">不会一次性生成所有未来任务；每个自然月打开/进入该月时，自动生成当月实例。若该月没有对应日期，将使用该月最后一天。</p>
+        <p class="form-hint">到了每个自然月才会生成并显示当月实例；清单、搜索与挂接默认只保留这一条逻辑任务，不会把往月实例平铺成多个可选项。</p>
       </div>
       <label>
         <span>任务状态</span>
@@ -344,11 +354,11 @@
       <div class="modal-header">
         <div>
           <span class="eyebrow">PROGRESS REVIEW</span>
-          <h3>更新进行中任务</h3>
+          <h3>更新明细任务进度</h3>
         </div>
         <button type="button" class="close-button" data-close-dialog="progressReviewDialog">×</button>
       </div>
-      <p class="form-hint progress-review-intro">逐项回顾当前进行中的任务，填写交付进展并调整完成百分比。</p>
+      <p class="form-hint progress-review-intro">只列出已有日程投入的明细待办（叶子任务），不含顶层计划节点。逐项填写交付进展并调整完成百分比。</p>
       <div class="progress-review-list" id="progressReviewList"></div>
       <div class="modal-actions">
         <span></span><span></span>
@@ -396,7 +406,7 @@
         <p class="form-hint" id="aiKeyStatus">API Key 未配置</p>
         <label class="checkbox-setting">
           <input type="checkbox" id="settingGlass" />
-          <span>启动时使用玻璃背景</span>
+          <span>使用玻璃背景（保存后立即生效，可随时开关）</span>
         </label>
         <label class="checkbox-setting">
           <input type="checkbox" id="settingPinned" />
@@ -410,6 +420,20 @@
           <input type="checkbox" id="settingCompact" />
           <span>使用紧凑显示</span>
         </label>
+        <div class="settings-work-hours">
+          <span class="settings-work-hours-label">日视图工作时段</span>
+          <div class="settings-work-hours-row">
+            <label>
+              <span>开始</span>
+              <select id="settingWorkStartHour"></select>
+            </label>
+            <label>
+              <span>结束</span>
+              <select id="settingWorkEndHour"></select>
+            </label>
+          </div>
+          <p class="form-hint">默认只展开该时段；若某小时已有日程投入，会自动向两侧扩展显示。可选范围覆盖 0:00–24:00。</p>
+        </div>
         <label class="checkbox-setting">
           <input type="checkbox" id="settingStartAtLogin" />
           <span>开机自动启动</span>
@@ -422,7 +446,7 @@
         </div>
         <div><span>数据保存位置</span><strong id="settingsDataPath">读取中…</strong></div>
         <div><span>默认导出位置</span><strong id="settingsExportPath">读取中…</strong></div>
-        <p>置顶、玻璃模式、低干扰与紧凑显示请在本页勾选。日历视图可用键盘 ← → 切换日期/周/月，按 T 回到今天。</p>
+        <p>玻璃背景、置顶、低干扰与紧凑显示可在本页随时切换，保存后立即生效。日历视图可用键盘 ← → 切换日期/周/月，按 T 回到今天。</p>
       </div>
       <div class="modal-actions">
         <span></span><span></span>
@@ -457,6 +481,7 @@
     <i id="updateProgressBar"></i>
   </div>
 
+  <script src="schedule-hours-policy.js"></script>
   <script src="recurrence-policy.js"></script>
   <script src="task-option-policy.js"></script>
   <script src="todo-list-policy.js"></script>

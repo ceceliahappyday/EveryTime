@@ -23,7 +23,8 @@ assert.ok(app.includes("summaryTasks,"));
 
 assert.ok(styles.includes(".month-task-line"));
 assert.ok(styles.includes(".week-task-line"));
-assert.ok(styles.includes("repeat(2, minmax(76px, .52fr))"));
+assert.ok(styles.includes("grid-template-columns: repeat(5, minmax(0, 1fr))"));
+assert.ok(app.includes("ScheduleHoursPolicy.shouldShowWeekColumn"));
 assert.ok(styles.includes("grid-auto-rows: minmax(136px, auto)"));
 assert.ok(styles.includes("border-width: 0 0 1px"));
 

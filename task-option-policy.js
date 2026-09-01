@@ -113,11 +113,68 @@
       .sort((a, b) => a.rank - b.rank || Number(a.meta.hasChildren) - Number(b.meta.hasChildren) || a.meta.path.localeCompare(b.meta.path) || String(a.task.id).localeCompare(String(b.task.id)));
   }
 
+  function parentPickerBrowseCandidates({ tasks = [], editingTaskId = "", selectedId = "", isHiddenFutureRecurringInstance = () => false, limit = 24 } = {}) {
+    const allowed = parentTaskOptionCandidates({ tasks, editingTaskId, isHiddenFutureRecurringInstance });
+    const hasChildren = id => allowed.some(task => parentIdOf(task) === id);
+    const preferred = allowed.filter(task => {
+      if (task.id === selectedId) return true;
+      if (!parentIdOf(task)) return true;
+      return hasChildren(task.id);
+    });
+    const ranked = preferred
+      .map(task => {
+        const meta = hierarchyMeta({ task, tasks });
+        return { task, meta, preferred: true };
+      })
+      .sort((a, b) => {
+        const selectedRank = Number(b.task.id === selectedId) - Number(a.task.id === selectedId);
+        if (selectedRank) return selectedRank;
+        const rootRank = Number(!parentIdOf(a.task)) - Number(!parentIdOf(b.task));
+        if (rootRank) return rootRank;
+        const planRank = Number(b.meta.hasChildren) - Number(a.meta.hasChildren);
+        if (planRank) return planRank;
+        return a.meta.path.localeCompare(b.meta.path);
+      });
+    return ranked.slice(0, limit);
+  }
+
+  function parentPickerSearchCandidates({
+    tasks = [],
+    editingTaskId = "",
+    selectedId = "",
+    query = "",
+    isHiddenFutureRecurringInstance = () => false,
+    statusText = task => task.status || "",
+    dateText = task => task.dueDate || "",
+    limit = 40
+  } = {}) {
+    const allowed = parentTaskOptionCandidates({ tasks, editingTaskId, isHiddenFutureRecurringInstance });
+    if (!String(query || "").trim()) {
+      return parentPickerBrowseCandidates({
+        tasks,
+        editingTaskId,
+        selectedId,
+        isHiddenFutureRecurringInstance,
+        limit: Math.min(limit, 24)
+      });
+    }
+    return searchTaskCandidates({
+      tasks: allowed,
+      query,
+      selectedId,
+      statusText,
+      dateText,
+      isHiddenFutureRecurringInstance: () => false
+    }).slice(0, limit);
+  }
+
   return {
     shouldIncludeEntryTaskOption,
     entryTaskOptionLabel,
     descendantTaskIds,
     parentTaskOptionCandidates,
+    parentPickerBrowseCandidates,
+    parentPickerSearchCandidates,
     taskHierarchyPath,
     parentIdOf,
     hierarchyMeta,

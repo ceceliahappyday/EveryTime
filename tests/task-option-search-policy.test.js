@@ -20,4 +20,10 @@ assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "已关闭", incl
 assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "资产", leafOnly: true, hasChildTasks: id => id === "root" || id === "child" })[0].task.id, "leaf");
 assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "准备", leafOnly: true, hasChildTasks: id => id === "root" || id === "child" })[0].task.id, "leaf");
 assert.strictEqual(policy.normalizeSearchText("资产管理 › 员工培训"), "资产管理 员工培训");
+const browsed = policy.parentPickerBrowseCandidates({ tasks, selectedId: "child" });
+assert.ok(browsed.some(item => item.task.id === "root"), "browse mode should keep top-level plans");
+assert.ok(browsed.some(item => item.task.id === "child"), "browse mode should keep selected parent");
+assert.ok(!browsed.some(item => item.task.id === "leaf"), "browse mode should hide deep leaves until searched");
+const searched = policy.parentPickerSearchCandidates({ tasks, query: "准备" });
+assert.strictEqual(searched[0].task.id, "leaf");
 console.log("task option search policy tests passed");

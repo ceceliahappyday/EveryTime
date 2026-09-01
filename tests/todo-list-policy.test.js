@@ -64,4 +64,30 @@ assert.strictEqual(parentLinked[0].entryId, "entry-1");
 assert.strictEqual(policy.DEFAULT_FILTER, "in_progress");
 assert.ok(policy.VALID_FILTERS.has("in_progress"));
 
+const reviewPool = [
+  { id: "root", title: "资产管理", status: "in_progress" },
+  { id: "child", title: "员工培训", parentId: "root", status: "in_progress" },
+  { id: "leaf", title: "准备材料", parentId: "child", status: "in_progress" },
+  { id: "solo", title: "独立待办", status: "in_progress" },
+  { id: "idle-leaf", title: "尚未投入", parentId: "child", status: "in_progress" }
+];
+const reviewHasChildren = id => id === "root" || id === "child";
+const reviewCandidates = policy.progressReviewCandidates({
+  tasks: reviewPool,
+  hasChildTasks: reviewHasChildren,
+  isActive: task => task.status === "in_progress",
+  hasInvestedWork: task => task.id === "leaf" || task.id === "solo"
+});
+assert.deepStrictEqual(reviewCandidates.map(task => task.id), ["leaf", "solo"]);
+assert.strictEqual(
+  policy.isProgressReviewCandidate({
+    task: reviewPool[0],
+    hasChildTasks: reviewHasChildren,
+    isActive: () => true,
+    hasInvestedWork: () => true
+  }),
+  false,
+  "top-level plan nodes should not appear in progress review"
+);
+
 console.log("todo list policy tests passed");

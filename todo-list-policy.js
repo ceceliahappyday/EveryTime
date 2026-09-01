@@ -202,6 +202,34 @@
     return true;
   }
 
+  function isProgressReviewCandidate({
+    task,
+    hasChildTasks = () => false,
+    isActive = () => false,
+    hasInvestedWork = () => false
+  } = {}) {
+    if (!task || !isLeafTask(task, hasChildTasks)) return false;
+    if (!isActive(task)) return false;
+    return !!hasInvestedWork(task);
+  }
+
+  function progressReviewCandidates({
+    tasks = [],
+    hasChildTasks = () => false,
+    isActive = () => false,
+    hasInvestedWork = () => false,
+    sortBy = null
+  } = {}) {
+    const list = tasks.filter(task => isProgressReviewCandidate({
+      task,
+      hasChildTasks,
+      isActive,
+      hasInvestedWork
+    }));
+    if (typeof sortBy === "function") list.sort(sortBy);
+    return list;
+  }
+
   return {
     FILTER_STORAGE_KEY,
     DEFAULT_FILTER,
@@ -220,6 +248,8 @@
     buildTodoGroups,
     flattenGroups,
     sectionLabels,
-    shouldKeepVisibleWithWorkHistory
+    shouldKeepVisibleWithWorkHistory,
+    isProgressReviewCandidate,
+    progressReviewCandidates
   };
 });

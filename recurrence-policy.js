@@ -19,13 +19,77 @@
     return !!taskMonth && !!currentMonth && taskMonth > currentMonth;
   }
 
+  function recurringGroupKey(task) {
+    if (!task) return "";
+    if (task.recurrenceGroupId) return String(task.recurrenceGroupId);
+    if (task.recurrence?.frequency === "monthly") return String(task.id || "");
+    return "";
+  }
+
+  function isMonthlyRecurringTask(task) {
+    return task?.recurrence?.frequency === "monthly" && !!task.dueDate;
+  }
+
+  function pickCanonicalRecurringTask(instances = [], currentMonth = "") {
+    if (!instances.length) return null;
+    const ranked = [...instances].sort((a, b) => {
+      const aMonth = a.dueDate?.slice(0, 7) || "";
+      const bMonth = b.dueDate?.slice(0, 7) || "";
+      const aCurrent = Number(aMonth === currentMonth);
+      const bCurrent = Number(bMonth === currentMonth);
+      if (aCurrent !== bCurrent) return bCurrent - aCurrent;
+      const aFuture = Number(!!currentMonth && aMonth > currentMonth);
+      const bFuture = Number(!!currentMonth && bMonth > currentMonth);
+      if (aFuture !== bFuture) return aFuture - bFuture;
+      const statusRank = task => ({ in_progress: 0, planned: 1, tracking: 2, done: 3, closed: 4 }[task.status] ?? 5);
+      const byStatus = statusRank(a) - statusRank(b);
+      if (byStatus) return byStatus;
+      return String(b.dueDate || "").localeCompare(String(a.dueDate || "")) || String(a.id).localeCompare(String(b.id));
+    });
+    return ranked[0];
+  }
+
+  function canonicalRecurringKeepIds(tasks = [], currentMonth = "") {
+    const groups = new Map();
+    tasks.forEach(task => {
+      if (!isMonthlyRecurringTask(task)) return;
+      const key = recurringGroupKey(task);
+      if (!key) return;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(task);
+    });
+    const keepIds = new Set();
+    const aliases = new Map();
+    groups.forEach(instances => {
+      const keep = pickCanonicalRecurringTask(instances, currentMonth);
+      if (!keep) return;
+      keepIds.add(keep.id);
+      instances.forEach(task => {
+        if (task.id !== keep.id) aliases.set(task.id, keep.id);
+      });
+    });
+    return { keepIds, aliases };
+  }
+
+  function filterCanonicalRecurringTasks(tasks = [], currentMonth = "") {
+    const { keepIds, aliases } = canonicalRecurringKeepIds(tasks, currentMonth);
+    return tasks
+      .filter(task => !isMonthlyRecurringTask(task) || keepIds.has(task.id))
+      .map(task => (aliases.has(task.parentId) ? { ...task, parentId: aliases.get(task.parentId) } : task));
+  }
+
+  function isNonCanonicalRecurringInstance(task, keepIds) {
+    if (!isMonthlyRecurringTask(task) || !recurringGroupKey(task)) return false;
+    if (!keepIds) return false;
+    return !keepIds.has(task.id);
+  }
+
   function dedupeRecurringTasksForDisplay(tasks = []) {
     const seen = new Map();
     const aliases = new Map();
     const kept = tasks.filter(task => {
-      if (task?.recurrence?.frequency !== "monthly" || !task.dueDate) return true;
-      const title = String(task.title || "").trim().toLocaleLowerCase();
-      const key = `${title}|${task.dueDate.slice(0, 7)}`;
+      if (!isMonthlyRecurringTask(task)) return true;
+      const key = `${recurringGroupKey(task) || String(task.title || "").trim().toLocaleLowerCase()}|${task.dueDate.slice(0, 7)}`;
       if (seen.has(key)) {
         aliases.set(task.id, seen.get(key));
         return false;
@@ -41,30 +105,19 @@
   }
 
   function dedupeRecurringTasksForProject(tasks = [], currentMonth = "") {
-    const recurring = tasks.filter(task => task?.recurrence?.frequency === "monthly" && task.dueDate);
-    const preferred = new Map();
-    recurring.forEach(task => {
-      const key = String(task.title || "").trim().toLocaleLowerCase();
-      const current = preferred.get(key);
-      if (!current || (task.dueDate.slice(0, 7) === currentMonth && current.dueDate.slice(0, 7) !== currentMonth) || task.dueDate < current.dueDate) {
-        preferred.set(key, task);
-      }
-    });
-    const keepIds = new Set([...preferred.values()].map(task => task.id));
-    const aliases = new Map();
-    recurring.forEach(task => {
-      const keep = preferred.get(String(task.title || "").trim().toLocaleLowerCase());
-      if (keep && keep.id !== task.id) aliases.set(task.id, keep.id);
-    });
-    return tasks
-      .filter(task => task?.recurrence?.frequency !== "monthly" || !task.dueDate || keepIds.has(task.id))
-      .map(task => aliases.has(task.parentId) ? { ...task, parentId: aliases.get(task.parentId) } : task);
+    return filterCanonicalRecurringTasks(tasks, currentMonth);
   }
 
   return {
     currentMonthKey,
     dedupeRecurringTasksForDisplay,
     dedupeRecurringTasksForProject,
+    filterCanonicalRecurringTasks,
+    canonicalRecurringKeepIds,
+    isNonCanonicalRecurringInstance,
+    isMonthlyRecurringTask,
+    recurringGroupKey,
+    pickCanonicalRecurringTask,
     shouldGenerateRecurringMonth,
     isFutureRecurringInstance
   };

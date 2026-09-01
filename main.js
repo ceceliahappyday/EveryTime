@@ -8,24 +8,31 @@ const StartupPolicy = require("./startup-policy.js");
 
 let mainWindow;
 let locked = false;
-let glass = true;
+let glass = false;
 let tray;
 let manualUpdateCheck = false;
-const singleInstanceLock = app.requestSingleInstanceLock();
 const dataFileName = "planner-data.json";
 const windowStateFileName = "window-state.json";
 const settingsFileName = "settings.json";
 const appIconPath = path.join(__dirname, "assets", "icons", "app-icon.ico");
 const trayIconPath = path.join(__dirname, "assets", "icons", "app-icon.png");
 const skipStartupRegistration = process.argv.includes("--skip-startup-registration");
+const isDevRuntime = !app.isPackaged;
 
 if (process.platform === "win32") {
-  app.setAppUserModelId("com.local.todayDailyPlanner");
+  app.setAppUserModelId(isDevRuntime ? "com.local.todayDailyPlanner.dev" : "com.local.todayDailyPlanner");
 }
+
+if (isDevRuntime) {
+  // Keep the unpackaged preview from colliding with an installed EveryTime release.
+  app.setPath("userData", path.join(app.getPath("appData"), "today-daily-planner-dev"));
+}
+
+const singleInstanceLock = isDevRuntime ? true : app.requestSingleInstanceLock();
 
 if (!singleInstanceLock) {
   app.quit();
-} else {
+} else if (!isDevRuntime) {
   app.on("second-instance", (_event, _commandLine, _workingDirectory) => {
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -44,7 +51,7 @@ function createWindow() {
     minWidth: 360,
     minHeight: 520,
     icon: appIconPath,
-    title: "今日日程",
+    title: isDevRuntime ? `今日日程 · 开发预览 v${app.getVersion()}` : "今日日程",
     transparent: true,
     frame: false,
     skipTaskbar: false,
@@ -69,7 +76,7 @@ function createWindow() {
 
 if (singleInstanceLock) app.whenReady().then(() => {
   const settings = loadSettings();
-  glass = settings.glass !== false;
+  glass = !!settings.glass;
   locked = !!settings.locked;
   if (!skipStartupRegistration) configureLoginItem(settings.startAtLogin);
   ipcMain.handle("window:get-pinned", () => mainWindow.isAlwaysOnTop());
@@ -255,9 +262,30 @@ function defaultExportDir() {
   return fs.existsSync("D:\\") ? "D:\\今日日程APP\\导出" : path.join(app.getPath("documents"), "今日日程APP", "导出");
 }
 
+function loadInstalledSettingsHint() {
+  try {
+    const installedFile = path.join(app.getPath("appData"), "today-daily-planner", settingsFileName);
+    if (!fs.existsSync(installedFile)) return {};
+    return JSON.parse(fs.readFileSync(installedFile, "utf8")) || {};
+  } catch {
+    return {};
+  }
+}
+
 function loadSettings() {
   const file = settingsPath();
-  const defaults = { glass: true, pinned: false, locked: false, compact: false, startAtLogin: false, aiEnabled: false, aiModel: "gpt-5.6-sol" };
+  const installedHint = isDevRuntime ? loadInstalledSettingsHint() : {};
+  const defaults = {
+    glass: installedHint.glass !== undefined ? !!installedHint.glass : false,
+    pinned: false,
+    locked: false,
+    compact: installedHint.compact !== undefined ? !!installedHint.compact : false,
+    startAtLogin: false,
+    workStartHour: 9,
+    workEndHour: 18,
+    aiEnabled: false,
+    aiModel: "gpt-5.6-sol"
+  };
   if (!fs.existsSync(file)) return defaults;
   try {
     return { ...defaults, ...JSON.parse(fs.readFileSync(file, "utf8")) };
@@ -315,7 +343,14 @@ async function askOpenAI(payload) {
 
 function saveSettings(nextSettings) {
   const settings = { ...loadSettings(), ...nextSettings };
-  glass = settings.glass !== false;
+  if (nextSettings.workStartHour !== undefined || nextSettings.workEndHour !== undefined) {
+    const start = Math.max(0, Math.min(23, Math.floor(Number(settings.workStartHour) || 9)));
+    let end = Math.max(1, Math.min(24, Math.floor(Number(settings.workEndHour) || 18)));
+    if (end <= start) end = Math.min(24, start + 1);
+    settings.workStartHour = start;
+    settings.workEndHour = end;
+  }
+  glass = !!settings.glass;
   locked = !!settings.locked;
   if (!skipStartupRegistration) configureLoginItem(settings.startAtLogin);
   if (mainWindow) {
