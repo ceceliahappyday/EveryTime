@@ -19,33 +19,29 @@
         </div>
       </div>
 
-      <div class="date-controls">
-        <button class="icon-button" id="previousWeek" aria-label="上一周">←</button>
-        <button class="date-picker-button" id="monthPickerButton">
+      <div class="date-controls" id="dateControls">
+        <button class="icon-button date-nav-button" id="dateNavPrev" type="button" aria-label="上一页">←</button>
+        <button class="date-picker-button" id="monthPickerButton" type="button">
           <strong id="monthLabel"></strong>
-          <span>选择日期</span>
+          <span id="datePickerHint">选择日期</span>
         </button>
         <input type="date" id="datePicker" aria-label="选择日期" />
-        <button class="soft-button" id="todayButton">回到今天</button>
-        <button class="icon-button" id="nextWeek" aria-label="下一周">→</button>
+        <button class="soft-button" id="todayButton" type="button">回到今天</button>
+        <button class="icon-button date-nav-button" id="dateNavNext" type="button" aria-label="下一页">→</button>
       </div>
 
       <div class="header-actions">
         <div class="header-view-switcher" id="viewSwitcher">
-          <button class="active" data-view="day">日</button>
-          <button data-view="week">周</button>
-          <button data-view="month">月</button>
-          <button data-view="project">项目</button>
+          <button class="active" data-view="day" type="button" title="日视图">日</button>
+          <button data-view="week" type="button" title="周历总览">周</button>
+          <button data-view="month" type="button" title="月历总览">月</button>
+          <button data-view="project" type="button" title="项目甘特">项目</button>
         </div>
-        <button class="soft-button" id="exportButton" title="导出全部任务和日程">⇩ 导出</button>
-        <button class="soft-button" id="progressReviewButton" title="集中更新进行中任务">↻ 更新进度</button>
-        <button class="soft-button" id="aiAssistantButton" title="查询任务和生成工作总结">✦ AI助手</button>
-        <button class="soft-button desktop-only" id="glassMode" title="切换磨砂玻璃桌面组件外观">◫ 玻璃模式</button>
-        <button class="soft-button desktop-only" id="desktopLock" title="降低界面存在感，但保持可编辑">◌ 低干扰</button>
-        <button class="soft-button desktop-only" id="pinWindow" title="让窗口保持在最前">📌 置顶</button>
-        <button class="soft-button desktop-only" id="settingsButton" title="打开桌面组件设置">⚙ 设置</button>
-        <button class="icon-button" id="toggleCompact" title="切换紧凑模式">↕</button>
-        <button class="primary-button" id="quickAddButton"><span>＋</span> 新建待办</button>
+        <button class="soft-button" id="exportButton" type="button" title="导出全部任务和日程">⇩ 导出</button>
+        <button class="soft-button" id="progressReviewButton" type="button" title="集中更新进行中任务">↻ 更新进度</button>
+        <button class="soft-button" id="aiAssistantButton" type="button" title="查询任务和生成工作总结">✦ AI助手</button>
+        <button class="soft-button desktop-only" id="settingsButton" type="button" title="设置、置顶、玻璃模式与紧凑显示">⚙ 设置</button>
+        <button class="primary-button" id="quickAddButton" type="button"><span>＋</span> 新建待办</button>
         <div class="window-controls desktop-only">
           <button id="minimizeWindow" title="最小化">—</button>
           <button id="closeWindow" class="window-close" title="彻底退出">×</button>
@@ -308,6 +304,10 @@
         <textarea id="taskDeliveryNote" rows="2" maxlength="500" placeholder="写清楚目标、交付件、检查标准或计划拆解；实际推进由日程记录承接"></textarea>
       </label>
       <label><span>任务说明（可选）</span><textarea id="taskDescription" rows="3" maxlength="240" placeholder="补充交付标准、背景或注意事项"></textarea></label>
+      <label class="checkbox-setting task-follow-up-option hidden" id="taskFollowUpOption">
+        <input type="checkbox" id="taskFollowUpTracking" />
+        <span>本环节已结束，但需后续跟踪闭环（关闭后将新建一条跟踪任务）</span>
+      </label>
       <div class="modal-actions">
         <button type="button" class="danger-button hidden" id="deleteTaskButton">删除待办</button>
         <button type="button" class="soft-button hidden" id="mergeTaskButton">合并到…</button>
@@ -419,7 +419,7 @@
         </div>
         <div><span>数据保存位置</span><strong id="settingsDataPath">读取中…</strong></div>
         <div><span>默认导出位置</span><strong id="settingsExportPath">读取中…</strong></div>
-        <p>应用更新不会删除已有数据；每次保存前会自动备份一份旧数据。也可在系统托盘图标上右键选择「检查更新」。</p>
+        <p>置顶、玻璃模式、低干扰与紧凑显示请在本页勾选。日历视图可用键盘 ← → 切换日期/周/月，按 T 回到今天。</p>
       </div>
       <div class="modal-actions">
         <span></span><span></span>
@@ -463,6 +463,9 @@
   <script src="task-work-policy.js"></script>
   <script src="week-entry-policy.js"></script>
   <script src="project-view-policy.js"></script>
+  <script src="task-status-policy.js"></script>
+  <script src="navigation-policy.js"></script>
+  <script src="ui-scale-policy.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

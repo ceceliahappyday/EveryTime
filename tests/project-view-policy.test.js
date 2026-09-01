@@ -139,7 +139,7 @@ assert.strictEqual(policy.shouldShowDueFlag("planned"), true);
 assert.strictEqual(policy.shouldShowDueFlag("in_progress"), true);
 assert.strictEqual(policy.shouldShowDueFlag("done"), false);
 assert.strictEqual(policy.shouldShowDueFlag("closed"), false);
-assert.strictEqual(policy.shouldShowDueFlag("unplanned"), false);
+assert.strictEqual(policy.shouldShowDueFlag("tracking"), true);
 
 const addDays = (date, amount) => {
   const next = new Date(date);

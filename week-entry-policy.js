@@ -25,5 +25,25 @@
     return Number.isFinite(hours) && hours > 0 ? hours : 0;
   }
 
-  return { sortEntries, entryTitle, parentPath, durationHours };
+  function formatDecimalHour(value, formatTime) {
+    const hour = Number(value);
+    if (!Number.isFinite(hour)) return "";
+    return typeof formatTime === "function" ? formatTime(hour) : String(hour);
+  }
+
+  function formatScheduleTimeRange({ start, end, dueTime = "" } = {}, formatTime) {
+    const startDec = Number(start);
+    const endDec = Number(end);
+    if (Number.isFinite(startDec) && Number.isFinite(endDec) && endDec > startDec) {
+      return `${formatDecimalHour(startDec, formatTime)}-${formatDecimalHour(endDec, formatTime)}`;
+    }
+    if (Number.isFinite(startDec) && startDec < 48) {
+      return formatDecimalHour(startDec, formatTime);
+    }
+    const due = String(dueTime || "").trim();
+    if (/^\d{1,2}:\d{2}/.test(due)) return due.slice(0, 5);
+    return "";
+  }
+
+  return { sortEntries, entryTitle, parentPath, durationHours, formatScheduleTimeRange };
 });

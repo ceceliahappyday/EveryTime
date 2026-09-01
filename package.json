@@ -1,6 +1,6 @@
 {
   "name": "today-daily-planner",
-  "version": "2.0.48",
+  "version": "2.0.49",
   "private": true,
   "description": "桌面浮窗日程与待办记事本",
   "main": "main.js",
@@ -36,6 +36,9 @@
       "task-work-policy.js",
       "week-entry-policy.js",
       "project-view-policy.js",
+      "task-status-policy.js",
+      "navigation-policy.js",
+      "ui-scale-policy.js",
       "startup-policy.js",
       "app.js",
       "main.js",

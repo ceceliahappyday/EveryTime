@@ -124,6 +124,7 @@
     if (!task || !isLeafTask(task, hasChildTasks)) return false;
     if (isOngoingTask(task)) return false;
     if (["done", "closed"].includes(task.status)) return false;
+    if (task.status === "tracking") return true;
     if (isUnplannedTask(task)) return true;
     if (task.status !== "planned") return false;
     const hasTodayWork = (entriesByDate[selectedDate] || []).some(entry => entry.taskId === task.id && entry.entryType === "task_work");

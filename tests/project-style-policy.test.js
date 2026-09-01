@@ -77,4 +77,15 @@ assert.match(
   "desktop quick-add button should remain fully visible"
 );
 
+assert.match(
+  styles,
+  /--ui-scale:\s*1/s,
+  "root stylesheet should define a default ui scale variable"
+);
+assert.match(
+  styles,
+  /\.app-shell\s*\{[^}]*zoom:\s*var\(--ui-scale\)/s,
+  "app shell should scale with window size"
+);
+
 console.log("project style policy tests passed");

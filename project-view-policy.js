@@ -255,7 +255,7 @@
   }
 
   function shouldShowDueFlag(status) {
-    return status === "planned" || status === "in_progress";
+    return status === "planned" || status === "in_progress" || status === "tracking";
   }
 
   return {

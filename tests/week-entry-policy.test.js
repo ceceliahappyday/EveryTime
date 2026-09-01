@@ -16,8 +16,23 @@ assert.strictEqual(policy.entryTitle({ title: "独立投入" }, null), "独立�
 assert.strictEqual(policy.parentPath({ title: "会议纪要修改" }, [], " › "), "父级");
 assert.strictEqual(policy.durationHours(entries[0]), 1.5);
 assert.strictEqual(policy.durationHours({ start: 10, end: 10 }), 0);
+const formatTime = value => {
+  const hour = Math.floor(value);
+  const minute = Math.round((value - hour) * 60);
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+};
+assert.strictEqual(
+  policy.formatScheduleTimeRange({ start: 9, end: 10.5 }, formatTime),
+  "09:00-10:30"
+);
+assert.strictEqual(
+  policy.formatScheduleTimeRange({ dueTime: "18:00" }, formatTime),
+  "18:00"
+);
 
 const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+assert.ok(app.includes("item.timeText"));
+assert.ok(app.includes("WeekEntryPolicy.formatScheduleTimeRange"));
 assert.ok(app.includes("renderDayOverviewList(overviewItems, \"week\")"));
 assert.ok(app.includes('if (item.dataset.entryId) event.dataTransfer.setData("text/entry-id", item.dataset.entryId)'));
 assert.ok(app.includes("openEntryDialog(foundEntry.entry.start, foundEntry.entry)"));

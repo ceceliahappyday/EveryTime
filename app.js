@@ -77,15 +77,16 @@ let taskListSearchTimer = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
   [
-    "todaySummary", "monthLabel", "monthPickerButton", "datePicker", "previousWeek", "nextWeek",
+    "todaySummary", "monthLabel", "monthPickerButton", "datePicker", "datePickerHint", "dateControls", "dateNavPrev", "dateNavNext",
     "appVersionBadge",
     "todayButton", "weekDays", "taskCount", "taskList", "taskListSearch", "continueYesterdayButton", "unplannedCount", "openCount", "doneCount", "closedCount", "exportButton",
     "plannedHours", "progressLabel", "progressBar", "scheduleTitle", "loggedHours", "freeHours",
-    "timeline", "timelineWrap", "projectGanttChrome", "quickAddButton", "toggleCompact", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "viewSwitcher",
+    "timeline", "timelineWrap", "projectGanttChrome", "quickAddButton", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "viewSwitcher",
     "taskTabs", "allCount", "taskViewTitle", "taskDialog", "taskEditForm", "taskDialogEyebrow", "taskDialogTitle",
     "taskDetailSummary",
     "taskTitleInput", "taskDueDate", "taskDueTime", "taskOwner", "taskParent", "taskPriority",
     "taskProgress", "taskProgressValue", "taskStatus", "taskMonthlyRecurring", "taskRecurringUntil",
+    "taskFollowUpOption", "taskFollowUpTracking",
     "recurringOptions", "taskActualStart", "taskActualEnd",
     "taskBusinessBackground", "taskProblemReason", "taskDeliveryNote", "businessBackgroundLabel",
     "problemReasonLabel", "taskDescription",
@@ -93,7 +94,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "entryLinkConfirmDialog", "entryLinkConfirmTitle", "entryLinkConfirmMessage", "entryLinkConfirmOptions", "entryLinkConfirmCancel", "entryLinkConfirmCreate",
     "taskMergeDialog", "taskMergeForm", "taskMergeMessage", "taskMergeTarget",
     "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
-    "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast", "pinWindow", "desktopLock", "glassMode",
+    "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
     "updateProgress", "updateProgressText", "updateProgressBar",
     "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
@@ -119,6 +120,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   saveData();
   fillTimeOptions();
   bindEvents();
+  if (localStorage.getItem("today-planner-compact") === "1") document.body.classList.add("compact");
+  bindUiScale();
   initDesktop();
   bindUpdateProgress();
   renderAppVersion();
@@ -331,25 +334,34 @@ function bindEvents() {
     resolve(task.id);
   });
 
-  el.previousWeek.addEventListener("click", () => moveSelectedDate(-7));
-  el.nextWeek.addEventListener("click", () => moveSelectedDate(7));
+  el.previousWeek = el.dateNavPrev;
+  el.nextWeek = el.dateNavNext;
+
+  el.dateNavPrev?.addEventListener("click", () => navigateCalendar(-1));
+  el.dateNavNext?.addEventListener("click", () => navigateCalendar(1));
   el.todayButton.addEventListener("click", () => {
-    state.taskView = "day";
-    state.projectViewNeedsAnchor = false;
-    state.projectAnchorDate = null;
-    state.projectScrollLeft = null;
-    el.viewSwitcher.querySelectorAll("button").forEach(item => item.classList.toggle("active", item.dataset.view === "day"));
+    state.projectViewNeedsAnchor = state.taskView === "project";
+    if (state.taskView === "project") state.projectAnchorDate = toDateKey(new Date());
     selectDate(new Date());
   });
   el.monthPickerButton.addEventListener("click", () => el.datePicker.showPicker ? el.datePicker.showPicker() : el.datePicker.click());
   el.datePicker.addEventListener("change", () => el.datePicker.value && selectDate(fromDateKey(el.datePicker.value)));
 
-  el.toggleCompact.addEventListener("click", () => {
-    document.body.classList.toggle("compact");
-    localStorage.setItem("today-planner-compact", document.body.classList.contains("compact") ? "1" : "0");
-    renderSchedule();
+  document.addEventListener("keydown", event => {
+    if (!NavigationPolicy.shouldShowDateNav(state.taskView)) return;
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.target.closest("dialog[open], input, textarea, select, [contenteditable='true']")) return;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      navigateCalendar(-1);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      navigateCalendar(1);
+    } else if (event.key === "t" || event.key === "T") {
+      event.preventDefault();
+      selectDate(new Date());
+    }
   });
-  if (localStorage.getItem("today-planner-compact") === "1") document.body.classList.add("compact");
 
   el.taskEditForm.addEventListener("submit", event => {
     event.preventDefault();
@@ -423,6 +435,25 @@ function enableNativePicker(input) {
   });
 }
 
+let uiScaleResizeTimer = 0;
+
+function applyUiScale() {
+  const scale = UiScalePolicy?.uiScaleForWindow?.({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    compact: document.body.classList.contains("compact")
+  }) ?? 1;
+  document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
+}
+
+function bindUiScale() {
+  applyUiScale();
+  window.addEventListener("resize", () => {
+    clearTimeout(uiScaleResizeTimer);
+    uiScaleResizeTimer = setTimeout(applyUiScale, 80);
+  });
+}
+
 async function initDesktop() {
   if (!window.desktopAPI) return;
   document.body.classList.add("in-desktop");
@@ -430,38 +461,19 @@ async function initDesktop() {
   if (desktopSettings?.compact) {
     document.body.classList.add("compact");
     localStorage.setItem("today-planner-compact", "1");
+    applyUiScale();
   }
   const pinned = await window.desktopAPI.getPinned();
   document.body.classList.toggle("pinned", pinned);
-  el.pinWindow.textContent = pinned ? "📌 已置顶" : "📌 置顶";
-  el.pinWindow.addEventListener("click", async () => {
-    const next = await window.desktopAPI.togglePinned();
-    document.body.classList.toggle("pinned", next);
-    el.pinWindow.textContent = next ? "📌 已置顶" : "📌 置顶";
-    await window.desktopAPI.saveSettings?.({ pinned: next });
-    showToast(next ? "窗口将保持在最前" : "已取消窗口置顶");
-  });
   const syncLock = locked => {
     document.body.classList.toggle("desktop-locked", locked);
-    el.desktopLock.textContent = locked ? "◉ 恢复显示" : "◌ 低干扰";
   };
   const syncGlass = glass => {
     document.body.classList.toggle("glass-mode", glass);
-    el.glassMode.textContent = glass ? "◫ 退出玻璃" : "◫ 玻璃模式";
   };
   syncGlass(await window.desktopAPI.getGlass());
-  el.glassMode.addEventListener("click", async () => {
-    const glass = await window.desktopAPI.toggleGlass();
-    syncGlass(glass);
-    showToast(glass ? "已进入玻璃桌面模式，可继续拖动和缩放" : "已退出玻璃桌面模式");
-  });
   window.desktopAPI.onGlassChanged(syncGlass);
   syncLock(await window.desktopAPI.getLocked());
-  el.desktopLock.addEventListener("click", async () => {
-    const locked = await window.desktopAPI.toggleLocked();
-    syncLock(locked);
-    showToast(locked ? "已降低界面存在感，仍可直接编辑" : "已恢复正常显示");
-  });
   window.desktopAPI.onLockChanged(syncLock);
   el.minimizeWindow.addEventListener("click", () => window.desktopAPI.minimize());
   el.closeWindow.addEventListener("click", () => window.desktopAPI.quit());
@@ -585,7 +597,11 @@ async function saveDesktopSettings() {
   };
   const saved = await window.desktopAPI.saveSettings(nextSettings);
   document.body.classList.toggle("compact", !!saved?.compact);
+  document.body.classList.toggle("glass-mode", saved?.glass !== false);
+  document.body.classList.toggle("pinned", !!saved?.pinned);
+  document.body.classList.toggle("desktop-locked", !!saved?.locked);
   localStorage.setItem("today-planner-compact", saved?.compact ? "1" : "0");
+  applyUiScale();
   el.settingsDialog.close();
   render();
   showToast("设置已保存");
@@ -651,7 +667,7 @@ function render() {
   syncTaskStatuses();
   ensureRecurringTasksForVisibleRange();
   const date = fromDateKey(state.selectedDate);
-  el.monthLabel.textContent = `${date.getFullYear()}年 ${date.getMonth() + 1}月`;
+  updateDateNavigationChrome();
   el.datePicker.value = state.selectedDate;
   el.scheduleTitle.textContent = state.taskView === "project" ? "项目进度 · 甘特总览" :
     state.taskView === "month" ? `${date.getFullYear()}年${date.getMonth() + 1}月 · 月历` :
@@ -663,7 +679,6 @@ function render() {
   el.viewSwitcher.querySelectorAll("button[data-view]").forEach(button => {
     button.classList.toggle("active", button.dataset.view === state.taskView);
   });
-  el.viewSwitcher.scrollIntoView({ block: "nearest", inline: "nearest" });
   renderWeek();
   renderTasks();
   renderSchedule();
@@ -1134,7 +1149,7 @@ function projectStatusGroups(projects) {
 }
 
 function projectStatusLabel(status) {
-  return { unplanned: "未计划", planned: "计划中", in_progress: "进行中", ended: "已关闭" }[status] || "计划中";
+  return { unplanned: "未计划", planned: "计划中", in_progress: "进行中", tracking: "跟踪中", ended: "已关闭" }[status] || "计划中";
 }
 
 function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
@@ -1341,7 +1356,7 @@ function createTaskCard(task) {
   const parentPath = TaskOptionPolicy.hierarchyMeta({ task, tasks: allTasks }).parentPath;
   const card = document.createElement("article");
   card.className = `task-card ${visualStatus}`;
-  card.draggable = visualStatus === "unplanned" || task.status === "planned" || task.status === "in_progress";
+  card.draggable = visualStatus === "unplanned" || TaskStatusPolicy.isSchedulableStatus(task.status);
   card.dataset.taskId = task.id;
   card.innerHTML = `
     <button class="task-check" title="标记完成"></button>
@@ -1354,7 +1369,7 @@ function createTaskCard(task) {
         <span>${statusLabel(visualStatus)}</span>
         ${duration ? `<span class="task-duration">${formatHours(duration)}</span>` : ""}
         ${task.recurrence?.frequency === "monthly" ? `<span>↻ 每月重复</span>` : ""}
-        ${task.status === "planned" && schedule ? `<span>已安排 ${formatDateTime(schedule.firstStartIso)}</span>` : ""}
+        ${(task.status === "planned" || task.status === "tracking") && schedule ? `<span>已安排 ${formatDateTime(schedule.firstStartIso)}</span>` : ""}
       </div>
       ${task.progress > 0 ? `<div class="task-progress-track" title="进度 ${task.progress || 0}%"><i style="width:${task.progress || 0}%"></i></div>` : ""}
     </div>
@@ -1460,7 +1475,9 @@ function updateTaskStats(tasks) {
   tasks = uniqueTasks(tasks).filter(isTodoListTask);
   const groups = {
     unplanned: tasks.filter(isUnplannedTask),
-    planned: tasks.filter(task => task.status === "planned" && !isUnplannedTask(task) && !isContainerOnlyTask(task)),
+    planned: tasks.filter(task =>
+      (task.status === "planned" || (TaskStatusPolicy.isTrackingStatus(task) && !isOngoingTask(task)))
+      && !isUnplannedTask(task) && !isContainerOnlyTask(task)),
     inProgress: tasks.filter(task => task.status === "in_progress"),
     ended: tasks.filter(task => task.status === "done" || task.status === "closed")
   };
@@ -1565,6 +1582,20 @@ function renderMonthCalendar() {
   el.taskList.appendChild(calendar);
 }
 
+function restoreTaskStatusOptions(task) {
+  if (TaskStatusPolicy.isTrackingStatus(task)) {
+    el.taskStatus.innerHTML = `
+      <option value="tracking" selected>跟踪中（待闭环）</option>
+      <option value="done">已完成 / 已关闭</option>`;
+    return;
+  }
+  el.taskStatus.innerHTML = `
+    <option value="planned" disabled>计划中（尚未排入日程）</option>
+    <option value="in_progress" disabled>进行中（已排入日程）</option>
+    <option value="done">已完成 / 已关闭</option>`;
+  el.taskStatus.value = task?.status || "planned";
+}
+
 function openTaskDialog(task = null) {
   state.editingTaskId = task?.id || null;
   el.taskDialogEyebrow.textContent = task ? "EDIT TASK" : "NEW TASK";
@@ -1576,7 +1607,7 @@ function openTaskDialog(task = null) {
   el.taskPriority.value = task?.priority || "general_daily";
   el.taskProgress.value = task?.progress || 0;
   el.taskProgressValue.textContent = `${task?.progress || 0}%`;
-  el.taskStatus.value = task?.status || "planned";
+  restoreTaskStatusOptions(task);
   el.taskActualStart.value = toLocalDateTimeInput(task?.startOverrideAt || task?.startedAt);
   el.taskActualEnd.value = toLocalDateTimeInput(task?.completedAt);
   el.taskBusinessBackground.value = task?.businessBackground || "";
@@ -1590,7 +1621,9 @@ function openTaskDialog(task = null) {
   el.deleteTaskButton.classList.toggle("hidden", !task);
   el.mergeTaskButton?.classList.toggle("hidden", !task);
   el.closeTaskButton.classList.toggle("hidden", !task);
-  el.closeTaskButton.textContent = task && ["done", "closed"].includes(task.status) ? "恢复任务" : "关闭任务";
+  el.closeTaskButton.textContent = task && TaskStatusPolicy.isEndedStatus(task.status) ? "恢复任务" : "关闭任务";
+  el.taskFollowUpOption?.classList.toggle("hidden", !task || TaskStatusPolicy.isEndedStatus(task.status));
+  if (el.taskFollowUpTracking) el.taskFollowUpTracking.checked = false;
   updateProgressAvailability();
   updateParentRequirements();
   updateRecurringOptions();
@@ -1632,6 +1665,10 @@ function renderTaskDetailSummary(task) {
   ];
   if (schedule?.firstStartIso) rows.push(["最早安排", formatDateTime(schedule.firstStartIso)]);
   if (latestProgress?.note) rows.push(["最近进展", latestProgress.note]);
+  if (task.followUpFromTaskId) {
+    const source = findTask(task.followUpFromTaskId)?.task;
+    rows.push(["跟踪来源", source?.title || task.followUpFromTaskId]);
+  }
   el.taskDetailSummary.innerHTML = rows.map(([label, value]) =>
     `<div><span>${label}</span><strong>${escapeHtml(String(value))}</strong></div>`
   ).join("");
@@ -1693,8 +1730,13 @@ function saveTask() {
   if (payload.completedAt) {
     payload.status = "done";
     payload.progress = 100;
-  } else if (!["done", "closed"].includes(payload.status)) {
-    payload.status = getAutomaticTaskStatusForPayload(state.editingTaskId, payload);
+  } else if (!TaskStatusPolicy.isEndedStatus(payload.status)) {
+    const editing = state.editingTaskId ? findTask(state.editingTaskId)?.task : null;
+    if (TaskStatusPolicy.isTrackingStatus(editing) && !payload.completedAt) {
+      payload.status = TaskStatusPolicy.TRACKING_STATUS;
+    } else {
+      payload.status = getAutomaticTaskStatusForPayload(state.editingTaskId, payload);
+    }
   }
   const effectiveStartedAt = payload.startedAt || getTaskScheduleInfo(state.editingTaskId)?.firstStartIso || "";
   if (payload.completedAt && effectiveStartedAt && new Date(payload.completedAt) < new Date(effectiveStartedAt)) {
@@ -1704,7 +1746,7 @@ function saveTask() {
   if (["done", "closed"].includes(payload.status) && !payload.completedAt) payload.completedAt = new Date().toISOString();
   if (["done", "closed"].includes(payload.status) && !payload.startedAt) payload.startedAt = effectiveStartedAt;
   if (payload.status === "done") payload.progress = 100;
-  if (payload.status === "planned") payload.progress = 0;
+  if (payload.status === "planned" || payload.status === TaskStatusPolicy.TRACKING_STATUS) payload.progress = 0;
 
   if (state.editingTaskId) {
     const found = findTask(state.editingTaskId);
@@ -1738,7 +1780,7 @@ function showTaskFieldError(field, message) {
 
 function openProgressReview() {
   const activeTasks = getAllTasks()
-    .filter(({ task }) => task.status === "in_progress")
+    .filter(({ task }) => task.status === "in_progress" || TaskStatusPolicy.isTrackingStatus(task))
     .sort((a, b) => `${a.task.dueDate} ${a.task.dueTime}`.localeCompare(`${b.task.dueDate} ${b.task.dueTime}`));
 
   el.progressReviewList.innerHTML = "";
@@ -2223,13 +2265,27 @@ function createCalendarGanttRow(meeting, buckets, scale = "day") {
 function closeEditingTask() {
   const task = state.editingTaskId ? findTask(state.editingTaskId)?.task : null;
   if (!task) return;
+  const createFollowUp = Boolean(el.taskFollowUpTracking?.checked);
   el.taskDialog.close();
-  toggleTaskCompletion(task);
+  toggleTaskCompletion(task, { createFollowUp });
 }
 
-function toggleTaskCompletion(task) {
+function createFollowUpTrackingTask(sourceTask) {
+  const dateKey = sourceTask.dueDate || state.selectedDate || toDateKey(new Date());
+  const now = new Date();
+  const payload = TaskStatusPolicy.buildFollowUpTask(sourceTask, dateKey);
+  const trackingTask = {
+    id: crypto.randomUUID(),
+    ...payload,
+    createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+  };
+  getDay(dateKey).tasks.push(trackingTask);
+  return trackingTask;
+}
+
+function toggleTaskCompletion(task, options = {}) {
   if (!task) return;
-  const closing = !["done", "closed"].includes(task.status);
+  const closing = !TaskStatusPolicy.isEndedStatus(task.status);
   const now = new Date().toISOString();
   const firstStartIso = getTaskScheduleInfo(task.id)?.firstStartIso || task.startOverrideAt || task.startedAt || "";
   const nextStatus = closing ? "done" : getAutomaticTaskStatus(task.id);
@@ -2244,9 +2300,17 @@ function toggleTaskCompletion(task) {
     });
     record.updatedAt = now;
   });
+  let followUpTask = null;
+  if (closing && options.createFollowUp) {
+    followUpTask = createFollowUpTrackingTask(task);
+  }
   saveData();
   render();
-  showToast(closing ? "任务已关闭" : "任务已恢复");
+  if (closing && followUpTask) {
+    showToast(`任务已关闭，已创建跟踪任务「${followUpTask.title}」`);
+  } else {
+    showToast(closing ? "任务已关闭" : "任务已恢复");
+  }
 }
 
 function taskTimelineOffset(dateKey, buckets, scale = "day") {
@@ -2552,14 +2616,18 @@ function scheduleOverviewItemsForDate(dateKey) {
         title: String(entry.title || "").trim() || "未命名会议",
         kind: getEntryInvestedHours(dateKey, entry) > 0 ? "actual" : "planned",
         entryId: entry.id,
-        start: entry.start
+        start: entry.start,
+        end: entry.end
       });
       return;
     }
     const task = findTask(entry.taskId)?.task;
     if (!task) return;
     const existing = taskItems.get(task.id);
-    const kind = getEntryInvestedHours(dateKey, entry) > 0 ? "actual" : "planned";
+    const kind = TaskStatusPolicy.scheduleOverviewKind({
+      taskStatus: task.status,
+      investedHours: getEntryInvestedHours(dateKey, entry)
+    });
     if (!existing) {
       taskItems.set(task.id, {
         type: "task",
@@ -2567,13 +2635,16 @@ function scheduleOverviewItemsForDate(dateKey) {
         kind,
         task,
         entryId: entry.id,
-        start: entry.start
+        start: entry.start,
+        end: entry.end
       });
       return;
     }
     if (kind === "actual") existing.kind = "actual";
+    existing.end = Math.max(Number(existing.end) || 0, Number(entry.end) || 0);
     if (entry.start < existing.start) {
       existing.start = entry.start;
+      existing.end = entry.end;
       existing.entryId = entry.id;
       existing.title = String(entry.title || task.title || "").trim() || task.title;
     }
@@ -2583,15 +2654,20 @@ function scheduleOverviewItemsForDate(dateKey) {
     taskItems.set(task.id, {
       type: "task",
       title: task.title,
-      kind: "planned",
+      kind: TaskStatusPolicy.scheduleOverviewKind({ taskStatus: task.status, investedHours: 0 }),
       task,
       entryId: "",
-      start: scheduleTimeDecimal(task.dueTime, 99)
+      start: scheduleTimeDecimal(task.dueTime, 99),
+      dueTime: task.dueTime || ""
     });
   });
-  return [...taskItems.values(), ...meetingItems].sort((a, b) =>
+  const items = [...taskItems.values(), ...meetingItems].sort((a, b) =>
     `${String(a.start).padStart(5, "0")} ${a.title}`.localeCompare(`${String(b.start).padStart(5, "0")} ${b.title}`)
   );
+  items.forEach(item => {
+    item.timeText = WeekEntryPolicy.formatScheduleTimeRange(item, formatTime);
+  });
+  return items;
 }
 
 function scheduleTimeDecimal(value, fallback = 99) {
@@ -2605,8 +2681,7 @@ function scheduleTimeDecimal(value, fallback = 99) {
 }
 
 function overviewItemBadge(item) {
-  if (item.type === "meeting") return "会议";
-  return item.kind === "actual" ? "进行" : "计划";
+  return TaskStatusPolicy.scheduleOverviewBadge(item);
 }
 
 function renderDayOverviewList(items, mode) {
@@ -2614,8 +2689,8 @@ function renderDayOverviewList(items, mode) {
   const lineClass = mode === "week" ? "week-task-line" : "month-task-line";
   const listClass = mode === "week" ? "week-task-list" : "month-task-list";
   return `<div class="${listClass}">
-    ${items.map(item => `<div class="${lineClass} ${item.kind}${item.type === "meeting" ? " meeting" : ""}" draggable="${item.type === "task" && item.task && !["done", "closed"].includes(item.task.status)}" data-task-id="${item.task?.id || ""}" data-entry-id="${escapeHtml(item.entryId || "")}" title="${escapeHtml(item.title)}">
-      <b>${overviewItemBadge(item)}</b><span>${escapeHtml(item.title)}</span>
+    ${items.map(item => `<div class="${lineClass} ${item.kind}${item.type === "meeting" ? " meeting" : ""}" draggable="${item.type === "task" && item.task && !["done", "closed"].includes(item.task.status)}" data-task-id="${item.task?.id || ""}" data-entry-id="${escapeHtml(item.entryId || "")}" title="${escapeHtml(item.title)}${item.timeText ? ` · ${escapeHtml(item.timeText)}` : ""}">
+      <b>${overviewItemBadge(item)}</b><span>${escapeHtml(item.title)}</span>${mode === "week" && item.timeText ? `<small>${escapeHtml(item.timeText)}</small>` : ""}
     </div>`).join("")}
   </div>`;
 }
@@ -3248,8 +3323,9 @@ function hasScheduledEntry(taskId) {
 }
 
 function isOngoingTask(task) {
-  if (!task || ["done", "closed"].includes(task.status)) return false;
+  if (!task || TaskStatusPolicy.isEndedStatus(task.status)) return false;
   if (task.status === "in_progress") return true;
+  if (TaskStatusPolicy.isTrackingStatus(task) && getTaskScheduleInfo(task.id)?.hasStarted) return true;
   return Boolean(getTaskScheduleInfo(task.id)?.hasStarted);
 }
 
@@ -3404,12 +3480,15 @@ function matchesFilter(task, filter) {
   if (filter === "all") return true;
   if (filter === "unplanned") return isUnplannedTask(task);
   if (filter === "ended") return task.status === "done" || task.status === "closed";
-  if (filter === "planned") return task.status === "planned" && !isUnplannedTask(task) && !isContainerOnlyTask(task);
+  if (filter === "planned") {
+    return (task.status === "planned" || (TaskStatusPolicy.isTrackingStatus(task) && !isOngoingTask(task)))
+      && !isUnplannedTask(task) && !isContainerOnlyTask(task);
+  }
   return task.status === filter;
 }
 
 function statusLabel(status) {
-  return { unplanned: "未计划", planned: "计划中", in_progress: "进行中", done: "已完成", closed: "已关闭" }[status] || "计划中";
+  return TaskStatusPolicy.statusLabel(status);
 }
 
 function priorityLabel(priority) {
@@ -3663,6 +3742,42 @@ function formatDue(task) {
 }
 
 function moveSelectedDate(days) { selectDate(addDays(fromDateKey(state.selectedDate), days)); }
+
+function navigateCalendar(direction = 1) {
+  if (!NavigationPolicy.shouldShowDateNav(state.taskView)) return;
+  const nextKey = NavigationPolicy.moveDateKey({
+    dateKey: state.selectedDate,
+    view: state.taskView,
+    direction,
+    addDays,
+    fromDateKey,
+    toDateKey,
+    getMonday
+  });
+  selectDate(fromDateKey(nextKey));
+}
+
+function updateDateNavigationChrome() {
+  const showNav = NavigationPolicy.shouldShowDateNav(state.taskView);
+  el.dateControls?.classList.toggle("date-controls-hidden-nav", !showNav);
+  el.dateNavPrev?.classList.toggle("hidden", !showNav);
+  el.dateNavNext?.classList.toggle("hidden", !showNav);
+  const labels = NavigationPolicy.navLabels(state.taskView);
+  el.dateNavPrev?.setAttribute("aria-label", labels.prev);
+  el.dateNavNext?.setAttribute("aria-label", labels.next);
+  if (el.monthLabel) {
+    el.monthLabel.textContent = NavigationPolicy.formatNavTitle({
+      view: state.taskView,
+      dateKey: state.selectedDate,
+      fromDateKey,
+      toDateKey,
+      getMonday,
+      addDays
+    });
+  }
+  if (el.datePickerHint) el.datePickerHint.textContent = labels.pickerHint;
+}
+
 function selectDate(date) {
   state.selectedDate = toDateKey(date);
   if (state.taskView === "project") {

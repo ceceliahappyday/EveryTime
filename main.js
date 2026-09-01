@@ -639,7 +639,14 @@ function displayLength(value) {
 }
 
 function statusLabel(status) {
-  return { planned: "计划中", in_progress: "进行中", done: "已完成", closed: "已关闭" }[status] || "计划中";
+  return TaskStatusPolicy?.statusLabel?.(status) || {
+    unplanned: "未计划",
+    planned: "计划中",
+    in_progress: "进行中",
+    tracking: "跟踪中",
+    done: "已完成",
+    closed: "已关闭"
+  }[status] || "计划中";
 }
 
 function priorityLabel(priority) {

@@ -57,6 +57,7 @@
     if (status === "in_progress") return "in_progress";
     if (status === "done" || status === "closed") return "ended";
     if (status === "unplanned") return "unplanned";
+    if (status === "tracking") return "planned";
     return "planned";
   }
 
