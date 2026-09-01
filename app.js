@@ -122,6 +122,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   bindEvents();
   if (localStorage.getItem("today-planner-compact") === "1") document.body.classList.add("compact");
   bindUiScale();
+  bindWindowResize();
   initDesktop();
   bindUpdateProgress();
   renderAppVersion();
@@ -444,6 +445,37 @@ function applyUiScale() {
     compact: document.body.classList.contains("compact")
   }) ?? 1;
   document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
+  document.body.classList.toggle("shell-narrow", document.body.classList.contains("in-desktop") && window.innerWidth < 1180);
+  document.body.classList.toggle("shell-compact-topbar", document.body.classList.contains("in-desktop") && window.innerWidth < 920);
+}
+
+function bindWindowResize() {
+  if (!window.desktopAPI?.resizeBy) return;
+  document.querySelectorAll(".app-shell [data-resize-axis]").forEach(handle => {
+    handle.addEventListener("pointerdown", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const axis = handle.dataset.resizeAxis || "both";
+      const startX = event.screenX;
+      const startY = event.screenY;
+      const startWidth = window.outerWidth;
+      const startHeight = window.outerHeight;
+      handle.setPointerCapture(event.pointerId);
+      const move = moveEvent => {
+        const nextWidth = axis === "y" ? startWidth : Math.max(420, startWidth + moveEvent.screenX - startX);
+        const nextHeight = axis === "x" ? startHeight : Math.max(520, startHeight + moveEvent.screenY - startY);
+        window.desktopAPI.resizeBy(nextWidth, nextHeight);
+      };
+      const up = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        handle.removeEventListener("pointercancel", up);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+      handle.addEventListener("pointercancel", up);
+    });
+  });
 }
 
 function bindUiScale() {
@@ -507,28 +539,6 @@ async function initDesktop() {
   el.settingsForm?.addEventListener("submit", event => {
     event.preventDefault();
     saveDesktopSettings();
-  });
-
-  const resizeHandle = document.querySelector(".resize-handle");
-  resizeHandle?.addEventListener("pointerdown", event => {
-    event.preventDefault();
-    const startX = event.screenX;
-    const startY = event.screenY;
-    const startWidth = window.outerWidth;
-    const startHeight = window.outerHeight;
-    resizeHandle.setPointerCapture(event.pointerId);
-    const move = moveEvent => window.desktopAPI.resizeBy(
-      startWidth + moveEvent.screenX - startX,
-      startHeight + moveEvent.screenY - startY
-    );
-    const up = () => {
-      resizeHandle.removeEventListener("pointermove", move);
-      resizeHandle.removeEventListener("pointerup", up);
-      resizeHandle.removeEventListener("pointercancel", up);
-    };
-    resizeHandle.addEventListener("pointermove", move);
-    resizeHandle.addEventListener("pointerup", up);
-    resizeHandle.addEventListener("pointercancel", up);
   });
 }
 

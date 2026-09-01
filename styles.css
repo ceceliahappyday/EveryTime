@@ -24,7 +24,14 @@
 @media (max-width: 620px) { .ai-range { grid-template-columns: 1fr; } .ai-quick-actions .soft-button { width: 100%; } }
 
 * { box-sizing: border-box; }
-html.desktop-shell, html.desktop-shell body { background: transparent !important; }
+html.desktop-shell, html.desktop-shell body {
+  background: transparent !important;
+  height: 100%;
+  overflow: hidden;
+}
+html.desktop-shell {
+  font-size: calc(14px * var(--ui-scale, 1));
+}
 html.desktop-shell .app-shell {
   background: transparent;
   border-color: rgba(131, 183, 214, .34);
@@ -43,24 +50,26 @@ body {
 }
 body.in-desktop { background: transparent; }
 body.in-desktop .app-shell {
-  width: calc((100% - 40px) / var(--ui-scale));
+  width: 100%;
   max-width: none;
+  height: 100vh;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 body.in-desktop:not(.glass-mode) .app-shell { background: rgba(7, 24, 36, .72); }
 body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
 .topbar { -webkit-app-region: drag; }
-.topbar button, .topbar input, .topbar .date-controls, .topbar .header-actions { -webkit-app-region: no-drag; }
-
-button, input, textarea, select { font: inherit; }
-button { color: inherit; }
+.topbar button, .topbar input, .topbar .date-controls, .topbar .header-actions,
+.resize-edge, .resize-handle { -webkit-app-region: no-drag; }
 
 .app-shell {
-  zoom: var(--ui-scale);
+  position: relative;
   display: flex;
   flex-direction: column;
-  width: min(calc(1520px / var(--ui-scale)), calc((100% - 40px) / var(--ui-scale)));
-  margin: calc(20px / var(--ui-scale)) auto;
-  height: calc((100vh - 40px) / var(--ui-scale));
+  width: min(1520px, calc(100% - 40px));
+  margin: 20px auto;
+  height: calc(100vh - 40px);
   background: var(--surface);
   border: 1px solid rgba(255,255,255,.8);
   border-radius: 24px;
@@ -2191,13 +2200,44 @@ body.in-desktop.glass-mode .task-trace-list.month:hover::-webkit-scrollbar-thumb
   background: rgba(175, 215, 236, .72);
   background-clip: padding-box;
 }
+.resize-edge {
+  position: absolute;
+  z-index: 120;
+  -webkit-app-region: no-drag;
+}
+.resize-edge-right {
+  top: 48px;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+.resize-edge-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 8px;
+  cursor: ns-resize;
+}
 .resize-handle {
-  position: fixed; z-index: 100; right: 6px; bottom: 6px;
-  width: 30px; height: 30px; cursor: nwse-resize; -webkit-app-region: no-drag;
+  position: absolute;
+  z-index: 121;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  cursor: nwse-resize;
+  -webkit-app-region: no-drag;
 }
 .resize-handle::after {
-  content: ""; position: absolute; right: 3px; bottom: 3px; width: 16px; height: 16px;
-  border-right: 3px solid rgba(120,205,203,.90); border-bottom: 3px solid rgba(120,205,203,.90);
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 12px;
+  height: 12px;
+  border-right: 3px solid rgba(120,205,203,.90);
+  border-bottom: 3px solid rgba(120,205,203,.90);
   filter: drop-shadow(0 1px 2px rgba(0,0,0,.75));
 }
 .small-modal { width: min(460px, calc(100% - 40px)); }
@@ -2306,25 +2346,60 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
   .primary-button { padding-left: 13px; padding-right: 13px; }
 }
 
-/* The desktop window can be narrower than the physical monitor. Keep the
-   complete command row usable inside that resized shell. */
+/* Desktop window uses the full client area; keep the command row readable when narrow. */
 body.in-desktop .topbar {
-  grid-template-columns: minmax(220px, .72fr) minmax(230px, auto) minmax(0, 1.28fr);
-  column-gap: 8px;
-  padding-inline: 18px;
+  grid-template-columns: minmax(180px, .7fr) minmax(220px, auto) minmax(0, 1fr);
+  column-gap: 10px;
+  padding-inline: 16px;
 }
-body.in-desktop .header-actions { gap: 5px; }
-body.in-desktop .header-actions > .soft-button {
-  padding-inline: 9px;
-  font-size: 0;
+body.in-desktop .header-actions {
+  gap: 6px;
+  max-width: 100%;
 }
-body.in-desktop .header-actions > .soft-button::first-letter { font-size: 14px; }
 body.in-desktop .header-actions .primary-button {
-  min-width: 112px;
+  min-width: 108px;
   padding-inline: 10px;
   font-size: 12px;
 }
-body.in-desktop .header-actions .window-controls { gap: 1px; }
+body.in-desktop .header-actions .soft-button {
+  padding-inline: 10px;
+  font-size: 12px;
+}
+body.in-desktop.shell-narrow .topbar {
+  height: auto;
+  min-height: 88px;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto auto;
+  row-gap: 8px;
+  padding: 10px 14px 12px;
+}
+body.in-desktop.shell-narrow .brand { min-width: 0; }
+body.in-desktop.shell-narrow .date-controls {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+body.in-desktop.shell-narrow .header-actions {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+body.in-desktop.shell-narrow .brand p { display: none; }
+body.in-desktop.shell-compact-topbar .header-actions .soft-button,
+body.in-desktop.shell-compact-topbar .header-actions .primary-button {
+  padding-inline: 8px;
+  font-size: 11px;
+}
+body.in-desktop.shell-compact-topbar .header-actions .primary-button {
+  min-width: 96px;
+}
+body.in-desktop.shell-compact-topbar .date-picker-button {
+  min-width: 108px;
+  padding-inline: 10px;
+}
+body.in-desktop.shell-compact-topbar .workspace {
+  grid-template-columns: clamp(220px, 34vw, 300px) minmax(0, 1fr);
+}
 
 @media (max-width: 1120px) {
   .topbar { grid-template-columns: auto 1fr; padding: 0 18px; }
@@ -2337,13 +2412,26 @@ body.in-desktop .header-actions .window-controls { gap: 1px; }
   .day-dot { display: none; }
 }
 
-@media (max-width: 900px) {
-  .app-shell {
-    width: calc((100% - 16px) / var(--ui-scale));
-    height: calc((100vh - 16px) / var(--ui-scale));
-    margin: calc(8px / var(--ui-scale)) auto;
-    border-radius: 16px;
+/* Desktop window keeps full labels and date controls even when the native window is narrow. */
+@media (max-width: 1380px) {
+  body.in-desktop .header-actions > .soft-button,
+  body.in-desktop .header-actions > .soft-button::first-letter {
+    font-size: 12px;
   }
+}
+@media (max-width: 1120px) {
+  body.in-desktop .date-controls { display: flex; }
+  body.in-desktop .header-actions > .soft-button,
+  body.in-desktop .header-actions > .soft-button::first-letter {
+    font-size: 12px;
+  }
+  body.in-desktop.shell-compact-topbar .header-actions > .soft-button,
+  body.in-desktop.shell-compact-topbar .header-actions > .soft-button::first-letter {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 900px) {
   .topbar { height: 82px; }
   .week-strip { height: 76px; padding: 8px 14px; }
   .workspace {
@@ -2363,12 +2451,6 @@ body.in-desktop .header-actions .window-controls { gap: 1px; }
 
 @media (max-width: 760px) {
   body { min-width: 360px; }
-  .app-shell {
-    width: calc((100% - 10px) / var(--ui-scale));
-    height: calc((100vh - 10px) / var(--ui-scale));
-    margin: calc(5px / var(--ui-scale)) auto;
-    border-radius: 14px;
-  }
   .topbar {
     height: auto;
     min-height: 76px;

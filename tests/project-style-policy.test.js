@@ -79,13 +79,23 @@ assert.match(
 
 assert.match(
   styles,
-  /--ui-scale:\s*1/s,
-  "root stylesheet should define a default ui scale variable"
+  /body\.in-desktop \.app-shell\s*\{[^}]*width:\s*100%/s,
+  "desktop shell should fill the native window"
 );
 assert.match(
   styles,
-  /\.app-shell\s*\{[^}]*zoom:\s*var\(--ui-scale\)/s,
-  "app shell should scale with window size"
+  /\.resize-edge-right/s,
+  "resize edges should attach to the app shell border"
+);
+assert.doesNotMatch(
+  styles,
+  /\.app-shell\s*\{[^}]*zoom:/s,
+  "app shell should not use css zoom, which breaks resize hit targets"
+);
+assert.match(
+  styles,
+  /body\.in-desktop \.header-actions > \.soft-button[^}]*font-size:\s*12px/s,
+  "desktop header buttons should keep readable labels when the window is narrow"
 );
 
 console.log("project style policy tests passed");
