@@ -15,6 +15,8 @@ assert.ok(!html.includes("id=\"glassMode\""));
 assert.ok(!html.includes("id=\"previousWeek\""));
 assert.ok(app.includes("bindWindowResize"));
 assert.ok(app.includes("shell-narrow"));
+assert.ok(app.includes("window.innerWidth < 1280"));
+assert.ok(app.includes("window.innerWidth < 980"));
 assert.ok(html.includes('data-resize-axis="both"'));
 assert.ok(html.includes('data-resize-axis="x"'));
 

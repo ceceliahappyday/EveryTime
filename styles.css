@@ -2346,15 +2346,32 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
   .primary-button { padding-left: 13px; padding-right: 13px; }
 }
 
-/* Desktop window uses the full client area; keep the command row readable when narrow. */
+/* Desktop: grow height and wrap controls instead of clipping behind overflow scroll. */
 body.in-desktop .topbar {
-  grid-template-columns: minmax(180px, .7fr) minmax(220px, auto) minmax(0, 1fr);
+  height: auto;
+  min-height: 72px;
+  grid-template-columns: minmax(160px, .55fr) minmax(200px, auto) minmax(0, 1.4fr);
   column-gap: 10px;
-  padding-inline: 16px;
+  row-gap: 8px;
+  padding: 10px 18px 12px;
+  align-items: start;
+}
+body.in-desktop .brand,
+body.in-desktop .date-controls,
+body.in-desktop .header-actions {
+  align-self: center;
 }
 body.in-desktop .header-actions {
   gap: 6px;
   max-width: 100%;
+  flex-wrap: wrap;
+  overflow: visible;
+  justify-content: flex-end;
+  row-gap: 6px;
+}
+body.in-desktop .header-view-switcher {
+  position: static;
+  box-shadow: none;
 }
 body.in-desktop .header-actions .primary-button {
   min-width: 108px;
@@ -2365,26 +2382,41 @@ body.in-desktop .header-actions .soft-button {
   padding-inline: 10px;
   font-size: 12px;
 }
+/* Medium window: brand + date on row 1, all action buttons full-width on row 2. */
 body.in-desktop.shell-narrow .topbar {
-  height: auto;
-  min-height: 88px;
-  grid-template-columns: 1fr;
-  grid-template-rows: auto auto auto;
-  row-gap: 8px;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "brand dates"
+    "actions actions";
   padding: 10px 14px 12px;
 }
-body.in-desktop.shell-narrow .brand { min-width: 0; }
+body.in-desktop.shell-narrow .brand { grid-area: brand; min-width: 0; }
 body.in-desktop.shell-narrow .date-controls {
-  justify-content: flex-start;
+  grid-area: dates;
+  justify-content: flex-end;
   flex-wrap: wrap;
   min-width: 0;
 }
 body.in-desktop.shell-narrow .header-actions {
+  grid-area: actions;
   width: 100%;
-  overflow-x: auto;
-  padding-bottom: 2px;
+  justify-content: flex-start;
+  overflow: visible;
+  padding-bottom: 0;
 }
 body.in-desktop.shell-narrow .brand p { display: none; }
+/* Narrow window: stack all three sections; keep every button visible by wrapping. */
+body.in-desktop.shell-compact-topbar .topbar {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "brand"
+    "dates"
+    "actions";
+}
+body.in-desktop.shell-compact-topbar .date-controls {
+  justify-content: flex-start;
+}
 body.in-desktop.shell-compact-topbar .header-actions .soft-button,
 body.in-desktop.shell-compact-topbar .header-actions .primary-button {
   padding-inline: 8px;

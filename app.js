@@ -445,8 +445,8 @@ function applyUiScale() {
     compact: document.body.classList.contains("compact")
   }) ?? 1;
   document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
-  document.body.classList.toggle("shell-narrow", document.body.classList.contains("in-desktop") && window.innerWidth < 1180);
-  document.body.classList.toggle("shell-compact-topbar", document.body.classList.contains("in-desktop") && window.innerWidth < 920);
+  document.body.classList.toggle("shell-narrow", document.body.classList.contains("in-desktop") && window.innerWidth < 1280);
+  document.body.classList.toggle("shell-compact-topbar", document.body.classList.contains("in-desktop") && window.innerWidth < 980);
 }
 
 function bindWindowResize() {

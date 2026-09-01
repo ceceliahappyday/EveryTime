@@ -97,5 +97,15 @@ assert.match(
   /body\.in-desktop \.header-actions > \.soft-button[^}]*font-size:\s*12px/s,
   "desktop header buttons should keep readable labels when the window is narrow"
 );
+assert.match(
+  styles,
+  /body\.in-desktop \.header-actions\s*\{[^}]*flex-wrap:\s*wrap/s,
+  "desktop header actions should wrap instead of clipping behind horizontal scroll"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-narrow \.topbar\s*\{[^}]*grid-template-areas:/s,
+  "narrow desktop windows should move action buttons onto their own row"
+);
 
 console.log("project style policy tests passed");
