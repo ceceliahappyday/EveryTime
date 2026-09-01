@@ -79,8 +79,8 @@ assert.match(
 
 assert.match(
   styles,
-  /body\.in-desktop \.app-shell\s*\{[^}]*width:\s*100%/s,
-  "desktop shell should fill the native window"
+  /body\.in-desktop \.app-shell\s*\{[^}]*border-radius:\s*18px/s,
+  "desktop shell should keep soft rounded corners"
 );
 assert.match(
   styles,
@@ -94,18 +94,18 @@ assert.doesNotMatch(
 );
 assert.match(
   styles,
-  /body\.in-desktop \.header-actions > \.soft-button[^}]*font-size:\s*12px/s,
-  "desktop header buttons should keep readable labels when the window is narrow"
+  /body\.in-desktop \.header-actions\s*\{[^}]*flex-wrap:\s*nowrap/s,
+  "desktop header should stay on one row and densify instead of wrapping"
 );
 assert.match(
   styles,
-  /body\.in-desktop \.header-actions\s*\{[^}]*flex-wrap:\s*wrap/s,
-  "desktop header actions should wrap instead of clipping behind horizontal scroll"
+  /body\.in-desktop\.shell-narrow \.header-actions \.btn-label\s*\{[^}]*display:\s*none/s,
+  "narrow desktop windows should collapse action labels to icons"
 );
-assert.match(
+assert.doesNotMatch(
   styles,
   /body\.in-desktop\.shell-narrow \.topbar\s*\{[^}]*grid-template-areas:/s,
-  "narrow desktop windows should move action buttons onto their own row"
+  "narrow desktop topbar should not break into multi-row grid areas"
 );
 
 console.log("project style policy tests passed");

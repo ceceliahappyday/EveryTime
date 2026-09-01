@@ -50,12 +50,12 @@ body {
 }
 body.in-desktop { background: transparent; }
 body.in-desktop .app-shell {
-  width: 100%;
+  width: calc(100% - 16px);
   max-width: none;
-  height: 100vh;
-  margin: 0;
-  border-radius: 0;
-  box-shadow: none;
+  height: calc(100vh - 16px);
+  margin: 8px;
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .28);
 }
 body.in-desktop:not(.glass-mode) .app-shell { background: rgba(7, 24, 36, .72); }
 body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
@@ -163,7 +163,11 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   border-radius: 10px;
 }
 .icon-button { width: 38px; height: 38px; font-size: 17px; }
-.soft-button { padding: 10px 14px; }
+.soft-button { padding: 10px 14px; display: inline-flex; align-items: center; gap: 6px; }
+.soft-button .btn-icon,
+.primary-button .btn-icon { font-style: normal; line-height: 1; }
+.soft-button .btn-label,
+.primary-button .btn-label { white-space: nowrap; }
 .icon-button:hover, .soft-button:hover { border-color: #b8b9b2; background: #f8f7f3; }
 
 .date-picker-button {
@@ -177,6 +181,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 #datePicker { position: absolute; opacity: 0; pointer-events: none; }
 
 .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 11px 16px;
   border-radius: 10px;
   color: white;
@@ -184,7 +191,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   box-shadow: 0 6px 16px rgba(60,102,85,.18);
 }
 .primary-button:hover { background: #315849; }
-.primary-button span { font-size: 16px; }
+.primary-button .btn-icon { font-size: 16px; }
 
 .week-strip {
   flex: 0 0 auto;
@@ -2346,88 +2353,158 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
   .primary-button { padding-left: 13px; padding-right: 13px; }
 }
 
-/* Desktop: grow height and wrap controls instead of clipping behind overflow scroll. */
+/* Desktop: keep a single-row topbar; densify controls instead of wrapping to two lines. */
 body.in-desktop .topbar {
-  height: auto;
-  min-height: 72px;
-  grid-template-columns: minmax(160px, .55fr) minmax(200px, auto) minmax(0, 1.4fr);
+  height: 78px;
+  min-height: 78px;
+  grid-template-columns: minmax(148px, .52fr) minmax(210px, auto) minmax(0, 1.55fr);
   column-gap: 10px;
-  row-gap: 8px;
-  padding: 10px 18px 12px;
-  align-items: start;
+  row-gap: 0;
+  padding: 0 16px;
+  align-items: center;
 }
 body.in-desktop .brand,
 body.in-desktop .date-controls,
 body.in-desktop .header-actions {
   align-self: center;
+  flex-wrap: nowrap;
 }
 body.in-desktop .header-actions {
   gap: 6px;
   max-width: 100%;
-  flex-wrap: wrap;
-  overflow: visible;
+  flex-wrap: nowrap;
+  overflow: hidden;
   justify-content: flex-end;
-  row-gap: 6px;
 }
 body.in-desktop .header-view-switcher {
   position: static;
   box-shadow: none;
 }
 body.in-desktop .header-actions .primary-button {
-  min-width: 108px;
-  padding-inline: 10px;
+  min-width: 0;
+  padding-inline: 12px;
   font-size: 12px;
 }
 body.in-desktop .header-actions .soft-button {
   padding-inline: 10px;
   font-size: 12px;
 }
-/* Medium window: brand + date on row 1, all action buttons full-width on row 2. */
-body.in-desktop.shell-narrow .topbar {
-  min-height: 0;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "brand dates"
-    "actions actions";
-  padding: 10px 14px 12px;
+body.in-desktop .brand p {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-body.in-desktop.shell-narrow .brand { grid-area: brand; min-width: 0; }
+
+/* Medium: still one row; hide secondary text and switch action buttons to icons. */
+body.in-desktop.shell-narrow .topbar {
+  height: 72px;
+  min-height: 72px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 0 14px;
+}
+body.in-desktop.shell-narrow .brand,
+body.in-desktop.shell-narrow .date-controls,
+body.in-desktop.shell-narrow .header-actions {
+  grid-area: auto;
+  width: auto;
+}
+body.in-desktop.shell-narrow .brand p,
+body.in-desktop.shell-narrow .date-picker-button span,
+body.in-desktop.shell-narrow .app-version {
+  display: none;
+}
+body.in-desktop.shell-narrow .brand-mark {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+}
+body.in-desktop.shell-narrow .brand h1 {
+  font-size: 17px;
+}
 body.in-desktop.shell-narrow .date-controls {
-  grid-area: dates;
-  justify-content: flex-end;
-  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
   min-width: 0;
 }
+body.in-desktop.shell-narrow .date-picker-button {
+  min-width: 0;
+  padding: 8px 12px;
+}
+body.in-desktop.shell-narrow .date-picker-button strong {
+  font-size: 12px;
+}
 body.in-desktop.shell-narrow .header-actions {
-  grid-area: actions;
-  width: 100%;
-  justify-content: flex-start;
+  justify-content: flex-end;
+  gap: 5px;
   overflow: visible;
-  padding-bottom: 0;
 }
-body.in-desktop.shell-narrow .brand p { display: none; }
-/* Narrow window: stack all three sections; keep every button visible by wrapping. */
+body.in-desktop.shell-narrow .header-actions .soft-button,
+body.in-desktop.shell-narrow .header-actions .primary-button {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+body.in-desktop.shell-narrow .header-actions .btn-label {
+  display: none;
+}
+body.in-desktop.shell-narrow .header-actions .btn-icon {
+  font-size: 15px;
+}
+body.in-desktop.shell-narrow .header-view-switcher {
+  grid-template-columns: repeat(4, 32px);
+}
+body.in-desktop.shell-narrow #todayButton {
+  padding-inline: 10px;
+  font-size: 12px;
+}
+
+/* Compact: tighten further; keep one elegant row. */
 body.in-desktop.shell-compact-topbar .topbar {
-  grid-template-columns: 1fr;
-  grid-template-areas:
-    "brand"
-    "dates"
-    "actions";
+  height: 66px;
+  min-height: 66px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 0 12px;
 }
-body.in-desktop.shell-compact-topbar .date-controls {
-  justify-content: flex-start;
+body.in-desktop.shell-compact-topbar .brand > div:last-child {
+  display: none;
+}
+body.in-desktop.shell-compact-topbar #todayButton {
+  width: 36px;
+  min-width: 36px;
+  height: 32px;
+  padding: 0;
+  font-size: 0;
+}
+body.in-desktop.shell-compact-topbar #todayButton::before {
+  content: "今";
+  font-size: 12px;
+  font-weight: 700;
+}
+body.in-desktop.shell-compact-topbar .date-picker-button {
+  padding: 6px 10px;
+}
+body.in-desktop.shell-compact-topbar .icon-button {
+  width: 32px;
+  height: 32px;
 }
 body.in-desktop.shell-compact-topbar .header-actions .soft-button,
 body.in-desktop.shell-compact-topbar .header-actions .primary-button {
-  padding-inline: 8px;
-  font-size: 11px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
 }
-body.in-desktop.shell-compact-topbar .header-actions .primary-button {
-  min-width: 96px;
+body.in-desktop.shell-compact-topbar .header-view-switcher {
+  grid-template-columns: repeat(4, 28px);
+  gap: 2px;
+  padding: 2px;
 }
-body.in-desktop.shell-compact-topbar .date-picker-button {
-  min-width: 108px;
-  padding-inline: 10px;
+body.in-desktop.shell-compact-topbar .header-view-switcher button {
+  padding: 5px 2px;
+  font-size: 10px;
 }
 body.in-desktop.shell-compact-topbar .workspace {
   grid-template-columns: clamp(220px, 34vw, 300px) minmax(0, 1fr);
@@ -2444,23 +2521,14 @@ body.in-desktop.shell-compact-topbar .workspace {
   .day-dot { display: none; }
 }
 
-/* Desktop window keeps full labels and date controls even when the native window is narrow. */
+/* Desktop window keeps date controls; densify labels via shell-narrow instead of media hide. */
 @media (max-width: 1380px) {
-  body.in-desktop .header-actions > .soft-button,
-  body.in-desktop .header-actions > .soft-button::first-letter {
+  body.in-desktop:not(.shell-narrow) .header-actions > .soft-button {
     font-size: 12px;
   }
 }
 @media (max-width: 1120px) {
   body.in-desktop .date-controls { display: flex; }
-  body.in-desktop .header-actions > .soft-button,
-  body.in-desktop .header-actions > .soft-button::first-letter {
-    font-size: 12px;
-  }
-  body.in-desktop.shell-compact-topbar .header-actions > .soft-button,
-  body.in-desktop.shell-compact-topbar .header-actions > .soft-button::first-letter {
-    font-size: 11px;
-  }
 }
 
 @media (max-width: 900px) {

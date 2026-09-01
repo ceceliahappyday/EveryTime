@@ -15,9 +15,11 @@ assert.ok(!html.includes("id=\"glassMode\""));
 assert.ok(!html.includes("id=\"previousWeek\""));
 assert.ok(app.includes("bindWindowResize"));
 assert.ok(app.includes("shell-narrow"));
-assert.ok(app.includes("window.innerWidth < 1280"));
-assert.ok(app.includes("window.innerWidth < 980"));
+assert.ok(app.includes("window.innerWidth < 1260"));
+assert.ok(app.includes("window.innerWidth < 1020"));
 assert.ok(html.includes('data-resize-axis="both"'));
 assert.ok(html.includes('data-resize-axis="x"'));
+assert.ok(html.includes('class="btn-label"'));
+assert.ok(html.includes('class="btn-icon"'));
 
 console.log("navigation chrome tests passed");
