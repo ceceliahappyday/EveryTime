@@ -51,4 +51,24 @@ requiredStyles.forEach(token => {
   if (!styles.includes(token)) throw new Error(`missing gantt visual style: ${token}`);
 });
 
+if (!/height:\s*42px/.test(styles.match(/\.project-gantt-group-heading\s*\{[^}]+\}/s)?.[0] || "")) {
+  throw new Error("gantt group headings must use fixed height to stay aligned with chart spacers");
+}
+if (!/height:\s*36px/.test(styles.match(/\.project-gantt-row-label,\s*\.project-gantt-row-chart\s*\{[^}]+\}/s)?.[0] || "")) {
+  throw new Error("gantt label/chart rows must use matching fixed heights");
+}
+
+if (app.includes('|| "未命名会议"') || app.includes("|| '未命名会议'")) {
+  throw new Error("empty-title meetings must be filtered out, not renamed");
+}
+if (app.includes('|| "未命名任务"') && app.includes("createProjectGanttRow")) {
+  throw new Error("empty-title gantt tasks must be filtered out, not renamed");
+}
+if (!app.includes("TodoListPolicy.hasDisplayTitle")) {
+  throw new Error("gantt/overview rendering must require a display title");
+}
+if (!app.includes("if (!pair?.labelRow || !pair?.chartRow) return")) {
+  throw new Error("appendGanttRowPair must skip rows without title content");
+}
+
 console.log("gantt visual policy tests passed");

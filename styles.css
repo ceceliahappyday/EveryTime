@@ -62,8 +62,13 @@ body.in-desktop .app-shell {
 body.in-desktop:not(.glass-mode) .app-shell { background: rgba(7, 24, 36, .72); }
 body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
 .topbar { -webkit-app-region: drag; }
-.topbar button, .topbar input, .topbar .date-controls, .topbar .header-actions,
-.resize-edge, .resize-handle { -webkit-app-region: no-drag; }
+.topbar button,
+.topbar input,
+.topbar select,
+.topbar .header-view-switcher,
+.topbar .window-controls,
+.resize-edge,
+.resize-handle { -webkit-app-region: no-drag; }
 
 .app-shell {
   position: relative;
@@ -118,6 +123,12 @@ body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
 }
 
 .date-controls { justify-content: center; align-items: center; gap: 10px; min-width: 180px; }
+.date-controls > * { flex: 0 0 auto; }
+#todayButton {
+  white-space: nowrap;
+  flex: 0 0 auto;
+  min-width: max-content;
+}
 .date-nav-button.hidden { display: none; }
 .date-controls.date-controls-hidden-nav .date-nav-button { display: none; }
 .header-actions {
@@ -134,14 +145,38 @@ body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
 .header-actions > * { flex: 0 0 auto; }
 .header-actions button { white-space: nowrap; }
 .header-actions .primary-button { min-width: 122px; }
-.window-controls { display: none; gap: 3px; margin-left: 2px; align-items: center; }
-body.in-desktop .window-controls { display: flex; }
+.window-controls { display: none; gap: 2px; margin-left: 0; align-items: center; flex: 0 0 auto; }
+body.in-desktop .window-controls {
+  display: flex;
+  align-self: stretch;
+  padding-left: 6px;
+  border-left: 1px solid var(--line-soft);
+}
 .window-controls button {
-  width: 32px; height: 32px; display: grid; place-items: center;
-  color: var(--muted); background: transparent; border-radius: 8px; font-size: 16px;
+  width: 40px;
+  height: 40px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+  border-radius: 8px;
+  font-size: 16px;
 }
 .window-controls button:hover { color: var(--ink); background: rgba(120,130,124,.16); }
 .window-controls .window-close:hover { color: #fff; background: #b94c48; }
+#glassToggleButton.is-active,
+#glassToggleButton[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: rgba(60, 102, 85, .42);
+  background: rgba(220, 232, 224, .72);
+}
+body.in-desktop.glass-mode #glassToggleButton.is-active,
+body.in-desktop.glass-mode #glassToggleButton[aria-pressed="true"] {
+  color: #b8f0e8;
+  border-color: rgba(101, 180, 177, .55);
+  background: rgba(101, 180, 177, .18);
+}
 .header-view-switcher {
   position: sticky;
   left: 0;
@@ -190,6 +225,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 .soft-button .btn-icon,
 .primary-button .btn-icon { font-style: normal; line-height: 1; }
@@ -697,9 +734,15 @@ button.task-group-heading {
   background: rgba(248,247,243,.96);
 }
 .project-gantt-label-header {
+  position: sticky;
+  top: 0;
+  z-index: 8;
   display: flex;
   align-items: center;
+  box-sizing: border-box;
+  height: 42px;
   min-height: 42px;
+  max-height: 42px;
   margin-bottom: 10px;
   padding: 7px 10px;
   border: 1px solid var(--line-soft);
@@ -715,9 +758,14 @@ button.task-group-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  box-sizing: border-box;
   width: 100%;
+  height: 42px;
+  min-height: 42px;
+  max-height: 42px;
   margin: 12px 0 8px;
   padding: 8px 10px;
+  overflow: hidden;
   border: 1px solid var(--line-soft);
   border-radius: 10px;
   color: var(--muted);
@@ -726,12 +774,18 @@ button.task-group-heading {
   text-align: left;
 }
 .project-gantt-group-chart-spacer {
+  box-sizing: border-box;
+  height: 42px;
   min-height: 42px;
+  max-height: 42px;
   margin: 12px 0 8px;
 }
 .project-gantt-row-label,
 .project-gantt-row-chart {
-  min-height: 30px;
+  box-sizing: border-box;
+  height: 36px;
+  min-height: 36px;
+  max-height: 36px;
   padding: 3px 0;
   border-top: 1px solid var(--line-soft);
 }
@@ -953,10 +1007,15 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   top: 0;
   z-index: 7;
   display: grid;
+  box-sizing: border-box;
+  height: 42px;
+  min-height: 42px;
+  max-height: 42px;
   gap: 4px;
   align-items: center;
   margin-bottom: 10px;
   padding: 7px 8px;
+  overflow: hidden;
   border: 1px solid var(--line-soft);
   border-radius: 10px;
   background: rgba(248,247,243,.94);
@@ -1458,7 +1517,7 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
 .schedule-month-calendar {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  grid-auto-rows: minmax(136px, auto);
+  grid-template-rows: auto repeat(6, 136px);
   gap: 6px;
 }
 .schedule-month-weekday {
@@ -1477,13 +1536,13 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
 }
 .schedule-month-cell {
   min-width: 0;
+  height: 136px;
   min-height: 136px;
-  height: auto;
-  max-height: none;
+  max-height: 136px;
   padding: 7px 6px;
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  overflow: hidden;
   border: 1px solid var(--line-soft);
   border-width: 0 0 1px;
   border-radius: 0;
@@ -1519,9 +1578,20 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   text-overflow: ellipsis;
 }
 .month-task-list {
+  flex: 1 1 auto;
   min-height: 0;
   margin-top: 5px;
-  overflow: visible;
+  overflow: hidden;
+}
+.schedule-month-cell.selected .month-task-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.schedule-month-cell.selected .month-task-list::-webkit-scrollbar { width: 5px; }
+.schedule-month-cell.selected .month-task-list::-webkit-scrollbar-thumb {
+  border-radius: 6px;
+  background: rgba(101,180,177,.55);
 }
 .month-task-line {
   display: grid;
@@ -1542,7 +1612,18 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
 .month-task-line.planned b { color: #bb8844; }
 .month-task-line.tracking b { color: #7a6a9a; }
 .month-task-line.meeting b { color: #aa7b39; }
-.month-task-line span { overflow: visible; white-space: normal; line-height: 1.25; }
+.month-task-line span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+.schedule-month-cell.selected .month-task-line span {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
 .month-task-line:hover span { text-decoration: underline; }
 .holiday-badge {
   display: inline-flex;
@@ -1828,6 +1909,9 @@ body.in-desktop.glass-mode .header-view-switcher button,
 body.in-desktop.glass-mode .window-controls button {
   color: #f4fbff;
   text-shadow: 0 1px 3px rgba(0,0,0,.88);
+}
+body.in-desktop.glass-mode .window-controls {
+  border-left-color: rgba(219,238,249,.28);
 }
 body.in-desktop.glass-mode .header-view-switcher button.active {
   color: #fff;
@@ -2446,6 +2530,8 @@ body.in-desktop.glass-mode .task-trace-list.month:hover::-webkit-scrollbar-thumb
   gap: 6px;
 }
 .settings-work-hours .form-hint { margin: 0; }
+.settings-ai-actions { display: flex; gap: 8px; }
+.settings-ai-actions .soft-button { width: auto; }
 .settings-info {
   display: grid;
   gap: 10px;
@@ -2550,27 +2636,43 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
 
 /* Desktop chrome: single-row progressive disclosure (hide secondary UI, never wrap). */
 body.in-desktop .topbar {
+  display: flex;
+  align-items: center;
   height: 72px;
   min-height: 72px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  column-gap: 12px;
-  row-gap: 0;
-  padding: 0 14px;
-  align-items: center;
+  gap: 10px;
+  padding: 0 4px 0 14px;
 }
-body.in-desktop .brand,
+body.in-desktop .brand {
+  flex: 0 0 auto;
+  min-width: 0;
+  align-self: center;
+  flex-wrap: nowrap;
+}
+body.in-desktop .topbar-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  gap: 12px;
+}
 body.in-desktop .date-controls,
 body.in-desktop .header-actions {
   align-self: center;
   flex-wrap: nowrap;
-  min-width: 0;
+  flex: 0 1 auto;
+}
+body.in-desktop .date-controls {
+  min-width: max-content;
+  overflow: visible;
 }
 body.in-desktop .header-actions {
   gap: 6px;
   max-width: none;
-  flex-wrap: nowrap;
+  width: auto;
   overflow: visible;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 body.in-desktop .header-view-switcher {
   position: static;
@@ -2581,7 +2683,8 @@ body.in-desktop .date-controls .icon-button,
 body.in-desktop .date-controls .soft-button,
 body.in-desktop .date-controls .date-picker-button,
 body.in-desktop .header-actions .soft-button,
-body.in-desktop .header-actions .primary-button {
+body.in-desktop .header-actions .primary-button,
+body.in-desktop .window-controls button {
   height: 40px;
   box-sizing: border-box;
 }
@@ -2617,7 +2720,8 @@ body.in-desktop.shell-narrow .date-controls .soft-button,
 body.in-desktop.shell-narrow .date-controls .date-picker-button,
 body.in-desktop.shell-narrow .header-actions .soft-button,
 body.in-desktop.shell-narrow .header-actions .primary-button,
-body.in-desktop.shell-narrow .header-view-switcher {
+body.in-desktop.shell-narrow .header-view-switcher,
+body.in-desktop.shell-narrow .window-controls button {
   height: 34px;
 }
 body.in-desktop.shell-narrow .date-picker-button {
@@ -2641,9 +2745,11 @@ body.in-desktop.shell-narrow .header-view-switcher {
 }
 body.in-desktop.shell-narrow #todayButton {
   width: auto;
-  min-width: 0;
+  min-width: max-content;
   padding-inline: 10px;
   font-size: 12px;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 /* ~960: hide secondary tools + week strip; keep core navigation. */
@@ -2663,7 +2769,8 @@ body.in-desktop.shell-compact-topbar .date-controls .icon-button,
 body.in-desktop.shell-compact-topbar .date-controls .date-picker-button,
 body.in-desktop.shell-compact-topbar .header-actions .soft-button,
 body.in-desktop.shell-compact-topbar .header-actions .primary-button,
-body.in-desktop.shell-compact-topbar .header-view-switcher {
+body.in-desktop.shell-compact-topbar .header-view-switcher,
+body.in-desktop.shell-compact-topbar .window-controls button {
   height: 30px;
 }
 body.in-desktop.shell-compact-topbar .date-picker-button {
@@ -2674,6 +2781,10 @@ body.in-desktop.shell-compact-topbar .icon-button {
 }
 body.in-desktop.shell-compact-topbar .header-actions .soft-button,
 body.in-desktop.shell-compact-topbar .header-actions .primary-button {
+  width: 30px;
+  min-width: 30px;
+}
+body.in-desktop.shell-compact-topbar .window-controls button {
   width: 30px;
   min-width: 30px;
 }
@@ -2688,9 +2799,13 @@ body.in-desktop.shell-compact-topbar .workspace {
 
 /* ~760: schedule-first; hide left task module unless toggled open. */
 body.in-desktop.shell-focus .topbar {
+  display: flex;
   height: 56px;
   min-height: 56px;
-  grid-template-columns: minmax(0, 1fr) auto;
+}
+body.in-desktop.shell-focus .topbar-main {
+  justify-content: flex-end;
+  gap: 8px;
 }
 body.in-desktop.shell-focus .brand { display: none; }
 body.in-desktop.shell-focus .shell-hide-focus { display: none !important; }

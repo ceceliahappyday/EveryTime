@@ -19,33 +19,37 @@
         </div>
       </div>
 
-      <div class="date-controls" id="dateControls">
-        <button class="icon-button date-nav-button" id="dateNavPrev" type="button" aria-label="上一页">←</button>
-        <button class="date-picker-button" id="monthPickerButton" type="button" aria-label="选择日期" title="选择日期">
-          <strong id="monthLabel"></strong>
-        </button>
-        <input type="date" id="datePicker" aria-label="选择日期" />
-        <button class="soft-button" id="todayButton" type="button">回到今天</button>
-        <button class="icon-button date-nav-button" id="dateNavNext" type="button" aria-label="下一页">→</button>
+      <div class="topbar-main">
+        <div class="date-controls" id="dateControls">
+          <button class="icon-button date-nav-button" id="dateNavPrev" type="button" aria-label="上一页">←</button>
+          <button class="date-picker-button" id="monthPickerButton" type="button" aria-label="选择日期" title="选择日期">
+            <strong id="monthLabel"></strong>
+          </button>
+          <input type="date" id="datePicker" aria-label="选择日期" />
+          <button class="soft-button" id="todayButton" type="button">回到今天</button>
+          <button class="icon-button date-nav-button" id="dateNavNext" type="button" aria-label="下一页">→</button>
+        </div>
+
+        <div class="header-actions">
+          <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false"><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
+          <div class="header-view-switcher" id="viewSwitcher">
+            <button class="active" data-view="day" type="button" title="日视图">日</button>
+            <button data-view="week" type="button" title="周历总览">周</button>
+            <button data-view="month" type="button" title="月历总览">月</button>
+            <button data-view="project" type="button" title="项目甘特">项目</button>
+          </div>
+          <button class="soft-button shell-hide-compact" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon" aria-hidden="true">⇩</i><span class="btn-label">导出</span></button>
+          <button class="soft-button shell-hide-compact" id="progressReviewButton" type="button" title="集中更新有投入的明细待办"><i class="btn-icon" aria-hidden="true">↻</i><span class="btn-label">更新进度</span></button>
+          <button class="soft-button shell-hide-focus" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon" aria-hidden="true">✦</i><span class="btn-label">AI助手</span></button>
+          <button class="soft-button desktop-only shell-hide-compact" id="glassToggleButton" type="button" title="开启玻璃背景" aria-pressed="false"><i class="btn-icon" aria-hidden="true">◐</i><span class="btn-label">毛玻璃</span></button>
+          <button class="soft-button desktop-only" id="settingsButton" type="button" title="设置、置顶、紧凑显示等"><i class="btn-icon" aria-hidden="true">⚙</i><span class="btn-label">设置</span></button>
+          <button class="primary-button" id="quickAddButton" type="button" title="新建待办"><span class="btn-icon">＋</span><span class="btn-label">新建待办</span></button>
+        </div>
       </div>
 
-      <div class="header-actions">
-        <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false"><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
-        <div class="header-view-switcher" id="viewSwitcher">
-          <button class="active" data-view="day" type="button" title="日视图">日</button>
-          <button data-view="week" type="button" title="周历总览">周</button>
-          <button data-view="month" type="button" title="月历总览">月</button>
-          <button data-view="project" type="button" title="项目甘特">项目</button>
-        </div>
-        <button class="soft-button shell-hide-compact" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon" aria-hidden="true">⇩</i><span class="btn-label">导出</span></button>
-        <button class="soft-button shell-hide-compact" id="progressReviewButton" type="button" title="集中更新有投入的明细待办"><i class="btn-icon" aria-hidden="true">↻</i><span class="btn-label">更新进度</span></button>
-        <button class="soft-button shell-hide-focus" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon" aria-hidden="true">✦</i><span class="btn-label">AI助手</span></button>
-        <button class="soft-button desktop-only" id="settingsButton" type="button" title="设置、置顶、玻璃模式与紧凑显示"><i class="btn-icon" aria-hidden="true">⚙</i><span class="btn-label">设置</span></button>
-        <button class="primary-button" id="quickAddButton" type="button" title="新建待办"><span class="btn-icon">＋</span><span class="btn-label">新建待办</span></button>
-        <div class="window-controls desktop-only">
-          <button id="minimizeWindow" title="最小化">—</button>
-          <button id="closeWindow" class="window-close" title="彻底退出">×</button>
-        </div>
+      <div class="window-controls desktop-only">
+        <button id="minimizeWindow" type="button" title="最小化">—</button>
+        <button id="closeWindow" class="window-close" type="button" title="彻底退出">×</button>
       </div>
     </header>
 
@@ -401,9 +405,13 @@
           <input type="checkbox" id="settingAiEnabled" />
           <span>启用 AI 任务助手（只读取本应用数据）</span>
         </label>
-        <label><span>OpenAI API Key（仅本机保存）</span><input id="settingAiApiKey" type="password" autocomplete="off" placeholder="sk-…" /></label>
-        <label><span>AI 模型</span><input id="settingAiModel" value="gpt-5.6-sol" /></label>
-        <p class="form-hint" id="aiKeyStatus">API Key 未配置</p>
+        <label><span>API Key（仅本机加密保存）</span><input id="settingAiApiKey" type="password" autocomplete="off" placeholder="粘贴 OpenAI / OpenRouter / DeepSeek / Anthropic / Gemini 等 Key" /></label>
+        <label><span>AI 服务商</span><select id="settingAiProvider"></select></label>
+        <label><span>AI 模型</span><select id="settingAiModel"></select></label>
+        <div class="settings-ai-actions">
+          <button type="button" class="soft-button" id="aiDetectModelsButton">识别服务商并加载模型</button>
+        </div>
+        <p class="form-hint" id="aiKeyStatus">API Key 未配置。填写 Key 后可自动识别厂商并拉取可用模型。</p>
         <label class="checkbox-setting">
           <input type="checkbox" id="settingGlass" />
           <span>使用玻璃背景（保存后立即生效，可随时开关）</span>

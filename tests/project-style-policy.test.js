@@ -71,7 +71,12 @@ assert.match(
 assert.match(
   styles,
   /body\.in-desktop\s+\.topbar\s*\{/s,
-  "desktop topbar should use a compact responsive grid inside a resized window"
+  "desktop topbar should use a compact responsive layout inside a resized window"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\s+\.topbar-main\s*\{/s,
+  "desktop topbar should distribute controls through a main flex region"
 );
 assert.match(
   styles,
@@ -194,6 +199,11 @@ assert.match(
   styles,
   /body\.in-desktop\.glass-mode \.schedule-entry\.violet\s*\{[^}]*--entry-bg:\s*rgba\(/s,
   "glass mode violet schedule cards need a dark translucent background like sage"
+);
+assert.match(
+  styles,
+  /#todayButton\s*\{[^}]*white-space:\s*nowrap/s,
+  "today button must not wrap into a vertical unclickable stack"
 );
 
 console.log("project style policy tests passed");

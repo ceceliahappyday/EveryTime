@@ -5,6 +5,7 @@ const { execFileSync } = require("child_process");
 const { autoUpdater } = require("electron-updater");
 const ExcelJS = require("exceljs");
 const StartupPolicy = require("./startup-policy.js");
+const AiProviderPolicy = require("./ai-provider-policy.js");
 
 let mainWindow;
 let locked = false;
@@ -103,11 +104,21 @@ if (singleInstanceLock) app.whenReady().then(() => {
       const key = String(incoming.aiApiKey || "").trim();
       delete incoming.aiApiKey;
       incoming.aiApiKeyEncrypted = key ? encryptAiKey(key) : null;
+      if (key) {
+        const resolved = AiProviderPolicy.resolveProvider({
+          apiKey: key,
+          providerId: incoming.aiProvider || loadSettings().aiProvider || ""
+        });
+        incoming.aiProvider = resolved.id;
+        if (!incoming.aiModel) incoming.aiModel = resolved.defaultModel;
+      }
     }
     saveSettings(incoming);
     return { ...publicSettings(), pinned: mainWindow?.isAlwaysOnTop() || false, startAtLogin: app.getLoginItemSettings().openAtLogin };
   });
-  ipcMain.handle("ai:ask", async (_event, payload) => askOpenAI(payload || {}));
+  ipcMain.handle("ai:ask", async (_event, payload) => askAi(payload || {}));
+  ipcMain.handle("ai:detect-provider", (_event, payload) => detectAiProvider(payload || {}));
+  ipcMain.handle("ai:list-models", async (_event, payload) => listAiModels(payload || {}));
   ipcMain.handle("app:get-version", () => app.getVersion());
   ipcMain.handle("app:check-for-updates", () => {
     checkForUpdates(true);
@@ -284,7 +295,8 @@ function loadSettings() {
     workStartHour: 9,
     workEndHour: 18,
     aiEnabled: false,
-    aiModel: "gpt-5.6-sol"
+    aiModel: "gpt-4.1-mini",
+    aiProvider: "openai"
   };
   if (!fs.existsSync(file)) return defaults;
   try {
@@ -320,25 +332,109 @@ function extractResponseText(payload) {
     .map(item => item.text || item.value || "").filter(Boolean).join("\n").trim();
 }
 
-async function askOpenAI(payload) {
+function detectAiProvider(payload = {}) {
+  const settings = loadSettings();
+  const apiKey = AiProviderPolicy.normalizeKey(payload.apiKey) || decryptAiKey(settings);
+  if (!apiKey) {
+    return {
+      configured: false,
+      providerId: settings.aiProvider || "",
+      providerName: "",
+      ambiguous: false,
+      providers: [],
+      message: "请先填写 API Key"
+    };
+  }
+  const resolved = AiProviderPolicy.resolveProvider({
+    apiKey,
+    providerId: payload.providerId || settings.aiProvider || ""
+  });
+  return {
+    configured: true,
+    providerId: resolved.id,
+    providerName: resolved.name,
+    detectedId: resolved.detectedId,
+    ambiguous: resolved.ambiguous,
+    providers: AiProviderPolicy.providerOptionsForKey(apiKey),
+    defaultModel: resolved.defaultModel,
+    message: resolved.ambiguous
+      ? `已识别为 OpenAI 兼容密钥，当前服务商：${resolved.name}（可切换）`
+      : `已识别服务商：${resolved.name}`
+  };
+}
+
+async function listAiModels(payload = {}) {
+  const settings = loadSettings();
+  const apiKey = AiProviderPolicy.normalizeKey(payload.apiKey) || decryptAiKey(settings);
+  if (!apiKey) throw new Error("请先填写 API Key");
+  const provider = AiProviderPolicy.resolveProvider({
+    apiKey,
+    providerId: payload.providerId || settings.aiProvider || ""
+  });
+  const request = AiProviderPolicy.buildModelsRequest(provider, apiKey);
+  let models = [];
+  let source = "fallback";
+  try {
+    const response = await fetch(request.url, { method: "GET", headers: request.headers });
+    const body = await response.json().catch(() => ({}));
+    if (response.ok) {
+      const raw = request.parser === "gemini"
+        ? AiProviderPolicy.parseGeminiModelList(body)
+        : AiProviderPolicy.parseOpenAiModelList(body);
+      models = AiProviderPolicy.normalizeModelEntries(raw, provider);
+      if (models.length) source = "remote";
+    }
+  } catch {
+    models = [];
+  }
+  if (!models.length) {
+    models = AiProviderPolicy.normalizeModelEntries(provider.fallbackModels || [], provider);
+    source = "fallback";
+  }
+  const selectedModel = models.includes(settings.aiModel) ? settings.aiModel : (provider.defaultModel || models[0] || "");
+  return {
+    providerId: provider.id,
+    providerName: provider.name,
+    ambiguous: provider.ambiguous,
+    providers: AiProviderPolicy.providerOptionsForKey(apiKey),
+    models,
+    selectedModel,
+    source,
+    message: source === "remote"
+      ? `已从 ${provider.name} 加载 ${models.length} 个可用模型`
+      : `无法在线拉取模型列表，已提供 ${provider.name} 常用模型`
+  };
+}
+
+async function askAi(payload) {
   const settings = loadSettings();
   if (settings.aiEnabled === false) throw new Error("请先在设置中启用 AI 任务助手");
   const apiKey = decryptAiKey(settings);
-  if (!apiKey) throw new Error("请先在设置中填写 OpenAI API Key");
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  if (!apiKey) throw new Error("请先在设置中填写 API Key");
+  const provider = AiProviderPolicy.resolveProvider({
+    apiKey,
+    providerId: settings.aiProvider || ""
+  });
+  const request = AiProviderPolicy.buildChatRequest({
+    provider,
+    apiKey,
+    model: settings.aiModel || provider.defaultModel,
+    question: payload?.question,
+    rangeLabel: payload?.rangeLabel,
+    context: payload?.context
+  });
+  const response = await fetch(request.url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: settings.aiModel || "gpt-5.6-sol", store: false,
-      input: [
-        { role: "system", content: [{ type: "input_text", text: "你是 EveryTime 的任务数据助手。只根据用户提供的任务、日程和工时数据回答。不要编造数据；找不到时明确说没有找到。用简洁清晰的中文回答，优先列出任务名称、状态、日期和工时。你只能做任务查询、定位未完成任务和指定期间工作总结。" }] },
-        { role: "user", content: [{ type: "input_text", text: `用户问题：${String(payload?.question || "").slice(0, 4000)}\n\n数据范围：${String(payload?.rangeLabel || "未指定")}\n\n应用数据：${JSON.stringify(payload?.context || {}).slice(0, 120000)}` }] }
-      ]
-    })
+    headers: request.headers,
+    body: JSON.stringify(request.body)
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body?.error?.message || `AI 请求失败（${response.status}）`);
-  return extractResponseText(body) || "AI 没有返回可显示的结果。";
+  if (!response.ok) {
+    throw new Error(body?.error?.message || body?.message || `AI 请求失败（${response.status}）`);
+  }
+  return AiProviderPolicy.extractChatText(body, provider)
+    || extractResponseText(body)
+    || "AI 没有返回可显示的结果。";
 }
 
 function saveSettings(nextSettings) {

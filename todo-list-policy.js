@@ -14,6 +14,10 @@
       .trim();
   }
 
+  function hasDisplayTitle(value) {
+    return Boolean(String(value || "").trim());
+  }
+
   function isLeafTask(task, hasChildTasks) {
     return !!task && !hasChildTasks(task.id);
   }
@@ -235,6 +239,7 @@
     DEFAULT_FILTER,
     VALID_FILTERS,
     normalizeTitle,
+    hasDisplayTitle,
     isLeafTask,
     canLinkEntryToTask,
     loadSavedFilter,

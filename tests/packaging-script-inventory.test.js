@@ -19,5 +19,6 @@ for (const src of scriptSrcs) {
 }
 
 assert.ok(files.includes("schedule-hours-policy.js"), "work-hour policy must ship in the installer");
+assert.ok(files.includes("ai-provider-policy.js"), "AI provider policy must ship in the installer");
 
 console.log("packaging script inventory tests passed");

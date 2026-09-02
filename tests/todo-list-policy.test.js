@@ -9,6 +9,10 @@ const tasks = [
 const hasChildTasks = id => id === "root" || id === "child";
 
 assert.strictEqual(policy.isLeafTask(tasks[0], hasChildTasks), false);
+assert.strictEqual(policy.hasDisplayTitle("  有标题  "), true);
+assert.strictEqual(policy.hasDisplayTitle("   "), false);
+assert.strictEqual(policy.hasDisplayTitle(""), false);
+assert.strictEqual(policy.hasDisplayTitle(null), false);
 assert.strictEqual(policy.isLeafTask(tasks[3], hasChildTasks), true);
 assert.strictEqual(policy.canLinkEntryToTask(tasks[0], hasChildTasks), false);
 assert.strictEqual(policy.canLinkEntryToTask(tasks[3], hasChildTasks), true);

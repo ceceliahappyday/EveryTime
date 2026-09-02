@@ -25,7 +25,14 @@ assert.ok(styles.includes(".month-task-line"));
 assert.ok(styles.includes(".week-task-line"));
 assert.ok(styles.includes("grid-template-columns: repeat(5, minmax(0, 1fr))"));
 assert.ok(app.includes("ScheduleHoursPolicy.shouldShowWeekColumn"));
-assert.ok(styles.includes("grid-auto-rows: minmax(136px, auto)"));
+assert.ok(styles.includes("grid-template-rows: auto repeat(6, 136px)"));
 assert.ok(styles.includes("border-width: 0 0 1px"));
+assert.ok(styles.includes(".schedule-month-cell.selected .month-task-list"));
+assert.ok(app.includes("goToTodayDayView"));
+assert.ok(app.includes('cell.addEventListener("dblclick"'));
+assert.ok(styles.includes(".project-gantt-group-chart-spacer"));
+assert.match(styles, /\.project-gantt-row-label,\s*\.project-gantt-row-chart\s*\{[^}]*height:\s*36px/s);
+assert.match(styles, /\.project-gantt-label-header\s*\{[^}]*height:\s*42px/s);
+assert.match(styles, /\.project-gantt-days\s*\{[^}]*height:\s*42px/s);
 
 console.log("schedule view refinement tests passed");

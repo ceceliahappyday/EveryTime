@@ -102,9 +102,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "taskPanelToggle",
+    "glassToggleButton",
     "settingsButton", "settingsDialog", "settingsForm", "settingGlass", "settingPinned", "settingLocked",
     "settingCompact", "settingStartAtLogin", "settingWorkStartHour", "settingWorkEndHour",
-    "settingAiEnabled", "settingAiApiKey", "settingAiModel", "aiKeyStatus",
+    "settingAiEnabled", "settingAiApiKey", "settingAiProvider", "settingAiModel", "aiDetectModelsButton", "aiKeyStatus",
     "settingsAppVersion", "checkUpdateButton", "settingsDataPath", "settingsExportPath"
   ].forEach(id => el[id] = document.getElementById(id));
 
@@ -349,11 +350,7 @@ function bindEvents() {
 
   el.dateNavPrev?.addEventListener("click", () => navigateCalendar(-1));
   el.dateNavNext?.addEventListener("click", () => navigateCalendar(1));
-  el.todayButton.addEventListener("click", () => {
-    state.projectViewNeedsAnchor = state.taskView === "project";
-    if (state.taskView === "project") state.projectAnchorDate = toDateKey(new Date());
-    selectDate(new Date());
-  });
+  el.todayButton.addEventListener("click", () => goToTodayDayView());
   el.monthPickerButton.addEventListener("click", () => el.datePicker.showPicker ? el.datePicker.showPicker() : el.datePicker.click());
   el.datePicker.addEventListener("change", () => el.datePicker.value && selectDate(fromDateKey(el.datePicker.value)));
 
@@ -469,6 +466,32 @@ function applyUiScale() {
   }
 }
 
+function updateGlassToggleChrome(glass) {
+  if (!el.glassToggleButton) return;
+  const on = !!glass;
+  el.glassToggleButton.setAttribute("aria-pressed", on ? "true" : "false");
+  el.glassToggleButton.classList.toggle("is-active", on);
+  el.glassToggleButton.title = on ? "关闭玻璃背景" : "开启玻璃背景";
+}
+
+async function toggleGlassMode() {
+  if (!window.desktopAPI) return;
+  const next = !document.body.classList.contains("glass-mode");
+  if (window.desktopAPI.saveSettings) {
+    const saved = await window.desktopAPI.saveSettings({ glass: next });
+    document.body.classList.toggle("glass-mode", !!saved?.glass);
+    if (el.settingGlass) el.settingGlass.checked = !!saved?.glass;
+    updateGlassToggleChrome(saved?.glass);
+    showToast(saved?.glass ? "已开启玻璃背景" : "已关闭玻璃背景");
+    return;
+  }
+  const glass = await window.desktopAPI.toggleGlass?.();
+  if (glass !== undefined) {
+    document.body.classList.toggle("glass-mode", !!glass);
+    updateGlassToggleChrome(glass);
+  }
+}
+
 function bindTaskPanelToggle() {
   el.taskPanelToggle?.addEventListener("click", () => {
     const open = document.body.classList.toggle("task-panel-open");
@@ -531,6 +554,8 @@ async function initDesktop() {
   };
   const syncGlass = glass => {
     document.body.classList.toggle("glass-mode", glass);
+    updateGlassToggleChrome(glass);
+    if (el.settingGlass) el.settingGlass.checked = !!glass;
   };
   syncGlass(await window.desktopAPI.getGlass());
   window.desktopAPI.onGlassChanged(syncGlass);
@@ -538,11 +563,13 @@ async function initDesktop() {
   window.desktopAPI.onLockChanged(syncLock);
   el.minimizeWindow.addEventListener("click", () => window.desktopAPI.minimize());
   el.closeWindow.addEventListener("click", () => window.desktopAPI.quit());
+  el.glassToggleButton?.addEventListener("click", () => toggleGlassMode());
   el.settingsButton?.addEventListener("click", openSettingsDialog);
   el.settingGlass?.addEventListener("change", async () => {
     if (!window.desktopAPI?.saveSettings) return;
     const saved = await window.desktopAPI.saveSettings({ glass: el.settingGlass.checked });
     document.body.classList.toggle("glass-mode", !!saved?.glass);
+    updateGlassToggleChrome(saved?.glass);
     showToast(saved?.glass ? "已开启玻璃背景" : "已关闭玻璃背景");
   });
   el.checkUpdateButton?.addEventListener("click", async () => {
@@ -575,6 +602,9 @@ async function initDesktop() {
     event.preventDefault();
     saveDesktopSettings();
   });
+  el.aiDetectModelsButton?.addEventListener("click", () => refreshAiProviderModels({ forceList: true }));
+  el.settingAiApiKey?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
+  el.settingAiProvider?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
 }
 
 async function renderAppVersion() {
@@ -614,6 +644,7 @@ async function openSettingsDialog() {
     window.desktopAPI.getPaths?.()
   ]);
   el.settingGlass.checked = !!settings?.glass;
+  updateGlassToggleChrome(settings?.glass);
   el.settingPinned.checked = !!settings?.pinned;
   el.settingLocked.checked = !!settings?.locked;
   el.settingCompact.checked = document.body.classList.contains("compact") || !!settings?.compact;
@@ -624,12 +655,69 @@ async function openSettingsDialog() {
   });
   el.settingAiEnabled.checked = !!settings?.aiEnabled;
   el.settingAiApiKey.value = "";
-  el.settingAiModel.value = settings?.aiModel || "gpt-5.6-sol";
-  el.aiKeyStatus.textContent = settings?.aiConfigured ? "API Key 已配置（输入新 Key 可替换）" : "API Key 未配置";
+  el.settingAiApiKey.placeholder = settings?.aiConfigured
+    ? "已配置（输入新 Key 可替换）"
+    : "粘贴 OpenAI / OpenRouter / DeepSeek / Anthropic / Gemini 等 Key";
+  fillAiProviderOptions([{ id: settings?.aiProvider || "openai", name: settings?.aiProvider || "openai" }], settings?.aiProvider || "openai");
+  fillAiModelOptions(settings?.aiModel ? [settings.aiModel] : ["gpt-4.1-mini"], settings?.aiModel || "gpt-4.1-mini");
+  el.aiKeyStatus.textContent = settings?.aiConfigured
+    ? "API Key 已配置。可点击「识别服务商并加载模型」刷新可用模型。"
+    : "API Key 未配置。填写 Key 后可自动识别厂商并拉取可用模型。";
   el.settingsAppVersion.textContent = el.appVersionBadge?.textContent || await window.desktopAPI.getVersion?.().then(version => `v${version}`).catch(() => "读取失败");
   el.settingsDataPath.textContent = paths?.dataFile || "当前用户数据目录";
   el.settingsExportPath.textContent = paths?.exportDir || "文档目录";
   el.settingsDialog.showModal();
+  if (settings?.aiConfigured) {
+    refreshAiProviderModels({ providerId: settings.aiProvider || "", selectedModel: settings.aiModel || "" }).catch(() => {});
+  }
+}
+
+function fillAiProviderOptions(providers = [], selectedId = "") {
+  if (!el.settingAiProvider) return;
+  const list = providers.length ? providers : [{ id: "openai", name: "OpenAI" }];
+  el.settingAiProvider.innerHTML = list
+    .map(item => `<option value="${escapeHtml(item.id)}"${item.id === selectedId ? " selected" : ""}>${escapeHtml(item.name)}</option>`)
+    .join("");
+  if (selectedId && ![...el.settingAiProvider.options].some(option => option.value === selectedId)) {
+    el.settingAiProvider.add(new Option(selectedId, selectedId, true, true));
+  }
+}
+
+function fillAiModelOptions(models = [], selectedId = "") {
+  if (!el.settingAiModel) return;
+  const list = models.length ? models : (selectedId ? [selectedId] : ["gpt-4.1-mini"]);
+  el.settingAiModel.innerHTML = list
+    .map(model => `<option value="${escapeHtml(model)}"${model === selectedId ? " selected" : ""}>${escapeHtml(model)}</option>`)
+    .join("");
+  if (selectedId && ![...el.settingAiModel.options].some(option => option.value === selectedId)) {
+    el.settingAiModel.add(new Option(selectedId, selectedId, true, true));
+  }
+}
+
+async function refreshAiProviderModels({ forceList = false, providerId = "", selectedModel = "" } = {}) {
+  if (!window.desktopAPI?.aiDetectProvider || !window.desktopAPI?.aiListModels) return;
+  const apiKey = el.settingAiApiKey?.value?.trim() || "";
+  el.aiKeyStatus.textContent = forceList ? "正在识别服务商并加载模型…" : (el.aiKeyStatus.textContent || "正在识别服务商…");
+  try {
+    const detected = await window.desktopAPI.aiDetectProvider({
+      apiKey,
+      providerId: providerId || el.settingAiProvider?.value || ""
+    });
+    fillAiProviderOptions(detected.providers || [], detected.providerId || providerId || "openai");
+    if (!detected.configured && !apiKey) {
+      el.aiKeyStatus.textContent = detected.message || "API Key 未配置";
+      return;
+    }
+    const listed = await window.desktopAPI.aiListModels({
+      apiKey,
+      providerId: el.settingAiProvider?.value || detected.providerId || ""
+    });
+    fillAiProviderOptions(listed.providers || detected.providers || [], listed.providerId || detected.providerId || "");
+    fillAiModelOptions(listed.models || [], selectedModel || listed.selectedModel || "");
+    el.aiKeyStatus.textContent = [detected.message, listed.message].filter(Boolean).join(" · ");
+  } catch (error) {
+    el.aiKeyStatus.textContent = error?.message || "识别服务商失败";
+  }
 }
 
 async function saveDesktopSettings() {
@@ -643,7 +731,8 @@ async function saveDesktopSettings() {
     workStartHour: Number(el.settingWorkStartHour?.value ?? state.workStartHour),
     workEndHour: Number(el.settingWorkEndHour?.value ?? state.workEndHour),
     aiEnabled: el.settingAiEnabled.checked,
-    aiModel: el.settingAiModel.value.trim() || "gpt-5.6-sol",
+    aiProvider: el.settingAiProvider?.value || "openai",
+    aiModel: el.settingAiModel?.value?.trim() || "gpt-4.1-mini",
     ...(el.settingAiApiKey.value.trim() ? { aiApiKey: el.settingAiApiKey.value.trim() } : {})
   };
   const saved = await window.desktopAPI.saveSettings(nextSettings);
@@ -651,8 +740,9 @@ async function saveDesktopSettings() {
     workStartHour: saved?.workStartHour ?? nextSettings.workStartHour,
     workEndHour: saved?.workEndHour ?? nextSettings.workEndHour
   });
-  document.body.classList.toggle("compact", !!saved?.compact);
   document.body.classList.toggle("glass-mode", !!saved?.glass);
+  updateGlassToggleChrome(saved?.glass);
+  document.body.classList.toggle("compact", !!saved?.compact);
   document.body.classList.toggle("pinned", !!saved?.pinned);
   document.body.classList.toggle("desktop-locked", !!saved?.locked);
   localStorage.setItem("today-planner-compact", saved?.compact ? "1" : "0");
@@ -2133,7 +2223,8 @@ function getAllCalendarEntries() {
 function getCalendarMeetingSummaries() {
   const groups = new Map();
   getAllCalendarEntries().forEach(({ dateKey, entry }) => {
-    const title = String(entry.title || "").trim() || "未命名会议";
+    const title = String(entry.title || "").trim();
+    if (!TodoListPolicy.hasDisplayTitle(title)) return;
     const key = TodoListPolicy.normalizeTitle(title);
     const current = groups.get(key) || { title, entries: [], totalHours: 0 };
     current.entries.push({ dateKey, entry });
@@ -2144,6 +2235,7 @@ function getCalendarMeetingSummaries() {
 }
 
 function appendGanttRowPair(labelContainer, chartContainer, pair) {
+  if (!pair?.labelRow || !pair?.chartRow) return;
   labelContainer.appendChild(pair.labelRow);
   chartContainer.appendChild(pair.chartRow);
 }
@@ -2409,6 +2501,8 @@ function setProjectScrollLeft(value) {
 }
 
 function createProjectGanttRow(task, buckets, scale = "day", rootId = "", options = {}) {
+  const taskTitle = String(task?.title || "").trim();
+  if (!TodoListPolicy.hasDisplayTitle(taskTitle)) return null;
   const actual = taskActualTimelineParts(task, buckets, scale, options);
   const cutoff = task.dueDate ? taskTimelineOffset(task.dueDate, buckets, scale) : null;
   const showDueFlag = ProjectViewPolicy.shouldShowDueFlag(task.status) && cutoff !== null;
@@ -2424,7 +2518,7 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   labelRow.style.setProperty("--task-depth", getTaskDepth(task, rootId));
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin">
         ${hasChildren ? `<button class="project-collapse-button task-tree-toggle" type="button">${collapsed ? "▸" : "▾"}</button>` : ""}
-        <strong title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</strong>
+        <strong title="${escapeHtml(taskTitle)}">${escapeHtml(taskTitle)}</strong>
       </div>`;
   const chartRow = document.createElement("div");
   chartRow.className = `project-gantt-row-chart ${task.status}${options.isParent ? " is-parent" : ""}`;
@@ -2470,11 +2564,13 @@ function calendarMeetingTimelineParts(meeting, buckets, scale = "day") {
 }
 
 function createCalendarGanttRow(meeting, buckets, scale = "day") {
+  const meetingTitle = String(meeting?.title || "").trim();
+  if (!TodoListPolicy.hasDisplayTitle(meetingTitle)) return null;
   const parts = calendarMeetingTimelineParts(meeting, buckets, scale);
   const labelRow = document.createElement("div");
   labelRow.className = "project-gantt-row-label meeting";
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin is-meeting">
-      <strong title="${escapeHtml(meeting.title)}">${escapeHtml(meeting.title)}</strong>
+      <strong title="${escapeHtml(meetingTitle)}">${escapeHtml(meetingTitle)}</strong>
     </div>`;
   const chartRow = document.createElement("div");
   chartRow.className = "project-gantt-row-chart meeting";
@@ -2801,7 +2897,14 @@ function renderMonthSchedule() {
     cell.innerHTML = `<header><span>${date.getDate()}</span><span>${holidayLabel(key)}</span></header>
       ${renderDayOverviewList(monthItems, "month")}`;
     bindScheduleDrop(cell, key, 9);
-    cell.addEventListener("click", () => {
+    cell.addEventListener("click", event => {
+      if (event.target.closest(".month-task-line")) return;
+      if (key === state.selectedDate) return;
+      state.selectedDate = key;
+      render();
+    });
+    cell.addEventListener("dblclick", event => {
+      if (event.target.closest(".month-task-line")) return;
       state.selectedDate = key;
       state.taskView = "day";
       el.viewSwitcher.querySelectorAll("button").forEach(item => item.classList.toggle("active", item.dataset.view === "day"));
@@ -2848,9 +2951,11 @@ function scheduleOverviewItemsForDate(dateKey) {
   const meetingItems = [];
   (getDay(dateKey).entries || []).slice().sort((a, b) => a.start - b.start).forEach(entry => {
     if (entry.entryType === "calendar" || !entry.taskId) {
+      const meetingTitle = String(entry.title || "").trim();
+      if (!TodoListPolicy.hasDisplayTitle(meetingTitle)) return;
       meetingItems.push({
         type: "meeting",
-        title: String(entry.title || "").trim() || "未命名会议",
+        title: meetingTitle,
         kind: getEntryInvestedHours(dateKey, entry) > 0 ? "actual" : "planned",
         entryId: entry.id,
         start: entry.start,
@@ -2860,6 +2965,8 @@ function scheduleOverviewItemsForDate(dateKey) {
     }
     const task = findTask(entry.taskId)?.task;
     if (!task) return;
+    const itemTitle = String(entry.title || task.title || "").trim();
+    if (!TodoListPolicy.hasDisplayTitle(itemTitle)) return;
     const existing = taskItems.get(task.id);
     const kind = TaskStatusPolicy.scheduleOverviewKind({
       taskStatus: task.status,
@@ -2868,7 +2975,7 @@ function scheduleOverviewItemsForDate(dateKey) {
     if (!existing) {
       taskItems.set(task.id, {
         type: "task",
-        title: String(entry.title || task.title || "").trim() || task.title,
+        title: itemTitle,
         kind,
         task,
         entryId: entry.id,
@@ -2883,14 +2990,14 @@ function scheduleOverviewItemsForDate(dateKey) {
       existing.start = entry.start;
       existing.end = entry.end;
       existing.entryId = entry.id;
-      existing.title = String(entry.title || task.title || "").trim() || task.title;
+      existing.title = itemTitle;
     }
   });
-  dueTasksForDate(dateKey).filter(task => task.dueTime).forEach(task => {
+  dueTasksForDate(dateKey).filter(task => task.dueTime && TodoListPolicy.hasDisplayTitle(task.title)).forEach(task => {
     if (taskItems.has(task.id)) return;
     taskItems.set(task.id, {
       type: "task",
-      title: task.title,
+      title: String(task.title).trim(),
       kind: TaskStatusPolicy.scheduleOverviewKind({ taskStatus: task.status, investedHours: 0 }),
       task,
       entryId: "",
@@ -4091,6 +4198,19 @@ function selectDate(date) {
   render();
   el.timelineWrap.scrollTop = 0;
 }
+
+function goToTodayDayView() {
+  state.taskView = "day";
+  state.selectedDate = toDateKey(new Date());
+  state.projectViewNeedsAnchor = false;
+  el.viewSwitcher?.querySelectorAll("button[data-view]").forEach(item => {
+    item.classList.toggle("active", item.dataset.view === "day");
+  });
+  render();
+  el.timelineWrap.scrollTop = 0;
+  requestAnimationFrame(scrollToWorkday);
+}
+
 function scrollToWorkday() {
   if (!isToday(fromDateKey(state.selectedDate))) return;
   const hours = getVisibleTimelineHours(getDay().entries || []);

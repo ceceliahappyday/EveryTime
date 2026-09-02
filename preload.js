@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("desktopAPI", {
   getSettings: () => ipcRenderer.invoke("app:get-settings"),
   saveSettings: settings => ipcRenderer.invoke("app:save-settings", settings),
   aiAsk: payload => ipcRenderer.invoke("ai:ask", payload),
+  aiDetectProvider: payload => ipcRenderer.invoke("ai:detect-provider", payload),
+  aiListModels: payload => ipcRenderer.invoke("ai:list-models", payload),
   getVersion: () => ipcRenderer.invoke("app:get-version"),
   checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),
   getPaths: () => ipcRenderer.invoke("app:get-paths"),
