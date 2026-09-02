@@ -20,7 +20,7 @@ assert.ok(app.includes("bindWindowResize"));
 assert.ok(app.includes("shell-narrow"));
 assert.ok(app.includes("shell-focus"));
 assert.ok(app.includes("bindTaskPanelToggle"));
-assert.ok(app.includes("window.innerWidth < 1180") || app.includes("width < 1180"));
+assert.ok(app.includes("window.innerWidth < 1520") || app.includes("width < 1520"));
 assert.ok(app.includes("width < 960"));
 assert.ok(app.includes("width < 760"));
 assert.ok(html.includes('data-resize-axis="both"'));

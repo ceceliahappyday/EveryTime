@@ -148,16 +148,26 @@ body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
 .window-controls { display: none; gap: 2px; margin-left: 0; align-items: center; flex: 0 0 auto; }
 body.in-desktop .window-controls {
   display: flex;
-  align-self: stretch;
-  padding-left: 6px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  align-self: center;
+  flex: 0 0 auto;
+  min-width: max-content;
+  height: 40px;
+  margin-left: 4px;
+  padding: 0 8px 0 10px;
   border-left: 1px solid var(--line-soft);
+  background: inherit;
+  z-index: 30;
 }
 .window-controls button {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   box-sizing: border-box;
   display: grid;
   place-items: center;
+  flex: 0 0 auto;
   color: var(--muted);
   background: transparent;
   border-radius: 8px;
@@ -2642,37 +2652,42 @@ body.in-desktop .topbar {
   min-height: 72px;
   gap: 10px;
   padding: 0 4px 0 14px;
+  overflow: hidden;
 }
 body.in-desktop .brand {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-width: 0;
   align-self: center;
   flex-wrap: nowrap;
+  overflow: hidden;
 }
 body.in-desktop .topbar-main {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-evenly;
+  justify-content: space-between;
   gap: 12px;
+  overflow: hidden;
 }
 body.in-desktop .date-controls,
 body.in-desktop .header-actions {
   align-self: center;
   flex-wrap: nowrap;
-  flex: 0 1 auto;
 }
 body.in-desktop .date-controls {
+  flex: 0 0 auto;
   min-width: max-content;
   overflow: visible;
 }
 body.in-desktop .header-actions {
+  flex: 1 1 auto;
   gap: 6px;
-  max-width: none;
+  max-width: 100%;
   width: auto;
-  overflow: visible;
-  justify-content: flex-start;
+  min-width: 0;
+  overflow: hidden;
+  justify-content: flex-end;
 }
 body.in-desktop .header-view-switcher {
   position: static;
@@ -2702,7 +2717,7 @@ body.in-desktop .workspace {
   position: relative;
 }
 
-/* ~1180: hide decorative copy; action buttons become icons. */
+/* ~1520: hide decorative copy; action buttons become icons so default windows fit. */
 body.in-desktop.shell-narrow .brand p,
 body.in-desktop.shell-narrow .app-version {
   display: none;
@@ -2737,6 +2752,15 @@ body.in-desktop.shell-narrow .header-actions .primary-button {
   padding: 0;
   justify-content: center;
   gap: 0;
+}
+body.in-desktop.shell-narrow .window-controls {
+  height: 34px;
+  padding: 0 6px 0 8px;
+}
+body.in-desktop.shell-narrow .window-controls button {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
 }
 body.in-desktop.shell-narrow .header-actions .btn-label { display: none; }
 body.in-desktop.shell-narrow .header-actions .btn-icon { font-size: 14px; }
@@ -2784,9 +2808,14 @@ body.in-desktop.shell-compact-topbar .header-actions .primary-button {
   width: 30px;
   min-width: 30px;
 }
+body.in-desktop.shell-compact-topbar .window-controls {
+  height: 30px;
+  padding: 0 4px 0 6px;
+}
 body.in-desktop.shell-compact-topbar .window-controls button {
   width: 30px;
   min-width: 30px;
+  height: 30px;
 }
 body.in-desktop.shell-compact-topbar .header-view-switcher {
   grid-template-columns: repeat(4, 26px);

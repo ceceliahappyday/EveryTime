@@ -46,13 +46,18 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop \.topbar-main\s*\{[^}]*justify-content:\s*space-evenly/s,
-  "topbar controls should spread evenly across the available width"
+  /body\.in-desktop \.topbar-main\s*\{[^}]*justify-content:\s*space-between/s,
+  "topbar controls should balance date and actions without overflowing window controls"
 );
 assert.match(
   styles,
-  /body\.in-desktop \.window-controls\s*\{[^}]*border-left:/s,
-  "window controls should sit in a dedicated trailing column"
+  /body\.in-desktop \.window-controls\s*\{[^}]*flex-direction:\s*row/s,
+  "window controls must stay horizontal"
+);
+assert.match(
+  styles,
+  /body\.in-desktop \.window-controls\s*\{[^}]*min-width:\s*max-content/s,
+  "window controls must not shrink into a vertical strip"
 );
 assert.match(
   styles,
@@ -71,8 +76,8 @@ assert.doesNotMatch(
 );
 assert.match(
   styles,
-  /body\.in-desktop \.header-actions\s*\{[^}]*justify-content:\s*flex-start/s,
-  "header actions should pack as a cluster inside the balanced topbar"
+  /body\.in-desktop \.header-actions\s*\{[^}]*justify-content:\s*flex-end/s,
+  "header actions should pack toward window controls without overflowing them"
 );
 
 console.log("today button layout tests passed");

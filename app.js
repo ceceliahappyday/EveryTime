@@ -456,7 +456,7 @@ function applyUiScale() {
   document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
   const desktop = document.body.classList.contains("in-desktop");
   const width = window.innerWidth;
-  document.body.classList.toggle("shell-narrow", desktop && width < 1180);
+  document.body.classList.toggle("shell-narrow", desktop && width < 1520);
   document.body.classList.toggle("shell-compact-topbar", desktop && width < 960);
   const focus = desktop && width < 760;
   document.body.classList.toggle("shell-focus", focus);

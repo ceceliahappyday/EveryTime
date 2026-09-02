@@ -49,7 +49,7 @@ function createWindow() {
     height: savedBounds?.height || 900,
     x: savedBounds?.x,
     y: savedBounds?.y,
-    minWidth: 360,
+    minWidth: 900,
     minHeight: 520,
     icon: appIconPath,
     title: isDevRuntime ? `今日日程 · 开发预览 v${app.getVersion()}` : "今日日程",
