@@ -24,6 +24,21 @@ assert.ok(app.includes("summaryTasks,"));
 
 assert.ok(styles.includes(".month-task-line"));
 assert.ok(styles.includes(".week-task-line"));
+assert.match(
+  styles,
+  /\.month-task-line\s*\{[^}]*grid-template-columns:\s*2em minmax\(0,\s*1fr\)/s,
+  "month overview rows must keep badge and title in separate columns"
+);
+assert.match(
+  styles,
+  /\.schedule-month-cell\.selected \.month-task-line span\s*\{[^}]*overflow:\s*hidden/s,
+  "selected month titles must wrap inside their column instead of overlapping the badge"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode \.schedule-month-cell\s*\{[^}]*box-shadow:\s*none/s,
+  "month cells must not inherit week-column card shadows in glass mode"
+);
 assert.ok(styles.includes("grid-template-columns: repeat(5, minmax(0, 1fr))"));
 assert.ok(app.includes("ScheduleHoursPolicy.shouldShowWeekColumn"));
 assert.ok(styles.includes("grid-template-rows: auto repeat(6, 136px)"));

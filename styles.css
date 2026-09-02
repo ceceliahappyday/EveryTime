@@ -1529,19 +1529,43 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
 .week-task-list { margin: 5px 0; }
 .week-task-line {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 2px 4px;
+  grid-template-columns: 2em minmax(0, 1fr);
+  column-gap: 6px;
+  align-items: start;
+  min-width: 0;
   padding: 6px 2px;
   border-bottom: 1px solid rgba(105,189,183,.30);
   cursor: pointer;
 }
 .week-task-line:hover { background: rgba(61, 161, 167, .12); }
-.week-task-line b { color: #348e7d; font-size: 8px; }
+.week-task-line b {
+  min-width: 0;
+  overflow: hidden;
+  color: #348e7d;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .week-task-line.planned b { color: #bb8844; }
 .week-task-line.tracking b { color: #7a6a9a; }
 .week-task-line.meeting b { color: #aa7b39; }
-.week-task-line span { overflow: hidden; font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
-.week-task-line strong { overflow: hidden; font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
+.week-task-line span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.week-task-line strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .week-task-line small {
   grid-column: 2;
   color: var(--muted);
@@ -1550,11 +1574,17 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   letter-spacing: .01em;
   line-height: 1.2;
 }
-.week-schedule-day.weekend .week-task-line { display: block; }
+.week-schedule-day.weekend .week-task-line {
+  grid-template-columns: minmax(0, 1fr);
+}
 .week-schedule-day.weekend .week-task-line b,
 .week-schedule-day.weekend .week-task-line span,
 .week-schedule-day.weekend .week-task-line strong,
-.week-schedule-day.weekend .week-task-line small { display: block; margin-top: 2px; }
+.week-schedule-day.weekend .week-task-line small {
+  grid-column: 1;
+  display: block;
+  margin-top: 2px;
+}
 .schedule-month-calendar {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -1636,9 +1666,10 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
 }
 .month-task-line {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 4px;
-  align-items: center;
+  grid-template-columns: 2em minmax(0, 1fr);
+  column-gap: 6px;
+  align-items: start;
+  min-width: 0;
   min-height: 20px;
   padding: 2px 0;
   color: var(--ink);
@@ -1646,9 +1677,14 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   cursor: pointer;
 }
 .month-task-line b {
+  min-width: 0;
+  overflow: hidden;
   color: #348e7d;
   font-size: 10px;
   font-weight: 800;
+  line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .month-task-line.planned b { color: #bb8844; }
 .month-task-line.tracking b { color: #7a6a9a; }
@@ -1658,12 +1694,16 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  line-height: 1.25;
+  line-height: 1.35;
 }
 .schedule-month-cell.selected .month-task-line span {
   white-space: normal;
-  overflow: visible;
+  overflow: hidden;
   text-overflow: clip;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
 }
 .month-task-line:hover span { text-decoration: underline; }
 .holiday-badge {
@@ -1932,7 +1972,6 @@ body.in-desktop.glass-mode .day-button.active,
 body.in-desktop.glass-mode .quick-add,
 body.in-desktop.glass-mode .all-day-row,
 body.in-desktop.glass-mode .month-cell,
-body.in-desktop.glass-mode .schedule-month-cell,
 body.in-desktop.glass-mode .week-schedule-day,
 body.in-desktop.glass-mode .icon-button,
 body.in-desktop.glass-mode .soft-button,
@@ -2341,6 +2380,7 @@ body.in-desktop.glass-mode .project-gantt-days span.is-today { color: #ff8a6a; }
 body.in-desktop.glass-mode .schedule-month-cell {
   border-color: rgba(172,211,233,.22);
   background: transparent;
+  box-shadow: none;
 }
 body.in-desktop.glass-mode .schedule-month-cell:hover,
 body.in-desktop.glass-mode .schedule-month-cell.selected { background: rgba(101,180,177,.10); }
