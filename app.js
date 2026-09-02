@@ -1506,42 +1506,28 @@ function taskTimelineSpan(task, buckets, scale = "day") {
 }
 
 function createTaskCard(task) {
-  const duration = getTaskDuration(task.id);
-  const schedule = getTaskScheduleInfo(task.id);
   const visualStatus = isUnplannedTask(task) ? "unplanned" : task.status;
-  const allTasks = getAllTasks().map(({ task: item }) => item);
-  const parentPath = TaskOptionPolicy.hierarchyMeta({ task, tasks: allTasks }).parentPath;
+  const priority = task.priority || "general_daily";
   const card = document.createElement("article");
   card.className = `task-card ${visualStatus}`;
   card.draggable = visualStatus === "unplanned" || TaskStatusPolicy.isSchedulableStatus(task.status);
   card.dataset.taskId = task.id;
+  card.title = task.title;
+  const showPriority = priority !== "general_daily";
   card.innerHTML = `
-    <button class="task-check" title="标记完成"></button>
+    <button class="task-check" type="button" title="标记完成" aria-label="标记完成"></button>
     <div class="task-body">
       <strong>${escapeHtml(task.title)}</strong>
-      ${parentPath ? `<span class="task-parent-path">${escapeHtml(parentPath)}</span>` : ""}
-      <div class="task-meta">
-        <span class="priority-badge ${task.priority || "general_daily"}">${priorityLabel(task.priority)}</span>
-        <span>${formatDue(task)}</span>
-        <span>${statusLabel(visualStatus)}</span>
-        ${duration ? `<span class="task-duration">${formatHours(duration)}</span>` : ""}
-        ${task.recurrence?.frequency === "monthly" ? `<span>↻ 每月重复</span>` : ""}
-        ${(task.status === "planned" || task.status === "tracking") && schedule ? `<span>已安排 ${formatDateTime(schedule.firstStartIso)}</span>` : ""}
-      </div>
-      ${task.progress > 0 ? `<div class="task-progress-track" title="进度 ${task.progress || 0}%"><i style="width:${task.progress || 0}%"></i></div>` : ""}
     </div>
-    <button class="task-menu" title="编辑待办">•••</button>`;
+    ${showPriority ? `<span class="priority-mark ${priority}" title="${escapeHtml(priorityLabel(priority))}">${escapeHtml(priorityShortLabel(priority))}</span>` : `<span class="priority-mark empty" aria-hidden="true"></span>`}`;
 
   card.querySelector(".task-check").addEventListener("click", event => {
     event.stopPropagation();
     toggleTaskCompletion(task);
   });
-  card.querySelector(".task-menu").addEventListener("click", event => {
-    event.stopPropagation();
+  card.addEventListener("click", event => {
+    if (event.target.closest(".task-check")) return;
     openTaskDialog(task);
-  });
-  card.addEventListener("dblclick", event => {
-    if (!event.target.closest("button")) openTaskDialog(task);
   });
   card.addEventListener("dragstart", event => {
     card.classList.add("dragging");
@@ -1557,18 +1543,13 @@ function createLinkedWorkCard(item) {
   card.className = "task-card in_progress linked-work-card";
   card.draggable = true;
   card.dataset.entryId = item.entryId;
+  card.title = `${item.title} · 所属计划：${item.parentTitle || ""}`;
   card.innerHTML = `
-    <button class="task-check" title="标记此投入事项完成"></button>
+    <button class="task-check" type="button" title="标记此投入事项完成" aria-label="标记完成"></button>
     <div class="task-body">
       <strong>${escapeHtml(item.title)}</strong>
-      <span class="task-parent-path">所属计划：${escapeHtml(item.parentTitle)}</span>
-      <div class="task-meta">
-        <span>历史投入</span>
-        <span>${escapeHtml(item.dateKey)}</span>
-        <span>可打开、关闭或拖到日程</span>
-      </div>
     </div>
-    <button class="task-menu" title="打开具体待办">•••</button>`;
+    <span class="priority-mark follow_up" title="历史投入">投入</span>`;
   card.querySelector(".task-check").addEventListener("click", event => {
     event.stopPropagation();
     const task = materializeLinkedWorkLeaf(item);
@@ -1583,10 +1564,9 @@ function createLinkedWorkCard(item) {
       openTaskDialog(task);
     }
   };
-  card.querySelector(".task-menu").addEventListener("click", openConcreteTask);
-  card.querySelector(".task-body").addEventListener("click", openConcreteTask);
-  card.addEventListener("dblclick", event => {
-    if (!event.target.closest("button")) openConcreteTask(event);
+  card.addEventListener("click", event => {
+    if (event.target.closest(".task-check")) return;
+    openConcreteTask(event);
   });
   card.addEventListener("dragstart", event => {
     card.classList.add("dragging");
@@ -3911,6 +3891,16 @@ function priorityLabel(priority) {
     important_urgent: "重要紧急",
     paused: "中止暂停"
   }[priority] || "一般日常";
+}
+
+function priorityShortLabel(priority) {
+  return {
+    general_daily: "日常",
+    kpi: "KPI",
+    follow_up: "跟踪",
+    important_urgent: "紧急",
+    paused: "暂停"
+  }[priority] || "日常";
 }
 
 function migratePriority(priority) {

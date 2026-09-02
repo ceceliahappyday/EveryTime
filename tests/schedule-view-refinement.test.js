@@ -6,7 +6,8 @@ const styles = fs.readFileSync("styles.css", "utf8");
 
 assert.ok(app.includes("navigateCalendar(-1)"));
 assert.ok(app.includes('item.dataset.view === "day"'));
-assert.ok(app.includes('if (!event.target.closest("button")) openTaskDialog(task);'));
+assert.ok(app.includes("openTaskDialog(task)"));
+assert.ok(app.includes('if (event.target.closest(".task-check")) return;'));
 assert.ok(!app.includes('<span>${formatTime(entry.start)} – ${formatTime(entry.end)} · ${formatHours(entry.end - entry.start)}</span>'));
 assert.equal((app.match(/for \(let i = 0; i < 7; i\+\+\)/g) || []).length, 2);
 assert.ok(app.includes("taskItems.get(task.id)"));
