@@ -1514,12 +1514,13 @@ function createTaskCard(task) {
   card.dataset.taskId = task.id;
   card.title = task.title;
   const showPriority = priority !== "general_daily";
+  if (showPriority) card.classList.add("has-priority");
   card.innerHTML = `
     <button class="task-check" type="button" title="标记完成" aria-label="标记完成"></button>
     <div class="task-body">
       <strong>${escapeHtml(task.title)}</strong>
     </div>
-    ${showPriority ? `<span class="priority-mark ${priority}" title="${escapeHtml(priorityLabel(priority))}">${escapeHtml(priorityShortLabel(priority))}</span>` : `<span class="priority-mark empty" aria-hidden="true"></span>`}`;
+    ${showPriority ? `<span class="priority-mark ${priority}" title="${escapeHtml(priorityLabel(priority))}">${escapeHtml(priorityShortLabel(priority))}</span>` : ""}`;
 
   card.querySelector(".task-check").addEventListener("click", event => {
     event.stopPropagation();
@@ -1548,8 +1549,7 @@ function createLinkedWorkCard(item) {
     <button class="task-check" type="button" title="标记此投入事项完成" aria-label="标记完成"></button>
     <div class="task-body">
       <strong>${escapeHtml(item.title)}</strong>
-    </div>
-    <span class="priority-mark follow_up" title="历史投入">投入</span>`;
+    </div>`;
   card.querySelector(".task-check").addEventListener("click", event => {
     event.stopPropagation();
     const task = materializeLinkedWorkLeaf(item);

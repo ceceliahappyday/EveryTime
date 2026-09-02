@@ -41,8 +41,13 @@ assert.doesNotMatch(
 );
 assert.match(
   styles,
-  /body\.in-desktop \.topbar\s*\{[^}]*display:\s*flex/s,
-  "desktop topbar should use a flex row without trailing whitespace"
+  /body\.in-desktop \.topbar\s*\{[^}]*display:\s*grid/s,
+  "desktop topbar should use a grid row with a fixed trailing window-controls track"
+);
+assert.match(
+  styles,
+  /body\.in-desktop \.topbar\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) max-content/s,
+  "window controls must occupy a dedicated max-content column"
 );
 assert.match(
   styles,

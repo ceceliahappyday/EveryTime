@@ -147,31 +147,38 @@ body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
 .header-actions .primary-button { min-width: 122px; }
 .window-controls { display: none; gap: 2px; margin-left: 0; align-items: center; flex: 0 0 auto; }
 body.in-desktop .window-controls {
-  display: flex;
+  display: inline-flex;
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
   align-self: center;
+  justify-self: end;
   flex: 0 0 auto;
+  flex-shrink: 0;
+  width: max-content;
   min-width: max-content;
+  max-width: none;
   height: 40px;
-  margin-left: 4px;
+  margin-left: 0;
   padding: 0 8px 0 10px;
   border-left: 1px solid var(--line-soft);
   background: inherit;
+  overflow: visible;
   z-index: 30;
 }
 .window-controls button {
   width: 36px;
+  min-width: 36px;
   height: 36px;
   box-sizing: border-box;
-  display: grid;
+  display: inline-grid;
   place-items: center;
-  flex: 0 0 auto;
+  flex: 0 0 36px;
   color: var(--muted);
   background: transparent;
   border-radius: 8px;
   font-size: 16px;
+  line-height: 1;
 }
 .window-controls button:hover { color: var(--ink); background: rgba(120,130,124,.16); }
 .window-controls .window-close:hover { color: #fff; background: #b94c48; }
@@ -273,6 +280,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   height: 40px;
   box-sizing: border-box;
   padding: 0 16px;
+  border: 1px solid transparent;
   border-radius: 10px;
   color: white;
   background: var(--accent);
@@ -533,8 +541,8 @@ button.task-group-heading {
 .task-card {
   position: relative;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  column-gap: 10px;
   align-items: center;
   min-width: 0;
   max-width: 100%;
@@ -546,6 +554,9 @@ button.task-group-heading {
   box-shadow: none;
   cursor: pointer;
   transition: background .12s ease;
+}
+.task-card.has-priority {
+  padding-right: 44px;
 }
 .task-card:hover {
   transform: none;
@@ -585,8 +596,11 @@ button.task-group-heading {
 }
 .task-body .task-description { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .priority-mark {
-  flex: 0 0 auto;
-  max-width: 42px;
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: 40px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -594,8 +608,8 @@ button.task-group-heading {
   font-weight: 600;
   line-height: 1;
   opacity: .78;
+  pointer-events: none;
 }
-.priority-mark.empty { min-width: 0; max-width: 0; padding: 0; opacity: 0; }
 .priority-mark.general_daily { color: #7a827b; }
 .priority-mark.kpi { color: #2f8a6e; }
 .priority-mark.follow_up { color: #4f7ea3; }
@@ -2687,27 +2701,31 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
   .header-actions > .soft-button { padding-left: 10px; padding-right: 10px; font-size: 0; }
   .header-actions > .soft-button::first-letter { font-size: 13px; }
   .primary-button { padding-left: 13px; padding-right: 13px; }
+  /* Desktop densifies via shell-narrow; do not zero label font-size here. */
+  body.in-desktop .header-actions > .soft-button { font-size: 12px; }
+  body.in-desktop .header-actions > .soft-button::first-letter { font-size: inherit; }
 }
 
-/* Desktop chrome: single-row progressive disclosure (hide secondary UI, never wrap). */
+/* Desktop chrome: single-row progressive disclosure (hide secondary UI, never wrap).
+   Use grid so window-controls stay a fixed trailing track and never crush into a column. */
 body.in-desktop .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) max-content;
   align-items: center;
   height: 72px;
   min-height: 72px;
-  gap: 10px;
+  column-gap: 10px;
+  row-gap: 0;
   padding: 0 4px 0 14px;
   overflow: hidden;
 }
 body.in-desktop .brand {
-  flex: 0 1 auto;
   min-width: 0;
   align-self: center;
   flex-wrap: nowrap;
   overflow: hidden;
 }
 body.in-desktop .topbar-main {
-  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -2752,6 +2770,7 @@ body.in-desktop .header-actions .primary-button {
   min-width: 0;
   padding-inline: 12px;
   font-size: 12px;
+  border: 1px solid transparent;
 }
 body.in-desktop .header-actions .soft-button {
   padding-inline: 10px;
@@ -2873,7 +2892,8 @@ body.in-desktop.shell-compact-topbar .workspace {
 
 /* ~760: schedule-first; hide left task module unless toggled open. */
 body.in-desktop.shell-focus .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
   height: 56px;
   min-height: 56px;
 }
@@ -2969,7 +2989,7 @@ body.in-desktop.shell-focus.task-panel-open #taskPanelToggle {
   body.in-desktop.shell-focus .topbar {
     height: 56px;
     min-height: 56px;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) max-content;
     gap: 8px;
     padding: 0 10px;
   }
