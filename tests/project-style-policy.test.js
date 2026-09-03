@@ -101,8 +101,28 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.resize-edge-right/s,
-  "resize edges should attach to the app shell border"
+  /\.resize-edge-top\s*\{[^}]*right:\s*148px/s,
+  "top resize edge must leave room for window controls"
+);
+assert.match(
+  styles,
+  /body\.in-desktop \.window-controls\s*\{[^}]*z-index:\s*140/s,
+  "window controls must stay above resize hit targets"
+);
+assert.match(
+  styles,
+  /\.resize-edge-left/s,
+  "left resize edge should allow horizontal window sizing"
+);
+assert.match(
+  styles,
+  /\.resize-edge-top/s,
+  "top resize edge should allow vertical window sizing"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode \.topbar,\s*body\.in-desktop\.glass-mode \.week-strip\s*\{[^}]*background:\s*linear-gradient/s,
+  "glass chrome must keep an opaque frosted backdrop so underlying apps do not show through"
 );
 assert.doesNotMatch(
   styles,
@@ -116,8 +136,13 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop\.shell-compact-topbar \.shell-hide-compact\s*\{[^}]*display:\s*none/s,
-  "compact windows should hide secondary header tools instead of wrapping"
+  /body\.in-desktop\.header-tools-overflow \.header-tools-slot:empty\s*\{[^}]*display:\s*none/s,
+  "overflowed tool slot should collapse when tools move into the more menu"
+);
+assert.match(
+  app,
+  /syncHeaderOverflow/,
+  "adaptive chrome should sync secondary tools into the overflow menu"
 );
 assert.match(
   styles,

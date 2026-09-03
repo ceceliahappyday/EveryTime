@@ -99,10 +99,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
     "updateProgress", "updateProgressText", "updateProgressBar",
-    "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
+    "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "maximizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "taskPanelToggle",
     "glassToggleButton",
+    "headerToolsSlot", "headerTools", "headerOverflow", "headerMoreButton", "headerMoreMenu",
     "settingsButton", "settingsDialog", "settingsForm", "settingGlass", "settingPinned", "settingLocked",
     "settingCompact", "settingStartAtLogin", "settingWorkStartHour", "settingWorkEndHour",
     "settingAiEnabled", "settingAiApiKey", "settingAiProvider", "settingAiModel", "aiDetectModelsButton", "aiKeyStatus",
@@ -131,6 +132,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (localStorage.getItem("today-planner-compact") === "1") document.body.classList.add("compact");
   bindUiScale();
   bindWindowResize();
+  bindHeaderOverflow();
   bindTaskPanelToggle();
   initDesktop();
   bindUpdateProgress();
@@ -456,7 +458,7 @@ function applyUiScale() {
   document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
   const desktop = document.body.classList.contains("in-desktop");
   const width = window.innerWidth;
-  document.body.classList.toggle("shell-narrow", desktop && width < 1520);
+  document.body.classList.toggle("shell-narrow", desktop && width < 1180);
   document.body.classList.toggle("shell-compact-topbar", desktop && width < 960);
   const focus = desktop && width < 760;
   document.body.classList.toggle("shell-focus", focus);
@@ -464,6 +466,72 @@ function applyUiScale() {
     document.body.classList.remove("task-panel-open");
     if (el.taskPanelToggle) el.taskPanelToggle.setAttribute("aria-pressed", "false");
   }
+  syncHeaderOverflow();
+}
+
+function syncHeaderOverflow() {
+  if (!el.headerTools || !el.headerToolsSlot || !el.headerMoreMenu || !el.headerMoreButton) return;
+  const desktop = document.body.classList.contains("in-desktop");
+  const overflow = desktop && (
+    document.body.classList.contains("shell-narrow")
+    || document.body.classList.contains("shell-compact-topbar")
+    || document.body.classList.contains("shell-focus")
+  );
+  const menuOpen = !el.headerMoreMenu.hidden;
+  if (overflow) {
+    if (el.headerTools.parentElement !== el.headerMoreMenu) {
+      el.headerMoreMenu.appendChild(el.headerTools);
+    }
+    el.headerMoreButton.hidden = false;
+    document.body.classList.add("header-tools-overflow");
+  } else {
+    if (el.headerTools.parentElement !== el.headerToolsSlot) {
+      el.headerToolsSlot.appendChild(el.headerTools);
+    }
+    closeHeaderOverflowMenu();
+    el.headerMoreButton.hidden = true;
+    document.body.classList.remove("header-tools-overflow");
+  }
+  if (!overflow && menuOpen) closeHeaderOverflowMenu();
+}
+
+function openHeaderOverflowMenu() {
+  if (!el.headerMoreMenu || !el.headerMoreButton || el.headerMoreButton.hidden) return;
+  el.headerMoreMenu.hidden = false;
+  el.headerMoreButton.setAttribute("aria-expanded", "true");
+}
+
+function closeHeaderOverflowMenu() {
+  if (!el.headerMoreMenu || !el.headerMoreButton) return;
+  el.headerMoreMenu.hidden = true;
+  el.headerMoreButton.setAttribute("aria-expanded", "false");
+}
+
+function toggleHeaderOverflowMenu() {
+  if (!el.headerMoreMenu || el.headerMoreButton?.hidden) return;
+  if (el.headerMoreMenu.hidden) openHeaderOverflowMenu();
+  else closeHeaderOverflowMenu();
+}
+
+function bindHeaderOverflow() {
+  if (!el.headerMoreButton) return;
+  el.headerMoreButton.addEventListener("click", event => {
+    event.stopPropagation();
+    toggleHeaderOverflowMenu();
+  });
+  el.headerTools?.addEventListener("click", event => {
+    if (!document.body.classList.contains("header-tools-overflow")) return;
+    const button = event.target.closest("button");
+    if (!button || button.id === "glassToggleButton") return;
+    closeHeaderOverflowMenu();
+  });
+  document.addEventListener("click", event => {
+    if (!el.headerOverflow?.contains(event.target)) closeHeaderOverflowMenu();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeHeaderOverflowMenu();
+  });
+  syncHeaderOverflow();
 }
 
 function updateGlassToggleChrome(glass) {
@@ -501,21 +569,61 @@ function bindTaskPanelToggle() {
 }
 
 function bindWindowResize() {
-  if (!window.desktopAPI?.resizeBy) return;
-  document.querySelectorAll(".app-shell [data-resize-axis]").forEach(handle => {
+  if (!window.desktopAPI?.setWindowBounds && !window.desktopAPI?.resizeBy) return;
+  const minWidth = 900;
+  const minHeight = 520;
+  document.querySelectorAll(".app-shell [data-resize-edge], .app-shell [data-resize-axis]").forEach(handle => {
     handle.addEventListener("pointerdown", event => {
       event.preventDefault();
       event.stopPropagation();
-      const axis = handle.dataset.resizeAxis || "both";
+      const edge = handle.dataset.resizeEdge || ({
+        x: "right",
+        y: "bottom",
+        both: "se"
+      }[handle.dataset.resizeAxis] || "se");
       const startX = event.screenX;
       const startY = event.screenY;
-      const startWidth = window.outerWidth;
-      const startHeight = window.outerHeight;
+      const startBounds = {
+        x: window.screenX,
+        y: window.screenY,
+        width: window.outerWidth,
+        height: window.outerHeight
+      };
       handle.setPointerCapture(event.pointerId);
       const move = moveEvent => {
-        const nextWidth = axis === "y" ? startWidth : Math.max(420, startWidth + moveEvent.screenX - startX);
-        const nextHeight = axis === "x" ? startHeight : Math.max(520, startHeight + moveEvent.screenY - startY);
-        window.desktopAPI.resizeBy(nextWidth, nextHeight);
+        const dx = moveEvent.screenX - startX;
+        const dy = moveEvent.screenY - startY;
+        let x = startBounds.x;
+        let y = startBounds.y;
+        let width = startBounds.width;
+        let height = startBounds.height;
+        const resizeEast = edge === "right" || edge === "ne" || edge === "se";
+        const resizeWest = edge === "left" || edge === "nw" || edge === "sw";
+        const resizeSouth = edge === "bottom" || edge === "se" || edge === "sw";
+        const resizeNorth = edge === "top" || edge === "ne" || edge === "nw";
+        if (resizeEast) width = startBounds.width + dx;
+        if (resizeWest) {
+          width = startBounds.width - dx;
+          x = startBounds.x + dx;
+        }
+        if (resizeSouth) height = startBounds.height + dy;
+        if (resizeNorth) {
+          height = startBounds.height - dy;
+          y = startBounds.y + dy;
+        }
+        if (width < minWidth) {
+          if (resizeWest) x -= minWidth - width;
+          width = minWidth;
+        }
+        if (height < minHeight) {
+          if (resizeNorth) y -= minHeight - height;
+          height = minHeight;
+        }
+        if (window.desktopAPI.setWindowBounds) {
+          window.desktopAPI.setWindowBounds({ x, y, width, height });
+        } else {
+          window.desktopAPI.resizeBy(width, height);
+        }
       };
       const up = () => {
         handle.removeEventListener("pointermove", move);
@@ -527,6 +635,16 @@ function bindWindowResize() {
       handle.addEventListener("pointercancel", up);
     });
   });
+}
+
+function updateMaximizeChrome(maximized) {
+  if (!el.maximizeWindow) return;
+  const on = !!maximized;
+  el.maximizeWindow.classList.toggle("is-maximized", on);
+  el.maximizeWindow.title = on ? "向下还原" : "最大化";
+  el.maximizeWindow.setAttribute("aria-label", on ? "向下还原" : "最大化");
+  el.maximizeWindow.textContent = on ? "❐" : "□";
+  document.body.classList.toggle("window-maximized", on);
 }
 
 function bindUiScale() {
@@ -562,6 +680,17 @@ async function initDesktop() {
   syncLock(await window.desktopAPI.getLocked());
   window.desktopAPI.onLockChanged(syncLock);
   el.minimizeWindow.addEventListener("click", () => window.desktopAPI.minimize());
+  el.maximizeWindow?.addEventListener("click", async () => {
+    if (!window.desktopAPI?.toggleMaximize) return;
+    const maximized = await window.desktopAPI.toggleMaximize();
+    updateMaximizeChrome(maximized);
+    applyUiScale();
+  });
+  window.desktopAPI.onMaximizeChanged?.(maximized => {
+    updateMaximizeChrome(maximized);
+    applyUiScale();
+  });
+  updateMaximizeChrome(await window.desktopAPI.isMaximized?.().catch(() => false));
   el.closeWindow.addEventListener("click", () => window.desktopAPI.quit());
   el.glassToggleButton?.addEventListener("click", () => toggleGlassMode());
   el.settingsButton?.addEventListener("click", openSettingsDialog);

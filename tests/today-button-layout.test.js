@@ -51,9 +51,23 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop \.topbar-main\s*\{[^}]*justify-content:\s*space-between/s,
-  "topbar controls should balance date and actions without overflowing window controls"
+  /body\.in-desktop \.topbar-main\s*\{[^}]*justify-content:\s*flex-start/s,
+  "topbar should keep view switcher visible before trailing actions"
 );
+assert.match(
+  styles,
+  /body\.in-desktop \.header-view-switcher\s*\{[^}]*flex:\s*0\s+0\s+auto/s,
+  "view switcher must not shrink away in adaptive layouts"
+);
+assert.match(
+  app,
+  /function syncHeaderOverflow\(/,
+  "secondary header tools should move into an overflow menu when narrow"
+);
+assert.ok(html.includes('id="headerMoreButton"'));
+assert.ok(html.includes('id="headerTools"'));
+assert.ok(html.includes('id="viewSwitcher"'));
+assert.ok(!html.includes("shell-hide-compact"));
 assert.match(
   styles,
   /body\.in-desktop \.window-controls\s*\{[^}]*flex-direction:\s*row/s,
@@ -66,8 +80,8 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop \.date-controls\s*\{[^}]*min-width:\s*max-content/s,
-  "desktop date controls must keep intrinsic width"
+  /body\.in-desktop \.header-view-switcher\s*\{[^}]*min-width:\s*max-content/s,
+  "view switcher must keep its intrinsic width"
 );
 assert.match(
   styles,

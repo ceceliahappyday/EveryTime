@@ -30,25 +30,35 @@
           <button class="icon-button date-nav-button" id="dateNavNext" type="button" aria-label="下一页">→</button>
         </div>
 
+        <div class="header-view-switcher" id="viewSwitcher" role="tablist" aria-label="视图切换">
+          <button class="active" data-view="day" type="button" title="日视图">日</button>
+          <button data-view="week" type="button" title="周历总览">周</button>
+          <button data-view="month" type="button" title="月历总览">月</button>
+          <button data-view="project" type="button" title="项目甘特">项目</button>
+        </div>
+
         <div class="header-actions">
           <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false"><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
-          <div class="header-view-switcher" id="viewSwitcher">
-            <button class="active" data-view="day" type="button" title="日视图">日</button>
-            <button data-view="week" type="button" title="周历总览">周</button>
-            <button data-view="month" type="button" title="月历总览">月</button>
-            <button data-view="project" type="button" title="项目甘特">项目</button>
+          <div class="header-tools-slot" id="headerToolsSlot">
+            <div class="header-tools" id="headerTools">
+              <button class="soft-button" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon" aria-hidden="true">⇩</i><span class="btn-label">导出</span></button>
+              <button class="soft-button" id="progressReviewButton" type="button" title="集中更新有投入的明细待办"><i class="btn-icon" aria-hidden="true">↻</i><span class="btn-label">更新进度</span></button>
+              <button class="soft-button" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon" aria-hidden="true">✦</i><span class="btn-label">AI助手</span></button>
+              <button class="soft-button desktop-only" id="glassToggleButton" type="button" title="开启玻璃背景" aria-pressed="false"><i class="btn-icon" aria-hidden="true">◐</i><span class="btn-label">毛玻璃</span></button>
+            </div>
           </div>
-          <button class="soft-button shell-hide-compact" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon" aria-hidden="true">⇩</i><span class="btn-label">导出</span></button>
-          <button class="soft-button shell-hide-compact" id="progressReviewButton" type="button" title="集中更新有投入的明细待办"><i class="btn-icon" aria-hidden="true">↻</i><span class="btn-label">更新进度</span></button>
-          <button class="soft-button shell-hide-focus" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon" aria-hidden="true">✦</i><span class="btn-label">AI助手</span></button>
-          <button class="soft-button desktop-only shell-hide-compact" id="glassToggleButton" type="button" title="开启玻璃背景" aria-pressed="false"><i class="btn-icon" aria-hidden="true">◐</i><span class="btn-label">毛玻璃</span></button>
-          <button class="soft-button desktop-only" id="settingsButton" type="button" title="设置、置顶、紧凑显示等"><i class="btn-icon" aria-hidden="true">⚙</i><span class="btn-label">设置</span></button>
-          <button class="primary-button" id="quickAddButton" type="button" title="新建待办"><span class="btn-icon">＋</span><span class="btn-label">新建待办</span></button>
+          <div class="header-overflow desktop-only" id="headerOverflow">
+            <button class="soft-button header-more-button" id="headerMoreButton" type="button" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" hidden>⋯</button>
+            <div class="header-more-menu" id="headerMoreMenu" role="menu" hidden></div>
+          </div>
+          <button class="soft-button desktop-only header-pinned" id="settingsButton" type="button" title="设置、置顶、紧凑显示等"><i class="btn-icon" aria-hidden="true">⚙</i><span class="btn-label">设置</span></button>
+          <button class="primary-button header-pinned" id="quickAddButton" type="button" title="新建待办"><span class="btn-icon">＋</span><span class="btn-label">新建待办</span></button>
         </div>
       </div>
 
       <div class="window-controls desktop-only">
         <button id="minimizeWindow" type="button" title="最小化">—</button>
+        <button id="maximizeWindow" type="button" title="最大化" aria-label="最大化">□</button>
         <button id="closeWindow" class="window-close" type="button" title="彻底退出">×</button>
       </div>
     </header>
@@ -124,9 +134,14 @@
         </div>
       </section>
     </main>
-    <div class="resize-edge resize-edge-right desktop-only" data-resize-axis="x" title="拖动调整宽度"></div>
-    <div class="resize-edge resize-edge-bottom desktop-only" data-resize-axis="y" title="拖动调整高度"></div>
-    <div class="resize-handle desktop-only" data-resize-axis="both" title="拖动调整窗口大小"></div>
+    <div class="resize-edge resize-edge-left desktop-only" data-resize-edge="left" title="拖动调整宽度"></div>
+    <div class="resize-edge resize-edge-right desktop-only" data-resize-edge="right" title="拖动调整宽度"></div>
+    <div class="resize-edge resize-edge-top desktop-only" data-resize-edge="top" title="拖动调整高度"></div>
+    <div class="resize-edge resize-edge-bottom desktop-only" data-resize-edge="bottom" title="拖动调整高度"></div>
+    <div class="resize-handle resize-handle-nw desktop-only" data-resize-edge="nw" title="拖动调整窗口大小"></div>
+    <div class="resize-handle resize-handle-ne desktop-only" data-resize-edge="ne" title="拖动调整窗口大小"></div>
+    <div class="resize-handle resize-handle-sw desktop-only" data-resize-edge="sw" title="拖动调整窗口大小"></div>
+    <div class="resize-handle resize-handle-se desktop-only" data-resize-edge="se" title="拖动调整窗口大小"></div>
   </div>
 
   <dialog class="modal small-modal" id="entryLinkConfirmDialog">

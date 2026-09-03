@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage, safeStorage } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage, safeStorage, screen } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { execFileSync } = require("child_process");
@@ -12,6 +12,7 @@ let locked = false;
 let glass = false;
 let tray;
 let manualUpdateCheck = false;
+let restoredWindowBounds = null;
 const dataFileName = "planner-data.json";
 const windowStateFileName = "window-state.json";
 const settingsFileName = "settings.json";
@@ -42,6 +43,24 @@ if (!singleInstanceLock) {
   });
 }
 
+function isWindowMaximized() {
+  if (!mainWindow) return false;
+  if (mainWindow.isMaximized()) return true;
+  if (!restoredWindowBounds) return false;
+  const bounds = mainWindow.getBounds();
+  const workArea = screen.getDisplayMatching(bounds).workArea;
+  return Math.abs(bounds.x - workArea.x) <= 4
+    && Math.abs(bounds.y - workArea.y) <= 4
+    && Math.abs(bounds.width - workArea.width) <= 8
+    && Math.abs(bounds.height - workArea.height) <= 8;
+}
+
+function notifyMaximizeChanged(maximized = isWindowMaximized()) {
+  if (!mainWindow || mainWindow.isDestroyed()) return maximized;
+  mainWindow.webContents.send("window:maximize-changed", !!maximized);
+  return !!maximized;
+}
+
 function createWindow() {
   const savedBounds = loadWindowState();
   mainWindow = new BrowserWindow({
@@ -70,8 +89,19 @@ function createWindow() {
   mainWindow.loadFile("index.html");
   mainWindow.on("move", saveWindowState);
   mainWindow.on("moved", saveWindowState);
-  mainWindow.on("resize", saveWindowState);
-  mainWindow.on("resized", saveWindowState);
+  mainWindow.on("resize", () => {
+    saveWindowState();
+    notifyMaximizeChanged();
+  });
+  mainWindow.on("resized", () => {
+    saveWindowState();
+    notifyMaximizeChanged();
+  });
+  mainWindow.on("maximize", () => notifyMaximizeChanged(true));
+  mainWindow.on("unmaximize", () => {
+    restoredWindowBounds = null;
+    notifyMaximizeChanged(false);
+  });
   mainWindow.on("close", saveWindowState);
 }
 
@@ -130,6 +160,43 @@ if (singleInstanceLock) app.whenReady().then(() => {
     installSuggestion: "D:\\今日日程APP"
   }));
   ipcMain.handle("window:minimize", () => mainWindow.minimize());
+  ipcMain.handle("window:is-maximized", () => isWindowMaximized());
+  ipcMain.handle("window:toggle-maximize", () => {
+    if (!mainWindow || locked) return isWindowMaximized();
+    if (isWindowMaximized()) {
+      const fallback = restoredWindowBounds || {
+        width: 1380,
+        height: 900,
+        x: undefined,
+        y: undefined
+      };
+      restoredWindowBounds = null;
+      if (mainWindow.isMaximized()) mainWindow.unmaximize();
+      mainWindow.setBounds({
+        x: fallback.x ?? mainWindow.getBounds().x,
+        y: fallback.y ?? mainWindow.getBounds().y,
+        width: Math.max(900, fallback.width || 1380),
+        height: Math.max(520, fallback.height || 900)
+      });
+      notifyMaximizeChanged(false);
+      return false;
+    }
+    restoredWindowBounds = { ...mainWindow.getBounds() };
+    const workArea = screen.getDisplayMatching(restoredWindowBounds).workArea;
+    if (typeof mainWindow.maximize === "function") {
+      try { mainWindow.maximize(); } catch {}
+    }
+    if (!mainWindow.isMaximized()) {
+      mainWindow.setBounds({
+        x: workArea.x,
+        y: workArea.y,
+        width: workArea.width,
+        height: workArea.height
+      });
+    }
+    notifyMaximizeChanged(true);
+    return true;
+  });
   ipcMain.handle("app:quit", () => {
     app.isQuitting = true;
     app.quit();
@@ -162,9 +229,23 @@ if (singleInstanceLock) app.whenReady().then(() => {
     mainWindow.setBounds({
       x: bounds.x,
       y: bounds.y,
-      width: Math.max(420, Math.round(width)),
+      width: Math.max(900, Math.round(width)),
       height: Math.max(520, Math.round(height))
     });
+  });
+  ipcMain.on("window:set-bounds", (_event, next = {}) => {
+    if (!mainWindow || locked) return;
+    const bounds = mainWindow.getBounds();
+    const width = Math.max(900, Math.round(next.width ?? bounds.width));
+    const height = Math.max(520, Math.round(next.height ?? bounds.height));
+    mainWindow.setBounds({
+      x: Math.round(next.x ?? bounds.x),
+      y: Math.round(next.y ?? bounds.y),
+      width,
+      height
+    });
+    if (!isWindowMaximized()) restoredWindowBounds = null;
+    notifyMaximizeChanged();
   });
   ipcMain.handle("data:export", async (_event, filename, format, data) => {
     const exportDir = defaultExportDir();

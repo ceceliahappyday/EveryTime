@@ -164,7 +164,7 @@ body.in-desktop .window-controls {
   border-left: 1px solid var(--line-soft);
   background: inherit;
   overflow: visible;
-  z-index: 30;
+  z-index: 140;
 }
 .window-controls button {
   width: 36px;
@@ -1952,22 +1952,26 @@ body.in-desktop.glass-mode {
 }
 body.in-desktop.glass-mode .app-shell {
   background:
-    radial-gradient(circle at 18% 0%, rgba(80, 178, 199, .14), transparent 34%),
-    linear-gradient(145deg, rgba(0,0,0,.66), rgba(0,0,0,.46));
+    radial-gradient(circle at 18% 0%, rgba(80, 178, 199, .16), transparent 34%),
+    linear-gradient(145deg, rgba(0,0,0,.82), rgba(0,0,0,.70));
   border: 0;
   box-shadow: none;
-  backdrop-filter: none;
+  backdrop-filter: blur(18px) saturate(1.15);
 }
 body.in-desktop.glass-mode .topbar,
-body.in-desktop.glass-mode .week-strip,
+body.in-desktop.glass-mode .week-strip {
+  background: linear-gradient(180deg, rgba(3, 14, 24, .92), rgba(3, 14, 24, .82));
+  backdrop-filter: blur(18px) saturate(1.2);
+}
 body.in-desktop.glass-mode .task-panel,
 body.in-desktop.glass-mode .schedule-panel {
-  background: transparent;
-  backdrop-filter: none;
+  background: rgba(3, 14, 24, .42);
+  backdrop-filter: blur(12px) saturate(1.1);
 }
-body.in-desktop.glass-mode .week-strip,
-body.in-desktop.glass-mode .task-panel,
-body.in-desktop.glass-mode .schedule-panel { background: transparent; }
+body.in-desktop.glass-mode .day-button {
+  background: rgba(0, 0, 0, .36);
+  border-color: rgba(219, 238, 249, .22);
+}
 body.in-desktop.glass-mode .day-button.active,
 body.in-desktop.glass-mode .quick-add,
 body.in-desktop.glass-mode .all-day-row,
@@ -1976,9 +1980,9 @@ body.in-desktop.glass-mode .week-schedule-day,
 body.in-desktop.glass-mode .icon-button,
 body.in-desktop.glass-mode .soft-button,
 body.in-desktop.glass-mode .date-picker-button {
-  background: rgba(0,0,0,.34);
+  background: rgba(0,0,0,.48);
   border-color: rgba(219,238,249,.42);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 6px 18px rgba(0,0,0,.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 6px 18px rgba(0,0,0,.18);
 }
 body.in-desktop.glass-mode .task-card {
   background: transparent;
@@ -2141,6 +2145,16 @@ body.in-desktop.glass-mode .task-panel-footer,
 body.in-desktop.glass-mode .view-switcher,
 body.in-desktop.glass-mode .header-view-switcher { background: rgba(0,0,0,.30); }
 body.in-desktop.glass-mode .header-view-switcher { box-shadow: 8px 0 18px rgba(0,0,0,.32); }
+body.in-desktop.glass-mode .header-more-menu {
+  background: rgba(4, 16, 26, .96);
+  border-color: rgba(181, 218, 239, .42);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .45);
+}
+body.in-desktop.glass-mode .header-more-menu .header-tools .soft-button {
+  color: #f4fbff;
+  background: rgba(255,255,255,.06);
+  border-color: rgba(219,238,249,.28);
+}
 body.in-desktop.glass-mode.desktop-locked .app-shell { opacity: .58; }
 body.in-desktop.glass-mode .task-tabs button.active { color: #fff; background: rgba(71,135,153,.24); }
 body.in-desktop.glass-mode .task-tabs button { color: #a9bac7; }
@@ -2499,7 +2513,7 @@ body.in-desktop.glass-mode .week-strip,
 body.in-desktop.glass-mode .topbar,
 body.in-desktop.glass-mode .task-panel { border-color: rgba(181,215,235,.42); }
 body.in-desktop.glass-mode .day-button:hover,
-body.in-desktop.glass-mode .time-slot:hover { background: rgba(80,139,159,.12); }
+body.in-desktop.glass-mode .time-slot:hover { background: rgba(255,255,255,.14); }
 body.in-desktop.glass-mode .task-check {
   border-color: rgba(232, 244, 252, .88);
   background: transparent;
@@ -2577,31 +2591,44 @@ body.in-desktop.glass-mode .task-trace-list.month:hover::-webkit-scrollbar-thumb
   z-index: 120;
   -webkit-app-region: no-drag;
 }
+.resize-edge-left,
 .resize-edge-right {
-  top: 48px;
-  right: 0;
-  bottom: 0;
+  top: 56px;
+  bottom: 16px;
   width: 8px;
   cursor: ew-resize;
 }
+.resize-edge-left { left: 0; }
+.resize-edge-right { right: 0; }
+.resize-edge-top,
 .resize-edge-bottom {
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 16px;
+  right: 16px;
   height: 8px;
   cursor: ns-resize;
 }
+.resize-edge-top {
+  top: 0;
+  /* Keep the native window controls (+ more/settings) clickable. */
+  right: 148px;
+}
+.resize-edge-bottom { bottom: 0; }
 .resize-handle {
   position: absolute;
   z-index: 121;
-  right: 0;
-  bottom: 0;
-  width: 22px;
-  height: 22px;
-  cursor: nwse-resize;
+  width: 16px;
+  height: 16px;
   -webkit-app-region: no-drag;
 }
-.resize-handle::after {
+.resize-handle-nw { top: 0; left: 0; cursor: nwse-resize; }
+.resize-handle-ne {
+  top: 0;
+  right: 124px;
+  cursor: nesw-resize;
+}
+.resize-handle-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.resize-handle-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.resize-handle-se::after {
   content: "";
   position: absolute;
   right: 4px;
@@ -2611,6 +2638,10 @@ body.in-desktop.glass-mode .task-trace-list.month:hover::-webkit-scrollbar-thumb
   border-right: 3px solid rgba(120,205,203,.90);
   border-bottom: 3px solid rgba(120,205,203,.90);
   filter: drop-shadow(0 1px 2px rgba(0,0,0,.75));
+}
+body.in-desktop .window-controls {
+  position: relative;
+  z-index: 140;
 }
 .small-modal { width: min(460px, calc(100% - 40px)); }
 .small-modal textarea { width: 100%; }
@@ -2769,8 +2800,8 @@ body.in-desktop .topbar-main {
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 10px;
   overflow: hidden;
 }
 body.in-desktop .date-controls,
@@ -2779,11 +2810,21 @@ body.in-desktop .header-actions {
   flex-wrap: nowrap;
 }
 body.in-desktop .date-controls {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+body.in-desktop .header-view-switcher {
+  position: static;
+  box-shadow: none;
+  height: 40px;
   flex: 0 0 auto;
   min-width: max-content;
-  overflow: visible;
+  z-index: 2;
 }
 body.in-desktop .header-actions {
+  position: relative;
+  z-index: 140;
   flex: 1 1 auto;
   gap: 6px;
   max-width: 100%;
@@ -2792,10 +2833,58 @@ body.in-desktop .header-actions {
   overflow: hidden;
   justify-content: flex-end;
 }
-body.in-desktop .header-view-switcher {
-  position: static;
-  box-shadow: none;
-  height: 40px;
+body.in-desktop .header-tools-slot,
+body.in-desktop .header-tools,
+body.in-desktop .header-overflow,
+body.in-desktop .header-pinned {
+  flex: 0 0 auto;
+}
+body.in-desktop .header-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+body.in-desktop .header-overflow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+body.in-desktop .header-more-button {
+  min-width: 34px;
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+body.in-desktop .header-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 80;
+  min-width: 168px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(251, 250, 247, .98);
+  box-shadow: 0 14px 34px rgba(20, 28, 34, .28);
+}
+body.in-desktop .header-more-menu .header-tools {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+}
+body.in-desktop .header-more-menu .header-tools .soft-button {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  padding-inline: 10px;
+}
+body.in-desktop .header-more-menu .header-tools .btn-label {
+  display: inline !important;
+}
+body.in-desktop.header-tools-overflow .header-tools-slot:empty {
+  display: none;
 }
 body.in-desktop .date-controls .icon-button,
 body.in-desktop .date-controls .soft-button,
@@ -2938,10 +3027,14 @@ body.in-desktop.shell-focus .topbar {
   min-height: 56px;
 }
 body.in-desktop.shell-focus .topbar-main {
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
 }
 body.in-desktop.shell-focus .brand { display: none; }
+body.in-desktop.shell-focus .date-controls { display: none; }
+body.in-desktop.shell-focus .header-view-switcher {
+  flex: 0 0 auto;
+}
 body.in-desktop.shell-focus .shell-hide-focus { display: none !important; }
 body.in-desktop.shell-focus .shell-only-focus {
   display: inline-flex !important;
