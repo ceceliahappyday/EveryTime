@@ -121,8 +121,18 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop\.glass-mode \.topbar,\s*body\.in-desktop\.glass-mode \.week-strip\s*\{[^}]*background:\s*linear-gradient/s,
-  "glass chrome must keep an opaque frosted backdrop so underlying apps do not show through"
+  /body\.in-desktop\.glass-mode \.app-shell\s*\{[^}]*backdrop-filter:\s*blur/s,
+  "glass mode shell should use blur for frosted glass"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode \.app-shell\s*\{[^}]*rgba\(6,\s*18,\s*32,\s*\.40\)/s,
+  "glass mode shell must stay translucent so the desktop shows through"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode \.topbar,\s*body\.in-desktop\.glass-mode \.week-strip\s*\{[^}]*rgba\(8,\s*22,\s*36,\s*\.46\)/s,
+  "glass chrome should use translucent frosted panels, not opaque black"
 );
 assert.doesNotMatch(
   styles,
@@ -138,6 +148,26 @@ assert.match(
   styles,
   /body\.in-desktop\.header-tools-overflow \.header-tools-slot:empty\s*\{[^}]*display:\s*none/s,
   "overflowed tool slot should collapse when tools move into the more menu"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\s+\.header-actions\s*\{[^}]*overflow:\s*visible/s,
+  "desktop header actions must not clip toolbar buttons mid-label"
+);
+assert.match(
+  app,
+  /positionHeaderOverflowMenu/,
+  "overflow menu must be positioned fixed so app-shell overflow cannot clip it"
+);
+assert.match(
+  styles,
+  /button\[hidden\][\s\S]*display:\s*none\s*!important/,
+  "hidden attribute must win over soft-button display so overflow control can truly hide"
+);
+assert.match(
+  app,
+  /header-tools-overflow/,
+  "overflow menu should key off the header-tools-overflow state"
 );
 assert.match(
   app,

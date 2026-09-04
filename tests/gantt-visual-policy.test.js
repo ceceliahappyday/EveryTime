@@ -19,11 +19,24 @@ const requiredApp = [
   "syncProjectGanttChartOffset",
   "projectGanttChrome",
   "is-title-pin",
-  "GANTT_LABEL_WIDTH"
+  "GANTT_LABEL_WIDTH",
+  "bindGanttLabelResize",
+  "project-gantt-resize-handle",
+  "dataset.depth"
 ];
 requiredApp.forEach(token => {
   if (!app.includes(token)) throw new Error(`missing gantt visual token in app.js: ${token}`);
 });
+
+if (/depth - \(rootId \? 1 : 0\)/.test(app)) {
+  throw new Error("getTaskDepth must not subtract 1 for root-relative children (breaks layer indent)");
+}
+if (!styles.includes(".project-gantt-resize-handle")) {
+  throw new Error("gantt label pane needs a visible resize handle");
+}
+if (!/padding-left:\s*calc\(4px \+ var\(--task-depth, 0\) \* 16px\)/.test(styles)) {
+  throw new Error("gantt task rows must indent by task depth");
+}
 
 if (app.includes("projectHorizontalScrollbar")) {
   throw new Error("gantt should not keep a duplicate top horizontal scrollbar");

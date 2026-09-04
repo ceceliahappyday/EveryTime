@@ -20,31 +20,37 @@
   }
 
   function followUpTaskTitle(sourceTitle = "") {
-    const title = String(sourceTitle || "").trim();
-    if (!title) return "后续跟踪";
-    if (/跟踪/.test(title)) return title;
-    return `${title} · 跟踪`;
+    const title = String(sourceTitle || "").trim().replace(/\s*·\s*跟踪\s*$/u, "");
+    return title || "后续事项";
   }
 
-  function buildFollowUpTask(source = {}, dateKey = "") {
+  function buildFollowUpBusinessBackground(source = {}) {
+    const title = String(source.title || "").trim().replace(/\s*·\s*跟踪\s*$/u, "");
+    const background = String(source.businessBackground || "").trim();
+    if (title && background) return `${title}\n${background}`.slice(0, 500);
+    return (title || background || "").slice(0, 500);
+  }
+
+  function buildFollowUpTask(source = {}, options = {}) {
+    const opts = typeof options === "string" ? { dateKey: options } : (options || {});
     const now = new Date().toISOString();
-    const dueDate = dateKey || source.dueDate || "";
+    const closedAt = opts.closedAt || source.completedAt || now;
     return {
       title: followUpTaskTitle(source.title),
-      dueDate,
-      dueTime: source.dueTime || "18:00",
+      dueDate: "",
+      dueTime: "",
       owner: source.owner || "我",
       parentId: source.parentId || "",
-      description: source.description || "",
-      priority: source.priority === "paused" ? "follow_up" : (source.priority || "follow_up"),
+      description: String(source.description || "").trim().slice(0, 240),
+      priority: "follow_up",
       progress: 0,
       status: TRACKING_STATUS,
-      startedAt: "",
-      startOverrideAt: "",
+      startedAt: closedAt,
+      startOverrideAt: closedAt,
       completedAt: "",
-      businessBackground: source.businessBackground || "",
-      problemReason: source.problemReason || "",
-      deliveryNote: source.deliveryNote || "",
+      businessBackground: buildFollowUpBusinessBackground(source),
+      problemReason: String(source.problemReason || "").trim().slice(0, 500),
+      deliveryNote: "",
       recurrence: null,
       recurrenceGroupId: "",
       followUpFromTaskId: source.id || "",
@@ -71,10 +77,20 @@
       unplanned: "未计划",
       planned: "计划中",
       in_progress: "进行中",
-      tracking: "跟踪中",
-      done: "已完成",
+      tracking: "待跟踪",
+      done: "已关闭",
       closed: "已关闭"
     }[status] || "计划中";
+  }
+
+  function listSideBadge(task = {}) {
+    if (isEndedStatus(task.status)) {
+      return { className: "status-mark closed", text: "关闭", title: "已关闭" };
+    }
+    if (isTrackingStatus(task)) {
+      return { className: "status-mark tracking", text: "跟踪", title: "待跟踪" };
+    }
+    return null;
   }
 
   return {
@@ -84,9 +100,11 @@
     isTrackingStatus,
     isSchedulableStatus,
     followUpTaskTitle,
+    buildFollowUpBusinessBackground,
     buildFollowUpTask,
     scheduleOverviewKind,
     scheduleOverviewBadge,
-    statusLabel
+    statusLabel,
+    listSideBadge
   };
 });

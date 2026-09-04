@@ -67,6 +67,7 @@ const state = {
   selectedColor: "sage",
   workStartHour: ScheduleHoursPolicy?.DEFAULT_WORK_START ?? 9,
   workEndHour: ScheduleHoursPolicy?.DEFAULT_WORK_END ?? 18,
+  ganttLabelWidth: null,
   data: loadData()
 };
 
@@ -77,6 +78,7 @@ let projectGanttScrollTimer;
 let taskListScrollBarTimer;
 let persistentWritesEnabled = false;
 let pendingEntrySave = null;
+let pendingCloseTaskId = null;
 let taskListSearchTimer = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -87,15 +89,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     "plannedHours", "progressLabel", "progressBar", "scheduleTitle", "loggedHours", "freeHours",
     "timeline", "timelineWrap", "projectGanttChrome", "quickAddButton", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "viewSwitcher",
     "taskTabs", "allCount", "taskViewTitle", "taskDialog", "taskEditForm", "taskDialogEyebrow", "taskDialogTitle",
-    "taskDetailSummary",
+    "taskDetailSummary", "followUpDraftHint",
     "taskTitleInput", "taskDueDate", "taskDueTime", "taskOwner", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
     "taskProgress", "taskProgressValue", "taskStatus", "taskMonthlyRecurring", "taskRecurringUntil",
     "taskFollowUpOption", "taskFollowUpTracking",
     "recurringOptions", "taskActualStart", "taskActualEnd",
     "taskBusinessBackground", "taskProblemReason", "taskDeliveryNote", "businessBackgroundLabel",
-    "problemReasonLabel", "taskDescription",
+    "problemReasonLabel", "taskDescription", "taskTitleField", "taskDueDateField", "taskDeliveryField",
     "deleteTaskButton", "mergeTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle", "entryType",
     "entryLinkConfirmDialog", "entryLinkConfirmTitle", "entryLinkConfirmMessage", "entryLinkConfirmOptions", "entryLinkConfirmCancel", "entryLinkConfirmCreate",
+    "taskCloseConfirmDialog", "taskCloseConfirmTitle", "taskCloseConfirmMessage", "taskCloseOnlyButton", "taskCloseFollowUpButton",
     "taskMergeDialog", "taskMergeForm", "taskMergeMessage", "taskMergeTarget",
     "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
@@ -104,7 +107,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "taskPanelToggle",
     "glassToggleButton",
-    "headerToolsSlot", "headerTools", "headerOverflow", "headerMoreButton", "headerMoreMenu",
+    "headerToolsSlot", "headerTools", "headerOverflow", "headerMoreButton", "headerMoreMenu", "headerActions",
     "settingsButton", "settingsDialog", "settingsForm", "settingGlass", "settingPinned", "settingLocked",
     "settingCompact", "settingStartAtLogin", "settingWorkStartHour", "settingWorkEndHour",
     "settingAiEnabled", "settingAiApiKey", "settingAiProvider", "settingAiModel", "aiDetectModelsButton", "aiKeyStatus",
@@ -379,6 +382,9 @@ function bindEvents() {
   });
   el.deleteTaskButton.addEventListener("click", deleteEditingTask);
   el.closeTaskButton.addEventListener("click", closeEditingTask);
+  el.taskCloseOnlyButton?.addEventListener("click", () => confirmCloseTaskChoice(false));
+  el.taskCloseFollowUpButton?.addEventListener("click", () => confirmCloseTaskChoice(true));
+  el.taskCloseConfirmDialog?.addEventListener("close", () => { pendingCloseTaskId = null; });
   el.taskProgress.addEventListener("input", () => el.taskProgressValue.textContent = `${el.taskProgress.value}%`);
   el.taskStatus.addEventListener("change", updateProgressAvailability);
   el.taskParent.addEventListener("change", updateParentRequirements);
@@ -477,43 +483,92 @@ function applyUiScale() {
 function syncHeaderOverflow() {
   if (!el.headerTools || !el.headerToolsSlot || !el.headerMoreMenu || !el.headerMoreButton) return;
   const desktop = document.body.classList.contains("in-desktop");
-  const overflow = desktop && (
-    document.body.classList.contains("shell-narrow")
-    || document.body.classList.contains("shell-compact-topbar")
-    || document.body.classList.contains("shell-focus")
-  );
-  const menuOpen = !el.headerMoreMenu.hidden;
-  if (overflow) {
-    if (el.headerTools.parentElement !== el.headerMoreMenu) {
-      el.headerMoreMenu.appendChild(el.headerTools);
-    }
-    el.headerMoreButton.hidden = false;
-    document.body.classList.add("header-tools-overflow");
-  } else {
+  const actions = el.headerActions;
+  const menuWasOpen = el.headerMoreMenu.getAttribute("aria-hidden") !== "true"
+    && !el.headerMoreMenu.hasAttribute("hidden");
+
+  const restoreToolsToSlot = () => {
     if (el.headerTools.parentElement !== el.headerToolsSlot) {
       el.headerToolsSlot.appendChild(el.headerTools);
     }
-    closeHeaderOverflowMenu();
-    el.headerMoreButton.hidden = true;
+    setHeaderMoreButtonVisible(false);
     document.body.classList.remove("header-tools-overflow");
+  };
+
+  if (!desktop || !actions) {
+    restoreToolsToSlot();
+    closeHeaderOverflowMenu();
+    return;
   }
-  if (!overflow && menuOpen) closeHeaderOverflowMenu();
+
+  const forceOverflow = document.body.classList.contains("shell-narrow")
+    || document.body.classList.contains("shell-compact-topbar")
+    || document.body.classList.contains("shell-focus");
+
+  // Measure with tools restored to the inline slot so we can detect real clipping.
+  restoreToolsToSlot();
+  void actions.offsetWidth;
+  const clipped = forceOverflow || actions.scrollWidth > actions.clientWidth + 2;
+
+  if (clipped) {
+    if (el.headerTools.parentElement !== el.headerMoreMenu) {
+      el.headerMoreMenu.appendChild(el.headerTools);
+    }
+    setHeaderMoreButtonVisible(true);
+    document.body.classList.add("header-tools-overflow");
+  }
+
+  if (!clipped && menuWasOpen) closeHeaderOverflowMenu();
+  else if (clipped && menuWasOpen) openHeaderOverflowMenu();
+}
+
+function setHeaderMoreButtonVisible(visible) {
+  if (!el.headerMoreButton) return;
+  el.headerMoreButton.hidden = !visible;
+  el.headerMoreButton.setAttribute("aria-hidden", visible ? "false" : "true");
+  el.headerMoreButton.classList.toggle("is-visible", visible);
 }
 
 function openHeaderOverflowMenu() {
-  if (!el.headerMoreMenu || !el.headerMoreButton || el.headerMoreButton.hidden) return;
+  if (!el.headerMoreMenu || !el.headerMoreButton) return;
+  if (!document.body.classList.contains("header-tools-overflow")) return;
+  if (el.headerTools && el.headerTools.parentElement !== el.headerMoreMenu) {
+    el.headerMoreMenu.appendChild(el.headerTools);
+  }
+  if (el.headerMoreMenu.parentElement !== document.body) {
+    document.body.appendChild(el.headerMoreMenu);
+  }
   el.headerMoreMenu.hidden = false;
+  el.headerMoreMenu.setAttribute("aria-hidden", "false");
   el.headerMoreButton.setAttribute("aria-expanded", "true");
+  positionHeaderOverflowMenu();
+}
+
+function positionHeaderOverflowMenu() {
+  if (!el.headerMoreMenu || !el.headerMoreButton || el.headerMoreMenu.hidden) return;
+  const rect = el.headerMoreButton.getBoundingClientRect();
+  const menu = el.headerMoreMenu;
+  menu.style.position = "fixed";
+  menu.style.top = `${Math.round(rect.bottom + 6)}px`;
+  menu.style.right = `${Math.max(8, Math.round(window.innerWidth - rect.right))}px`;
+  menu.style.left = "auto";
+  menu.style.zIndex = "5000";
 }
 
 function closeHeaderOverflowMenu() {
   if (!el.headerMoreMenu || !el.headerMoreButton) return;
   el.headerMoreMenu.hidden = true;
+  el.headerMoreMenu.setAttribute("aria-hidden", "true");
   el.headerMoreButton.setAttribute("aria-expanded", "false");
 }
 
 function toggleHeaderOverflowMenu() {
-  if (!el.headerMoreMenu || el.headerMoreButton?.hidden) return;
+  if (!el.headerMoreMenu || !el.headerMoreButton) return;
+  if (!document.body.classList.contains("header-tools-overflow")) {
+    // Space is tight enough to show the control; force a resync then open.
+    syncHeaderOverflow();
+    if (!document.body.classList.contains("header-tools-overflow")) return;
+  }
   if (el.headerMoreMenu.hidden) openHeaderOverflowMenu();
   else closeHeaderOverflowMenu();
 }
@@ -521,6 +576,7 @@ function toggleHeaderOverflowMenu() {
 function bindHeaderOverflow() {
   if (!el.headerMoreButton) return;
   el.headerMoreButton.addEventListener("click", event => {
+    event.preventDefault();
     event.stopPropagation();
     toggleHeaderOverflowMenu();
   });
@@ -530,12 +586,19 @@ function bindHeaderOverflow() {
     if (!button || button.id === "glassToggleButton") return;
     closeHeaderOverflowMenu();
   });
-  document.addEventListener("click", event => {
-    if (!el.headerOverflow?.contains(event.target)) closeHeaderOverflowMenu();
+  document.addEventListener("pointerdown", event => {
+    if (el.headerMoreButton?.contains(event.target)) return;
+    if (el.headerMoreMenu?.contains(event.target)) return;
+    if (el.headerOverflow?.contains(event.target)) return;
+    closeHeaderOverflowMenu();
   });
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") closeHeaderOverflowMenu();
   });
+  window.addEventListener("resize", () => {
+    syncHeaderOverflow();
+    positionHeaderOverflowMenu();
+  }, { passive: true });
   syncHeaderOverflow();
 }
 
@@ -1408,7 +1471,7 @@ function createProjectCard(project) {
   check.classList.toggle("completed", ["done", "closed"].includes(project.parent.status));
   check.addEventListener("click", event => {
     event.stopPropagation();
-    toggleTaskCompletion(project.parent);
+    requestTaskCompletion(project.parent);
   });
   card.querySelector(".task-menu").addEventListener("click", event => {
     event.stopPropagation();
@@ -1440,7 +1503,7 @@ function projectStatusGroups(projects) {
 }
 
 function projectStatusLabel(status) {
-  return { unplanned: "未计划", planned: "计划中", in_progress: "进行中", tracking: "跟踪中", ended: "已关闭" }[status] || "计划中";
+  return { unplanned: "未计划", planned: "计划中", in_progress: "进行中", tracking: "待跟踪", ended: "已关闭" }[status] || "计划中";
 }
 
 function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
@@ -1484,7 +1547,67 @@ function getTaskScheduleEntries(taskId) {
   ).sort((a, b) => `${a.dateKey} ${a.entry.start}`.localeCompare(`${b.dateKey} ${b.entry.start}`));
 }
 
-const GANTT_LABEL_WIDTH = 240;
+const GANTT_LABEL_WIDTH_DEFAULT = 240;
+const GANTT_LABEL_WIDTH_MIN = 160;
+const GANTT_LABEL_WIDTH_MAX = 520;
+const GANTT_LABEL_WIDTH_KEY = "today-planner-gantt-label-width";
+const GANTT_LABEL_WIDTH = GANTT_LABEL_WIDTH_DEFAULT;
+
+function clampGanttLabelWidth(width) {
+  const value = Number(width);
+  if (!Number.isFinite(value)) return GANTT_LABEL_WIDTH_DEFAULT;
+  return Math.min(GANTT_LABEL_WIDTH_MAX, Math.max(GANTT_LABEL_WIDTH_MIN, Math.round(value)));
+}
+
+function getGanttLabelWidth() {
+  if (state.ganttLabelWidth == null) state.ganttLabelWidth = loadGanttLabelWidth();
+  return state.ganttLabelWidth;
+}
+
+function loadGanttLabelWidth() {
+  try {
+    return clampGanttLabelWidth(localStorage.getItem(GANTT_LABEL_WIDTH_KEY));
+  } catch {
+    return GANTT_LABEL_WIDTH_DEFAULT;
+  }
+}
+
+function saveGanttLabelWidth(width) {
+  const next = clampGanttLabelWidth(width);
+  state.ganttLabelWidth = next;
+  try { localStorage.setItem(GANTT_LABEL_WIDTH_KEY, String(next)); } catch {}
+  return next;
+}
+
+function bindGanttLabelResize(handle, split) {
+  if (!handle || !split) return;
+  handle.addEventListener("pointerdown", event => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = getGanttLabelWidth();
+    handle.classList.add("is-dragging");
+    document.body.classList.add("gantt-label-resizing");
+    handle.setPointerCapture(event.pointerId);
+    const onMove = moveEvent => {
+      const next = clampGanttLabelWidth(startWidth + (moveEvent.clientX - startX));
+      state.ganttLabelWidth = next;
+      split.style.setProperty("--gantt-label-width", `${next}px`);
+    };
+    const onUp = upEvent => {
+      handle.classList.remove("is-dragging");
+      document.body.classList.remove("gantt-label-resizing");
+      try { handle.releasePointerCapture(upEvent.pointerId); } catch {}
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      saveGanttLabelWidth(state.ganttLabelWidth);
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
+  });
+}
 
 function projectTimelineBuckets(projects, scale = "day", meetings = []) {
   if (scale === "month") return projectTimelineMonthBuckets(projects, meetings);
@@ -1642,23 +1765,28 @@ function taskTimelineSpan(task, buckets, scale = "day") {
 function createTaskCard(task) {
   const visualStatus = isUnplannedTask(task) ? "unplanned" : task.status;
   const priority = task.priority || "general_daily";
+  const statusBadge = TaskStatusPolicy.listSideBadge(task);
+  const showPriority = !statusBadge && priority !== "general_daily";
+  const sideBadge = statusBadge
+    || (showPriority
+      ? { className: `priority-mark ${priority}`, text: priorityShortLabel(priority), title: priorityLabel(priority) }
+      : null);
   const card = document.createElement("article");
   card.className = `task-card ${visualStatus}`;
   card.draggable = visualStatus === "unplanned" || TaskStatusPolicy.isSchedulableStatus(task.status);
   card.dataset.taskId = task.id;
   card.title = task.title;
-  const showPriority = priority !== "general_daily";
-  if (showPriority) card.classList.add("has-priority");
+  if (sideBadge) card.classList.add("has-priority");
   card.innerHTML = `
     <button class="task-check" type="button" title="标记完成" aria-label="标记完成"></button>
     <div class="task-body">
       <strong>${escapeHtml(task.title)}</strong>
     </div>
-    ${showPriority ? `<span class="priority-mark ${priority}" title="${escapeHtml(priorityLabel(priority))}">${escapeHtml(priorityShortLabel(priority))}</span>` : ""}`;
+    ${sideBadge ? `<span class="${sideBadge.className}" title="${escapeHtml(sideBadge.title)}">${escapeHtml(sideBadge.text)}</span>` : ""}`;
 
   card.querySelector(".task-check").addEventListener("click", event => {
     event.stopPropagation();
-    toggleTaskCompletion(task);
+    requestTaskCompletion(task);
   });
   card.addEventListener("click", event => {
     if (event.target.closest(".task-check")) return;
@@ -1687,7 +1815,7 @@ function createLinkedWorkCard(item) {
   card.querySelector(".task-check").addEventListener("click", event => {
     event.stopPropagation();
     const task = materializeLinkedWorkLeaf(item);
-    if (task) toggleTaskCompletion(task);
+    if (task) requestTaskCompletion(task);
   });
   const openConcreteTask = event => {
     event?.stopPropagation();
@@ -1881,7 +2009,7 @@ function renderMonthCalendar() {
 function restoreTaskStatusOptions(task) {
   if (TaskStatusPolicy.isTrackingStatus(task)) {
     el.taskStatus.innerHTML = `
-      <option value="tracking" selected>跟踪中（待闭环）</option>
+      <option value="tracking" selected>待跟踪（闭环跟进中）</option>
       <option value="done">已完成 / 已关闭</option>`;
     return;
   }
@@ -1892,10 +2020,16 @@ function restoreTaskStatusOptions(task) {
   el.taskStatus.value = task?.status || "planned";
 }
 
-function openTaskDialog(task = null) {
+function openTaskDialog(task = null, options = {}) {
   state.editingTaskId = task?.id || null;
-  el.taskDialogEyebrow.textContent = task ? "EDIT TASK" : "NEW TASK";
-  el.taskDialogTitle.textContent = task ? "编辑待办" : "新建待办";
+  const followUpDraft = options.mode === "followUp";
+  el.taskEditForm?.classList.toggle("follow-up-draft", followUpDraft);
+  el.followUpDraftHint?.classList.toggle("hidden", !followUpDraft);
+  el.taskTitleField?.classList.toggle("follow-up-focus", followUpDraft);
+  el.taskDueDateField?.classList.toggle("follow-up-focus", followUpDraft);
+  el.taskDeliveryField?.classList.toggle("follow-up-focus", followUpDraft);
+  el.taskDialogEyebrow.textContent = followUpDraft ? "FOLLOW-UP" : (task ? "EDIT TASK" : "NEW TASK");
+  el.taskDialogTitle.textContent = followUpDraft ? "完善跟踪任务" : (task ? "编辑待办" : "新建待办");
   el.taskTitleInput.value = task?.title || "";
   el.taskDueDate.value = task?.dueDate || "";
   el.taskDueTime.value = task?.dueTime || "";
@@ -1913,20 +2047,46 @@ function openTaskDialog(task = null) {
   el.taskMonthlyRecurring.checked = task?.recurrence?.frequency === "monthly";
   el.taskRecurringUntil.value = task?.recurrence?.until || defaultRecurringUntil(task?.dueDate || state.selectedDate);
   fillParentOptions(task);
-  el.taskParent.value = task?.parentId || "";
-  syncTaskParentTrigger();
+  const parentId = task?.parentId || "";
+  if (parentId) chooseTaskParentOption(parentId);
+  else {
+    el.taskParent.value = "";
+    syncTaskParentTrigger();
+  }
   el.deleteTaskButton.classList.toggle("hidden", !task);
   el.mergeTaskButton?.classList.toggle("hidden", !task);
-  el.closeTaskButton.classList.toggle("hidden", !task);
+  el.closeTaskButton.classList.toggle("hidden", !task || followUpDraft);
   el.closeTaskButton.textContent = task && TaskStatusPolicy.isEndedStatus(task.status) ? "恢复任务" : "关闭任务";
-  el.taskFollowUpOption?.classList.toggle("hidden", !task || TaskStatusPolicy.isEndedStatus(task.status));
+  const hideFollowUpOption = !task
+    || followUpDraft
+    || TaskStatusPolicy.isEndedStatus(task.status)
+    || TaskStatusPolicy.isTrackingStatus(task);
+  el.taskFollowUpOption?.classList.toggle("hidden", hideFollowUpOption);
   if (el.taskFollowUpTracking) el.taskFollowUpTracking.checked = false;
+  if (el.businessBackgroundLabel?.querySelector("span")) {
+    el.businessBackgroundLabel.querySelector("span").textContent = followUpDraft
+      ? "业务背景（来自已关闭任务）"
+      : "业务背景（可选）";
+  }
+  const dueLabel = el.taskDueDateField?.querySelector("span");
+  if (dueLabel) dueLabel.textContent = followUpDraft ? "目标完成日期" : "目标日期（可选）";
+  const deliveryLabel = el.taskDeliveryField?.querySelector("span");
+  if (deliveryLabel) deliveryLabel.textContent = followUpDraft ? "详细计划 / 交付件（请填写）" : "详细计划 / 交付件（可选）";
+  const titleLabel = el.taskTitleField?.querySelector("span");
+  if (titleLabel) titleLabel.textContent = followUpDraft ? "待办名称（可修改）" : "待办名称";
   updateProgressAvailability();
   updateParentRequirements();
   updateRecurringOptions();
   renderTaskDetailSummary(task);
   el.taskDialog.showModal();
-  setTimeout(() => el.taskTitleInput.focus(), 50);
+  setTimeout(() => {
+    if (followUpDraft) {
+      el.taskTitleInput.focus();
+      el.taskTitleInput.select?.();
+    } else {
+      el.taskTitleInput.focus();
+    }
+  }, 50);
 }
 
 function openTaskDialogForDate(dateKey) {
@@ -2440,7 +2600,7 @@ function renderProjectSchedule() {
 
   const split = document.createElement("div");
   split.className = "project-gantt-split";
-  split.style.setProperty("--gantt-label-width", `${GANTT_LABEL_WIDTH}px`);
+  split.style.setProperty("--gantt-label-width", `${getGanttLabelWidth()}px`);
 
   const labelPane = document.createElement("div");
   labelPane.className = "project-gantt-label-pane";
@@ -2451,6 +2611,14 @@ function renderProjectSchedule() {
   const labelBody = document.createElement("div");
   labelBody.className = "project-gantt-label-body";
   labelPane.appendChild(labelBody);
+
+  const resizeHandle = document.createElement("div");
+  resizeHandle.className = "project-gantt-resize-handle";
+  resizeHandle.title = "拖动调整任务栏宽度";
+  resizeHandle.setAttribute("role", "separator");
+  resizeHandle.setAttribute("aria-orientation", "vertical");
+  resizeHandle.setAttribute("aria-label", "调整甘特任务栏宽度");
+  bindGanttLabelResize(resizeHandle, split);
 
   const chartPane = document.createElement("div");
   chartPane.className = "project-gantt-chart-pane";
@@ -2538,6 +2706,7 @@ function renderProjectSchedule() {
   chartTrack.appendChild(body);
   chartPane.appendChild(chartTrack);
   split.appendChild(labelPane);
+  split.appendChild(resizeHandle);
   split.appendChild(chartPane);
   rowsWrap.appendChild(split);
 
@@ -2636,8 +2805,10 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
     scheduledHours: getTaskScheduledHours(task.id)
   });
   const labelRow = document.createElement("div");
+  const depth = getTaskDepth(task, rootId);
   labelRow.className = `project-gantt-row-label ${task.status}${options.isParent ? " is-parent" : ""}`;
-  labelRow.style.setProperty("--task-depth", getTaskDepth(task, rootId));
+  labelRow.style.setProperty("--task-depth", depth);
+  labelRow.dataset.depth = String(depth);
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin">
         ${hasChildren ? `<button class="project-collapse-button task-tree-toggle" type="button">${collapsed ? "▸" : "▾"}</button>` : ""}
         <strong title="${escapeHtml(taskTitle)}">${escapeHtml(taskTitle)}</strong>
@@ -2716,10 +2887,33 @@ function closeEditingTask() {
   toggleTaskCompletion(task, { createFollowUp });
 }
 
-function createFollowUpTrackingTask(sourceTask) {
-  const dateKey = sourceTask.dueDate || state.selectedDate || toDateKey(new Date());
+function requestTaskCompletion(task) {
+  if (!task) return;
+  if (TaskStatusPolicy.isEndedStatus(task.status)) {
+    toggleTaskCompletion(task);
+    return;
+  }
+  pendingCloseTaskId = task.id;
+  if (el.taskCloseConfirmTitle) el.taskCloseConfirmTitle.textContent = "关闭任务";
+  if (el.taskCloseConfirmMessage) {
+    el.taskCloseConfirmMessage.textContent = `「${task.title}」关闭后可选择是否创建后续跟踪。选择「关闭并跟踪」会先关闭本任务，再打开新建跟踪待办供你填写目标完成时间。`;
+  }
+  el.taskCloseConfirmDialog?.showModal();
+}
+
+function confirmCloseTaskChoice(createFollowUp) {
+  const task = pendingCloseTaskId ? findTask(pendingCloseTaskId)?.task : null;
+  pendingCloseTaskId = null;
+  el.taskCloseConfirmDialog?.close();
+  if (!task) return;
+  toggleTaskCompletion(task, { createFollowUp: Boolean(createFollowUp) });
+}
+
+function createFollowUpTrackingTask(sourceTask, closedAt = "") {
+  const closedIso = closedAt || sourceTask.completedAt || new Date().toISOString();
+  const dateKey = state.selectedDate || toDateKey(new Date(closedIso)) || toDateKey(new Date());
   const now = new Date();
-  const payload = TaskStatusPolicy.buildFollowUpTask(sourceTask, dateKey);
+  const payload = TaskStatusPolicy.buildFollowUpTask(sourceTask, { closedAt: closedIso });
   const trackingTask = {
     id: crypto.randomUUID(),
     ...payload,
@@ -2748,12 +2942,14 @@ function toggleTaskCompletion(task, options = {}) {
   });
   let followUpTask = null;
   if (closing && options.createFollowUp) {
-    followUpTask = createFollowUpTrackingTask(task);
+    const closedTask = findTask(task.id)?.task || { ...task, status: nextStatus, completedAt: now };
+    followUpTask = createFollowUpTrackingTask(closedTask, now);
   }
   saveData();
   render();
   if (closing && followUpTask) {
-    showToast(`任务已关闭，已创建跟踪任务「${followUpTask.title}」`);
+    showToast("任务已关闭，请填写跟踪任务的目标完成时间");
+    requestAnimationFrame(() => openTaskDialog(followUpTask, { mode: "followUp" }));
   } else {
     showToast(closing ? "任务已关闭" : "任务已恢复");
   }
@@ -2837,7 +3033,8 @@ function toggleProjectTask(taskId) {
 }
 
 function getTaskDepth(task, rootId = "") {
-  if (!task?.parentId || task.id === rootId) return 0;
+  if (!task || task.id === rootId) return 0;
+  if (!task.parentId) return 0;
   let depth = 0;
   let current = task;
   const visited = new Set();
@@ -2846,7 +3043,8 @@ function getTaskDepth(task, rootId = "") {
     depth += 1;
     current = findTask(current.parentId)?.task;
   }
-  return Math.max(0, depth - (rootId ? 1 : 0));
+  // Hops from this task up to the project root: parent=0, child=1, grandchild=2…
+  return depth;
 }
 
 function renderDayTimeline() {

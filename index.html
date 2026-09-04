@@ -37,7 +37,7 @@
           <button data-view="project" type="button" title="项目甘特">项目</button>
         </div>
 
-        <div class="header-actions">
+        <div class="header-actions" id="headerActions">
           <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false"><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
           <div class="header-tools-slot" id="headerToolsSlot">
             <div class="header-tools" id="headerTools">
@@ -161,6 +161,22 @@
     </div>
   </dialog>
 
+  <dialog class="modal small-modal" id="taskCloseConfirmDialog">
+    <div class="modal-header">
+      <div>
+        <span class="eyebrow">CLOSE TASK</span>
+        <h3 id="taskCloseConfirmTitle">关闭任务</h3>
+      </div>
+      <button type="button" class="close-button" data-close-dialog="taskCloseConfirmDialog" aria-label="关闭">×</button>
+    </div>
+    <p class="entry-link-confirm-message" id="taskCloseConfirmMessage">本环节结束后，是否需要后续跟踪闭环？</p>
+    <div class="modal-actions task-close-confirm-actions">
+      <button type="button" class="soft-button" data-close-dialog="taskCloseConfirmDialog">取消</button>
+      <button type="button" class="soft-button" id="taskCloseOnlyButton">仅关闭</button>
+      <button type="button" class="primary-button" id="taskCloseFollowUpButton">关闭并跟踪</button>
+    </div>
+  </dialog>
+
   <dialog class="modal small-modal" id="taskMergeDialog">
     <form method="dialog" id="taskMergeForm">
       <div class="modal-header">
@@ -262,9 +278,10 @@
         <button type="button" class="close-button" data-close-dialog="taskDialog" aria-label="关闭">×</button>
       </div>
       <div class="task-detail-summary hidden" id="taskDetailSummary"></div>
-      <label><span>待办名称</span><input id="taskTitleInput" maxlength="80" placeholder="需要完成什么？" /></label>
+      <p class="follow-up-draft-hint hidden" id="followUpDraftHint">请确认待办名称、填写目标完成日期，并补充详细计划/交付件。上级任务已与关闭任务保持一致。</p>
+      <label id="taskTitleField"><span>待办名称</span><input id="taskTitleInput" maxlength="80" placeholder="需要完成什么？" /></label>
       <div class="form-row">
-        <label><span>目标日期（可选）</span><input type="date" id="taskDueDate" /></label>
+        <label id="taskDueDateField"><span>目标日期（可选）</span><input type="date" id="taskDueDate" /></label>
         <label><span>目标时间（可选）</span><input type="time" id="taskDueTime" value="18:00" step="60" /></label>
       </div>
       <div class="form-row">
@@ -331,14 +348,14 @@
         <span>问题原因（可选）</span>
         <textarea id="taskProblemReason" rows="2" maxlength="500" placeholder="当前问题、触发原因或需要解决的根因"></textarea>
       </label>
-      <label>
+      <label id="taskDeliveryField">
         <span>详细计划 / 交付件（可选）</span>
         <textarea id="taskDeliveryNote" rows="2" maxlength="500" placeholder="写清楚目标、交付件、检查标准或计划拆解；实际推进由日程记录承接"></textarea>
       </label>
       <label><span>任务说明（可选）</span><textarea id="taskDescription" rows="3" maxlength="240" placeholder="补充交付标准、背景或注意事项"></textarea></label>
       <label class="checkbox-setting task-follow-up-option hidden" id="taskFollowUpOption">
         <input type="checkbox" id="taskFollowUpTracking" />
-        <span>本环节已结束，但需后续跟踪闭环（关闭后将新建一条跟踪任务）</span>
+        <span>本环节已结束，但需后续跟踪闭环（关闭本任务后，将新建关联的「待跟踪」任务并请你填写目标完成时间）</span>
       </label>
       <div class="modal-actions">
         <button type="button" class="danger-button hidden" id="deleteTaskButton">删除待办</button>

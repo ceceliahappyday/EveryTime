@@ -9,6 +9,8 @@ const required = [
   "taskListSearch",
   "continueYesterdayButton",
   "entryLinkConfirmDialog",
+  "taskCloseConfirmDialog",
+  "requestTaskCompletion",
   "mergeTaskIntoTarget",
   "leafOnly: true",
   "priority-mark",
