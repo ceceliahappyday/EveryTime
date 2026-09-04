@@ -63,6 +63,7 @@ const state = {
   editingTaskId: null,
   editingParentTaskId: null,
   editingEntryId: null,
+  editingEntryDateKey: null,
   selectedColor: "sage",
   workStartHour: ScheduleHoursPolicy?.DEFAULT_WORK_START ?? 9,
   workEndHour: ScheduleHoursPolicy?.DEFAULT_WORK_END ?? 18,
@@ -399,6 +400,10 @@ function bindEvents() {
   el.entryForm.addEventListener("submit", event => {
     event.preventDefault();
     saveEntry();
+  });
+  el.entryDialog.addEventListener("close", () => {
+    state.editingEntryId = null;
+    state.editingEntryDateKey = null;
   });
   el.entryType.addEventListener("change", updateEntryTypeControls);
   bindEntryTaskCombobox();
@@ -2286,8 +2291,14 @@ function deleteEditingTask() {
 }
 
 function cancelEditingEntry() {
-  const day = getDay();
+  if (!state.editingEntryId) return;
+  const dateKey = state.editingEntryDateKey || state.selectedDate;
+  const day = getDay(dateKey);
   const deleted = day.entries.find(entry => entry.id === state.editingEntryId);
+  if (!deleted) {
+    showToast("未找到要取消的日程");
+    return;
+  }
   day.entries = day.entries.filter(entry => entry.id !== state.editingEntryId);
   if (deleted?.taskId) {
     const linked = findTask(deleted.taskId)?.task;
@@ -2296,6 +2307,8 @@ function cancelEditingEntry() {
       linked.updatedAt = new Date().toISOString();
     }
   }
+  state.editingEntryId = null;
+  state.editingEntryDateKey = null;
   saveData();
   el.entryDialog.close();
   render();
@@ -2688,7 +2701,7 @@ function createCalendarGanttRow(meeting, buckets, scale = "day") {
     </div>`;
   const openMeeting = () => {
     const first = meeting.entries[0];
-    if (first) openEntryDialog(first.entry.start, first.entry);
+    if (first) openEntryDialog(first.entry.start, first.entry, first.dateKey);
   };
   labelRow.addEventListener("dblclick", openMeeting);
   chartRow.addEventListener("dblclick", openMeeting);
@@ -3153,7 +3166,7 @@ function bindDayOverviewList(container) {
     item.addEventListener("click", event => {
       event.stopPropagation();
       const foundEntry = item.dataset.entryId ? findEntry(item.dataset.entryId) : null;
-      if (foundEntry) openEntryDialog(foundEntry.entry.start, foundEntry.entry);
+      if (foundEntry) openEntryDialog(foundEntry.entry.start, foundEntry.entry, foundEntry.dateKey);
       else {
         const task = findTask(item.dataset.taskId)?.task;
         if (task) openTaskDialog(task);
@@ -3336,8 +3349,12 @@ function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
   return true;
 }
 
-function openEntryDialog(hour, entry = null) {
+function openEntryDialog(hour, entry = null, dateKey = null) {
+  const resolvedDateKey = entry
+    ? (dateKey || findEntry(entry.id)?.dateKey || state.selectedDate)
+    : (dateKey || state.selectedDate);
   state.editingEntryId = entry?.id || null;
+  state.editingEntryDateKey = resolvedDateKey;
   state.selectedColor = entry?.color || "sage";
   el.entryEyebrow.textContent = entry ? "EDIT ENTRY" : "NEW ENTRY";
   el.entryDialogTitle.textContent = entry ? "编辑日程" : "添加日程";
@@ -3361,31 +3378,46 @@ function saveEntry() {
     entryType: el.entryType.value === "task_work" ? "task_work" : "calendar"
   };
   if (!payload.title || payload.end <= payload.start) return showToast("请检查事项和时间");
-  const day = getDay();
+  const dateKey = state.editingEntryDateKey || state.selectedDate;
+  const day = getDay(dateKey);
   const existingEntry = state.editingEntryId ? day.entries.find(entry => entry.id === state.editingEntryId) : null;
+  if (state.editingEntryId && !existingEntry) {
+    showToast("未找到要更新的日程，请关闭后重试");
+    return;
+  }
   const previousTaskId = existingEntry?.taskId || "";
   if (payload.entryType !== "task_work") {
-    finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId: "" });
+    finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId: "", dateKey });
     return;
   }
   resolveEntryTaskLinkWithGuard(payload, existingEntry).then(taskId => {
     if (!taskId) return;
-    finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId });
+    finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dateKey });
   });
 }
 
-function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId }) {
+function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dateKey = state.editingEntryDateKey || state.selectedDate }) {
   payload.taskId = taskId;
-  const day = getDay();
-  if (state.editingEntryId) Object.assign(existingEntry, payload);
-  else day.entries.push({ id: crypto.randomUUID(), ...payload });
+  const day = getDay(dateKey);
+  if (state.editingEntryId) {
+    if (!existingEntry) {
+      showToast("未找到要更新的日程，请关闭后重试");
+      return;
+    }
+    Object.assign(existingEntry, payload);
+  } else {
+    day.entries.push({ id: crypto.randomUUID(), ...payload });
+  }
   [previousTaskId, payload.taskId].filter(Boolean).forEach(id => {
     refreshTaskStatusForId(id);
     if (payload.note) updateTaskRecords(id, task => { task.updatedAt = new Date().toISOString(); });
   });
   focusLinkedTaskFilter(payload.taskId);
+  const wasEditing = Boolean(state.editingEntryId);
+  state.editingEntryId = null;
+  state.editingEntryDateKey = null;
   saveData(); el.entryDialog.close(); render();
-  showToast(state.editingEntryId ? "日程已更新" : "日程已添加");
+  showToast(wasEditing ? "日程已更新" : "日程已添加");
 }
 
 function resolveEntryTaskLinkWithGuard(entryPayload, existingEntry = null) {
@@ -3579,7 +3611,7 @@ function bindCalendarEntryList(container, dateKey) {
     item.addEventListener("click", event => {
       event.stopPropagation();
       const entry = getDay(dateKey).entries.find(candidate => candidate.id === item.dataset.entryId);
-      if (entry) openEntryDialog(entry.start, entry);
+      if (entry) openEntryDialog(entry.start, entry, dateKey);
     });
   });
 }
