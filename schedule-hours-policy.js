@@ -51,6 +51,12 @@
     return Array.from({ length: hi - lo }, (_, index) => lo + index);
   }
 
+  /** End-boundary label after the last hour slot (e.g. slots 9–17 → label 18:00). */
+  function timelineEndLabelHour(hours = [], fallback = DEFAULT_WORK_END) {
+    if (!Array.isArray(hours) || !hours.length) return clampInt(fallback, 1, DAY_HOURS, DEFAULT_WORK_END);
+    return Math.min(DAY_HOURS, hours[hours.length - 1] + 1);
+  }
+
   function isWeekendDayIndex(dayIndex = 0) {
     return Number(dayIndex) >= 5;
   }
@@ -73,6 +79,7 @@
     normalizeWorkHours,
     hoursTouchedByEntries,
     visibleTimelineHours,
+    timelineEndLabelHour,
     isWeekendDayIndex,
     shouldShowWeekColumn,
     visibleWeekDayIndexes

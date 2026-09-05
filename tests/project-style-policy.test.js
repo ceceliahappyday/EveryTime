@@ -78,10 +78,25 @@ assert.match(
   /body\.in-desktop\s+\.topbar-main\s*\{/s,
   "desktop topbar should distribute controls through a main flex region"
 );
+assert.doesNotMatch(
+  html,
+  /id="quickAddButton"/,
+  "topbar must not duplicate left-panel quick-add with a 新建待办 button"
+);
+assert.doesNotMatch(
+  html,
+  /id="glassToggleButton"/,
+  "topbar must not duplicate settings glass toggle"
+);
 assert.match(
-  styles,
-  /body\.in-desktop\s+\.header-actions\s+\.primary-button\s*\{[^}]*min-width:/s,
-  "desktop quick-add button should remain fully visible"
+  html,
+  /id="quickTaskForm"/,
+  "left panel quick-add remains the single create-task entry"
+);
+assert.match(
+  html,
+  /id="settingGlass"/,
+  "glass mode stays available in settings"
 );
 
 assert.match(
@@ -121,18 +136,33 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop\.glass-mode \.app-shell\s*\{[^}]*backdrop-filter:\s*blur/s,
-  "glass mode shell should use blur for frosted glass"
-);
-assert.match(
-  styles,
-  /body\.in-desktop\.glass-mode \.app-shell\s*\{[^}]*rgba\(6,\s*18,\s*32,\s*\.40\)/s,
+  /body\.in-desktop\.glass-mode \.app-shell\s*\{[^}]*rgba\(6,\s*18,\s*32,\s*\.46\)/s,
   "glass mode shell must stay translucent so the desktop shows through"
 );
+assert.doesNotMatch(
+  styles,
+  /body\.in-desktop\.glass-mode \.app-shell\s*\{[^}]*backdrop-filter\s*:/s,
+  "glass shell must not use backdrop-filter; Electron paints it as opaque black"
+);
+assert.doesNotMatch(
+  styles,
+  /body\.in-desktop\.glass-mode \.app-shell\s*\{[^}]*rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*\.(?:7|8|9)/s,
+  "glass shell must not fall back to near-opaque black fills"
+);
 assert.match(
   styles,
-  /body\.in-desktop\.glass-mode \.topbar,\s*body\.in-desktop\.glass-mode \.week-strip\s*\{[^}]*rgba\(8,\s*22,\s*36,\s*\.46\)/s,
+  /body\.in-desktop\.glass-mode \.topbar,\s*body\.in-desktop\.glass-mode \.week-strip\s*\{[^}]*rgba\(8,\s*22,\s*36,\s*\.58\)/s,
   "glass chrome should use translucent frosted panels, not opaque black"
+);
+assert.match(
+  styles,
+  /#datePicker\s*\{[^}]*clip-path:\s*inset\(50%\)/s,
+  "native date input must stay fully clipped so it cannot show a broken chrome fragment in the topbar"
+);
+assert.match(
+  styles,
+  /body\.in-desktop \.date-controls\s*\{[^}]*overflow:\s*visible/s,
+  "desktop date controls must not clip the prev/next buttons in half"
 );
 assert.doesNotMatch(
   styles,
@@ -151,8 +181,38 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop\s+\.header-actions\s*\{[^}]*overflow:\s*visible/s,
-  "desktop header actions must not clip toolbar buttons mid-label"
+  /body\.in-desktop \.topbar\s*\{[^}]*grid-template-columns:\s*auto\s+auto\s+auto\s+minmax\(0,\s*1fr\)\s+max-content/s,
+  "desktop topbar must give brand/date/view/actions/window separate columns"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\s+\.header-actions\s*\{[^}]*overflow:\s*hidden/s,
+  "desktop header actions must clip spilled tools so they cannot paint over the view switcher"
+);
+assert.match(
+  styles,
+  /\.schedule-heading\s*\{[^}]*height:\s*auto/s,
+  "schedule heading must grow with title and stats instead of a fixed 54px crop"
+);
+assert.match(
+  styles,
+  /\.schedule-stats\s*\{[^}]*flex-shrink:\s*0/s,
+  "schedule stats must stay visible instead of being crushed off-screen"
+);
+assert.match(
+  app,
+  /settingsButton/,
+  "overflow sync must reserve the pinned settings button"
+);
+assert.match(
+  app,
+  /innerWidth < 1180|forceOverflow/,
+  "overflow sync should collapse tools earlier on common desktop widths"
+);
+assert.match(
+  app,
+  /rectClipped|getBoundingClientRect/,
+  "overflow sync must detect mid-label button clipping via bounding rects"
 );
 assert.match(
   app,

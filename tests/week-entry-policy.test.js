@@ -35,7 +35,7 @@ assert.ok(app.includes("item.timeText"));
 assert.ok(app.includes("WeekEntryPolicy.formatScheduleTimeRange"));
 assert.ok(app.includes("renderDayOverviewList(overviewItems, \"week\")"));
 assert.ok(app.includes('if (item.dataset.entryId) event.dataTransfer.setData("text/entry-id", item.dataset.entryId)'));
-assert.ok(app.includes("openEntryDialog(foundEntry.entry.start, foundEntry.entry)"));
+assert.ok(app.includes("openEntryDialog(foundEntry.entry.start, foundEntry.entry, foundEntry.dateKey)"));
 assert.ok(app.includes("taskItems.get(task.id)"));
 assert.ok(app.includes("scheduleOverviewItemsForDate"));
 assert.ok(app.includes("String(entry.title || task.title || \"\").trim()"));

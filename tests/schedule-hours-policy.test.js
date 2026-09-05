@@ -15,6 +15,11 @@ assert.deepStrictEqual(
   policy.visibleTimelineHours({ workStartHour: 9, workEndHour: 18, entries: [] }),
   [9, 10, 11, 12, 13, 14, 15, 16, 17]
 );
+assert.strictEqual(
+  policy.timelineEndLabelHour([9, 10, 11, 12, 13, 14, 15, 16, 17], 18),
+  18,
+  "workday end label must show the configured cutoff hour"
+);
 
 assert.deepStrictEqual(
   policy.visibleTimelineHours({

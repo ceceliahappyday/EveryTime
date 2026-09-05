@@ -32,6 +32,43 @@ assert.ok(app.includes("summaryTasks,"));
 
 assert.ok(styles.includes(".month-task-line"));
 assert.ok(styles.includes(".week-task-line"));
+assert.doesNotMatch(
+  styles,
+  /\.time-label\s*\{[^}]*transform:\s*translateY\(-/s,
+  "timeline hour labels must stay inside their row so start/end hours are not clipped"
+);
+assert.match(
+  styles,
+  /\.timeline\s*\{[^}]*padding-top:\s*\d+px/s,
+  "timeline needs top padding so the first hour label stays fully visible"
+);
+assert.ok(styles.includes(".time-row.time-row-end"), "day timeline must render a workday end boundary row");
+assert.ok(app.includes("timelineEndLabelHour"), "day timeline must label the workday cutoff hour");
+assert.ok(app.includes("scheduleOverviewItemMatchesFilter"), "day/week/month must follow todo status tabs");
+assert.ok(
+  app.includes('filterProjectsForStatus(allProjects, "all")'),
+  "gantt must ignore left-panel status tabs and show all status groups"
+);
+assert.match(
+  styles,
+  /body\.project-mode \.task-panel\s*\{[^}]*display:\s*none/s,
+  "project gantt should hide the left todo list"
+);
+assert.match(
+  styles,
+  /\.task-check\s*\{[^}]*place-items:\s*center/s,
+  "task checkbox checkmark must be centered"
+);
+assert.match(
+  styles,
+  /\.task-close-confirm-actions\s*\{[^}]*display:\s*flex/s,
+  "close-task dialog actions should use balanced button widths"
+);
+assert.match(
+  styles,
+  /\.modal\s*\{[^}]*padding:\s*24px/s,
+  "formless dialogs like close-task need modal padding"
+);
 assert.match(
   styles,
   /\.month-task-line\s*\{[^}]*grid-template-columns:\s*2em minmax\(0,\s*1fr\)/s,

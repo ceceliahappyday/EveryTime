@@ -46,18 +46,18 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop \.topbar\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) max-content/s,
-  "window controls must occupy a dedicated max-content column"
+  /body\.in-desktop \.topbar\s*\{[^}]*grid-template-columns:\s*auto\s+auto\s+auto\s+minmax\(0,\s*1fr\)\s+max-content/s,
+  "window controls must occupy a dedicated max-content column after brand/date/view/actions"
 );
 assert.match(
   styles,
   /body\.in-desktop \.topbar-main\s*\{[^}]*justify-content:\s*flex-start/s,
-  "topbar should keep view switcher visible before trailing actions"
+  "topbar date region should keep date controls left-aligned"
 );
 assert.match(
   styles,
-  /body\.in-desktop \.header-view-switcher\s*\{[^}]*flex:\s*0\s+0\s+auto/s,
-  "view switcher must not shrink away in adaptive layouts"
+  /body\.in-desktop \.header-view-switcher\s*\{[^}]*grid-column:\s*3/s,
+  "view switcher must sit in its own topbar column so tools cannot overlap it"
 );
 assert.match(
   app,

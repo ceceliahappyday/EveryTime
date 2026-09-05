@@ -6,6 +6,7 @@ const { autoUpdater } = require("electron-updater");
 const ExcelJS = require("exceljs");
 const StartupPolicy = require("./startup-policy.js");
 const AiProviderPolicy = require("./ai-provider-policy.js");
+const WindowBoundsPolicy = require("./window-bounds-policy.js");
 
 let mainWindow;
 let locked = false;
@@ -36,10 +37,8 @@ if (!singleInstanceLock) {
   app.quit();
 } else if (!isDevRuntime) {
   app.on("second-instance", (_event, _commandLine, _workingDirectory) => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+    // User clicked the app again — they likely cannot see the window (other monitor / off-screen).
+    showMainWindow({ relocateToCursor: true });
   });
 }
 
@@ -62,16 +61,32 @@ function notifyMaximizeChanged(maximized = isWindowMaximized()) {
 }
 
 function createWindow() {
+  const displays = screen.getAllDisplays().map((display) => ({
+    ...display,
+    primary: display.id === screen.getPrimaryDisplay().id
+  }));
   const savedBounds = loadWindowState();
+  const safeBounds = WindowBoundsPolicy.sanitizeWindowBounds(
+    savedBounds,
+    displays,
+    {
+      minWidth: 900,
+      minHeight: 520,
+      defaultWidth: 1380,
+      defaultHeight: 900,
+      preferredDisplay: screen.getPrimaryDisplay()
+    }
+  );
   mainWindow = new BrowserWindow({
-    width: savedBounds?.width || 1380,
-    height: savedBounds?.height || 900,
-    x: savedBounds?.x,
-    y: savedBounds?.y,
+    width: safeBounds.width,
+    height: safeBounds.height,
+    x: safeBounds.x,
+    y: safeBounds.y,
     minWidth: 900,
     minHeight: 520,
     icon: appIconPath,
     title: isDevRuntime ? `今日日程 · 开发预览 v${app.getVersion()}` : "今日日程",
+    show: false,
     transparent: true,
     frame: false,
     skipTaskbar: false,
@@ -87,6 +102,11 @@ function createWindow() {
     }
   });
   mainWindow.loadFile("index.html");
+  mainWindow.once("ready-to-show", () => {
+    // Open under the cursor so a launch from the primary desktop is never stranded
+    // on a secondary monitor the user is not looking at.
+    showMainWindow({ relocateToCursor: true });
+  });
   mainWindow.on("move", saveWindowState);
   mainWindow.on("moved", saveWindowState);
   mainWindow.on("resize", () => {
@@ -103,6 +123,33 @@ function createWindow() {
     notifyMaximizeChanged(false);
   });
   mainWindow.on("close", saveWindowState);
+}
+
+function ensureWindowBoundsOnScreen() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const displays = screen.getAllDisplays();
+  const bounds = mainWindow.getBounds();
+  if (WindowBoundsPolicy.isBoundsOnAnyDisplay(bounds, displays)) return;
+  mainWindow.setBounds(
+    WindowBoundsPolicy.relocateBoundsToDisplay(bounds, screen.getPrimaryDisplay())
+  );
+}
+
+function showMainWindow({ relocateToCursor = false } = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (relocateToCursor) {
+    const point = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(point);
+    mainWindow.setBounds(WindowBoundsPolicy.relocateBoundsToDisplay(mainWindow.getBounds(), display));
+  } else {
+    ensureWindowBoundsOnScreen();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+  if (typeof mainWindow.moveTop === "function") {
+    try { mainWindow.moveTop(); } catch {}
+  }
 }
 
 if (singleInstanceLock) app.whenReady().then(() => {
@@ -272,6 +319,8 @@ if (singleInstanceLock) app.whenReady().then(() => {
   configureAutoUpdater();
   mainWindow.webContents.once("did-finish-load", () => setTimeout(() => checkForUpdates(false), 1800));
   globalShortcut.register("CommandOrControl+Shift+Space", () => setLocked(!locked));
+  screen.on("display-removed", () => ensureWindowBoundsOnScreen());
+  screen.on("display-metrics-changed", () => ensureWindowBoundsOnScreen());
   app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());
 });
 
@@ -279,8 +328,7 @@ function setLocked(next) {
   locked = next;
   persistPartialSettings({ locked });
   mainWindow.webContents.send("window:lock-changed", locked);
-  mainWindow.show();
-  mainWindow.focus();
+  showMainWindow();
   return locked;
 }
 
@@ -689,7 +737,8 @@ function loadWindowState() {
   const file = windowStatePath();
   if (!fs.existsSync(file)) return null;
   try {
-    const bounds = JSON.parse(fs.readFileSync(file, "utf8"));
+    const raw = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
+    const bounds = JSON.parse(raw);
     if (!bounds || bounds.width < 420 || bounds.height < 520) return null;
     return bounds;
   } catch {
@@ -721,17 +770,20 @@ function createTray() {
   tray = new Tray(nativeImage.createFromPath(trayIconPath).resize({ width: 20, height: 20, quality: "best" }));
   tray.setToolTip("今日日程");
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "显示并解锁", click: () => { if (locked) setLocked(false); mainWindow.show(); mainWindow.focus(); } },
+    { label: "显示并解锁", click: () => { if (locked) setLocked(false); showMainWindow({ relocateToCursor: true }); } },
     { label: "切换玻璃模式", click: () => setGlass(!glass) },
     { label: "切换窗口置顶", click: () => mainWindow.setAlwaysOnTop(!mainWindow.isAlwaysOnTop()) },
     { label: "检查更新", click: () => checkForUpdates(true) },
     { type: "separator" },
     { label: "退出今日日程", click: () => app.quit() }
   ]));
+  tray.on("click", () => {
+    if (locked) setLocked(false);
+    showMainWindow({ relocateToCursor: true });
+  });
   tray.on("double-click", () => {
     if (locked) setLocked(false);
-    mainWindow.show();
-    mainWindow.focus();
+    showMainWindow({ relocateToCursor: true });
   });
 }
 
@@ -867,7 +919,8 @@ function priorityLabel(priority) {
     kpi: "KPI",
     follow_up: "跟踪关注",
     important_urgent: "重要紧急",
-    paused: "中止暂停"
+    paused: "中止暂停",
+    monthly_fixed: "每月例行"
   }[priority] || "一般日常";
 }
 

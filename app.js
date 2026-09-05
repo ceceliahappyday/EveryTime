@@ -64,6 +64,7 @@ const state = {
   editingParentTaskId: null,
   editingEntryId: null,
   editingEntryDateKey: null,
+  taskSubtaskDrafts: [],
   selectedColor: "sage",
   workStartHour: ScheduleHoursPolicy?.DEFAULT_WORK_START ?? 9,
   workEndHour: ScheduleHoursPolicy?.DEFAULT_WORK_END ?? 18,
@@ -89,14 +90,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     "plannedHours", "progressLabel", "progressBar", "scheduleTitle", "loggedHours", "freeHours",
     "timeline", "timelineWrap", "projectGanttChrome", "quickAddButton", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "viewSwitcher",
     "taskTabs", "allCount", "taskViewTitle", "taskDialog", "taskEditForm", "taskDialogEyebrow", "taskDialogTitle",
-    "taskDetailSummary", "followUpDraftHint",
-    "taskTitleInput", "taskDueDate", "taskDueTime", "taskOwner", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
+    "taskDetailSummary", "followUpDraftHint", "taskDialogScroll", "taskDialogCloseButton", "taskDialogCancelButton",
+    "taskTitleInput", "taskDueDateTime", "taskOwner", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
     "taskProgress", "taskProgressValue", "taskStatus", "taskMonthlyRecurring", "taskRecurringUntil",
     "taskFollowUpOption", "taskFollowUpTracking",
     "recurringOptions", "taskActualStart", "taskActualEnd",
     "taskBusinessBackground", "taskProblemReason", "taskDeliveryNote", "businessBackgroundLabel",
     "problemReasonLabel", "taskDescription", "taskTitleField", "taskDueDateField", "taskDeliveryField",
-    "deleteTaskButton", "mergeTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle", "entryType",
+    "taskSubtaskList", "taskSubtaskDraftInput", "taskSubtasksSection",
+    "deleteTaskButton", "closeTaskButton", "mergeTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle", "entryType",
     "entryLinkConfirmDialog", "entryLinkConfirmTitle", "entryLinkConfirmMessage", "entryLinkConfirmOptions", "entryLinkConfirmCancel", "entryLinkConfirmCreate",
     "taskCloseConfirmDialog", "taskCloseConfirmTitle", "taskCloseConfirmMessage", "taskCloseOnlyButton", "taskCloseFollowUpButton",
     "taskMergeDialog", "taskMergeForm", "taskMergeMessage", "taskMergeTarget",
@@ -107,21 +109,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "taskPanelToggle",
     "glassToggleButton",
-    "headerToolsSlot", "headerTools", "headerOverflow", "headerMoreButton", "headerMoreMenu", "headerActions",
+    "topbarMain", "headerToolsSlot", "headerTools", "headerOverflow", "headerMoreButton", "headerMoreMenu", "headerActions",
     "settingsButton", "settingsDialog", "settingsForm", "settingGlass", "settingPinned", "settingLocked",
     "settingCompact", "settingStartAtLogin", "settingWorkStartHour", "settingWorkEndHour",
     "settingAiEnabled", "settingAiApiKey", "settingAiProvider", "settingAiModel", "aiDetectModelsButton", "aiKeyStatus",
     "settingsAppVersion", "checkUpdateButton", "settingsDataPath", "settingsExportPath"
   ].forEach(id => el[id] = document.getElementById(id));
-
-  if (!el.closeTaskButton) {
-    el.closeTaskButton = document.createElement("button");
-    el.closeTaskButton.type = "button";
-    el.closeTaskButton.className = "soft-button hidden";
-    el.closeTaskButton.id = "closeTaskButton";
-    el.closeTaskButton.textContent = "关闭任务";
-    el.deleteTaskButton.parentElement.insertBefore(el.closeTaskButton, el.deleteTaskButton.nextSibling);
-  }
 
   await initPersistentStorage();
   migrateData();
@@ -178,11 +171,13 @@ function migrateData() {
     day.tasks.forEach(task => {
       task.parentId ||= task.parentTaskId || task.parentTask || task.parent || "";
       task.dueDate ??= dateKey;
-      task.dueTime ??= "18:00";
+      task.dueTime ??= `${String(ScheduleHoursPolicy?.DEFAULT_WORK_END ?? 18).padStart(2, "0")}:00`;
       task.owner ||= "我";
       task.parentId ||= "";
       task.description ||= "";
       task.priority = migratePriority(task.priority);
+      // monthly_fixed is UI-only; never persist it. Repair any earlier mistaken writes.
+      if (task.priority === "monthly_fixed") task.priority = "general_daily";
       task.progress = Number(task.progress || (task.status === "done" ? 100 : 0));
       if (!["done", "closed"].includes(task.status)) task.status = "planned";
       task.startedAt ||= "";
@@ -250,9 +245,7 @@ function updateTaskRecords(id, updater) {
 }
 
 function bindEvents() {
-  document.querySelectorAll("[data-close-dialog]").forEach(button => {
-    button.addEventListener("click", () => document.getElementById(button.dataset.closeDialog).close("cancel"));
-  });
+  bindDialogDismissControls();
   el.exportButton.addEventListener("click", () => el.exportDialog.showModal());
   el.progressReviewButton.addEventListener("click", openProgressReview);
   el.progressReviewForm.addEventListener("submit", event => {
@@ -264,7 +257,7 @@ function bindEvents() {
     el.exportDialog.close();
     exportAllData(el.exportFormat.value);
   });
-  el.quickAddButton.addEventListener("click", () => openTaskDialog());
+  el.quickAddButton?.addEventListener("click", () => openTaskDialog());
   el.quickTaskForm.addEventListener("submit", event => {
     event.preventDefault();
     const title = el.quickTaskInput.value.trim();
@@ -296,7 +289,8 @@ function bindEvents() {
     TodoListPolicy.saveFilter(state.filter);
     el.taskTabs.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
     renderTasks();
-    if (state.taskView === "project") renderSchedule();
+    // Day/week/month calendars follow the todo status tabs; gantt already groups by status and stays unfiltered.
+    if (state.taskView !== "project") renderSchedule();
   });
 
   el.taskListSearch?.addEventListener("input", () => {
@@ -321,6 +315,7 @@ function bindEvents() {
       el.taskTabs.querySelectorAll("button").forEach(item => item.classList.toggle("active", item.dataset.filter === "all"));
     }
     renderTasks();
+    if (state.taskView !== "project") renderSchedule();
   });
 
   el.mergeTaskButton?.addEventListener("click", () => openTaskMergeDialog());
@@ -378,7 +373,22 @@ function bindEvents() {
 
   el.taskEditForm.addEventListener("submit", event => {
     event.preventDefault();
+    // Only the primary save button should create/update tasks.
+    if (event.submitter?.hasAttribute?.("data-close-dialog")) {
+      closeDialogById(event.submitter.getAttribute("data-close-dialog"));
+      return;
+    }
     saveTask();
+  });
+  el.taskDialogCloseButton?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeDialogById("taskDialog");
+  });
+  el.taskDialogCancelButton?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeDialogById("taskDialog");
   });
   el.deleteTaskButton.addEventListener("click", deleteEditingTask);
   el.closeTaskButton.addEventListener("click", closeEditingTask);
@@ -389,15 +399,29 @@ function bindEvents() {
   el.taskStatus.addEventListener("change", updateProgressAvailability);
   el.taskParent.addEventListener("change", updateParentRequirements);
   bindTaskParentCombobox();
-  el.taskMonthlyRecurring.addEventListener("change", updateRecurringOptions);
-  [el.taskDueDate, el.taskDueTime, el.taskActualStart, el.taskActualEnd].forEach(enableNativePicker);
-  el.taskDueDate.addEventListener("change", () => {
-    if (el.taskMonthlyRecurring.checked && el.taskDueDate.value) {
+  el.taskPriority.addEventListener("change", () => {
+    syncMonthlyRecurringFromPriority();
+    updateRecurringOptions();
+  });
+  el.taskMonthlyRecurring?.addEventListener("change", updateRecurringOptions);
+  [el.taskDueDateTime, el.taskActualStart, el.taskActualEnd].forEach(enableNativePicker);
+  bindWorkHourDateTimeDefault(el.taskDueDateTime, "end");
+  bindWorkHourDateTimeDefault(el.taskActualStart, "start");
+  bindWorkHourDateTimeDefault(el.taskActualEnd, "end");
+  el.taskDueDateTime?.addEventListener("change", () => {
+    ensureDueDateTimeUsesWorkEnd();
+    const dueDate = getTaskDueParts().dueDate;
+    if (isMonthlyPrioritySelected() && dueDate) {
       const currentUntil = el.taskRecurringUntil.value;
-      if (!currentUntil || currentUntil < el.taskDueDate.value.slice(0, 7)) {
-        el.taskRecurringUntil.value = defaultRecurringUntil(el.taskDueDate.value);
+      if (!currentUntil || currentUntil < dueDate.slice(0, 7)) {
+        el.taskRecurringUntil.value = defaultRecurringUntil(dueDate);
       }
     }
+  });
+  el.taskSubtaskDraftInput?.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commitTaskSubtaskDraft();
   });
   el.taskActualEnd.addEventListener("change", () => {
     updateProgressAvailability();
@@ -503,12 +527,39 @@ function syncHeaderOverflow() {
 
   const forceOverflow = document.body.classList.contains("shell-narrow")
     || document.body.classList.contains("shell-compact-topbar")
-    || document.body.classList.contains("shell-focus");
+    || document.body.classList.contains("shell-focus")
+    || window.innerWidth < 1180;
 
   // Measure with tools restored to the inline slot so we can detect real clipping.
   restoreToolsToSlot();
   void actions.offsetWidth;
-  const clipped = forceOverflow || actions.scrollWidth > actions.clientWidth + 2;
+
+  const gap = Number.parseFloat(getComputedStyle(actions).gap) || 6;
+  const visibleWidth = node => {
+    if (!node) return 0;
+    const style = getComputedStyle(node);
+    if (style.display === "none" || style.visibility === "hidden") return 0;
+    return node.offsetWidth || 0;
+  };
+
+  const panelToggle = el["task" + "Panel" + "Toggle"];
+  const parts = [
+    visibleWidth(panelToggle),
+    visibleWidth(el.headerTools),
+    visibleWidth(el.settingsButton)
+  ].filter(width => width > 0);
+  const inlineNeed = parts.reduce((sum, width, index) => sum + width + (index ? gap : 0), 0);
+  const widthClipped = inlineNeed > actions.clientWidth + 2;
+
+  // Flex + overflow:hidden often keeps scrollWidth === clientWidth even while buttons are sliced.
+  const actionRect = actions.getBoundingClientRect();
+  const rectClipped = [...el.headerTools.querySelectorAll(":scope > button")].some(button => {
+    const rect = button.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return false;
+    return rect.left < actionRect.left - 0.5 || rect.right > actionRect.right + 0.5;
+  });
+
+  const clipped = forceOverflow || widthClipped || rectClipped;
 
   if (clipped) {
     if (el.headerTools.parentElement !== el.headerMoreMenu) {
@@ -2022,29 +2073,31 @@ function restoreTaskStatusOptions(task) {
 
 function openTaskDialog(task = null, options = {}) {
   state.editingTaskId = task?.id || null;
+  state.taskSubtaskDrafts = [];
   const followUpDraft = options.mode === "followUp";
   el.taskEditForm?.classList.toggle("follow-up-draft", followUpDraft);
   el.followUpDraftHint?.classList.toggle("hidden", !followUpDraft);
   el.taskTitleField?.classList.toggle("follow-up-focus", followUpDraft);
   el.taskDueDateField?.classList.toggle("follow-up-focus", followUpDraft);
-  el.taskDeliveryField?.classList.toggle("follow-up-focus", followUpDraft);
+  el.businessBackgroundLabel?.classList.toggle("follow-up-focus", followUpDraft);
   el.taskDialogEyebrow.textContent = followUpDraft ? "FOLLOW-UP" : (task ? "EDIT TASK" : "NEW TASK");
   el.taskDialogTitle.textContent = followUpDraft ? "完善跟踪任务" : (task ? "编辑待办" : "新建待办");
   el.taskTitleInput.value = task?.title || "";
-  el.taskDueDate.value = task?.dueDate || "";
-  el.taskDueTime.value = task?.dueTime || "";
+  setTaskDueDateTime(task?.dueDate || "", task?.dueTime || "");
   el.taskOwner.value = task?.owner || "我";
-  el.taskPriority.value = task?.priority || "general_daily";
+  const isMonthly = task?.recurrence?.frequency === "monthly" || task?.priority === "monthly_fixed";
+  el.taskPriority.value = isMonthly ? "monthly_fixed" : (task?.priority || "general_daily");
+  syncMonthlyRecurringFromPriority();
   el.taskProgress.value = task?.progress || 0;
   el.taskProgressValue.textContent = `${task?.progress || 0}%`;
   restoreTaskStatusOptions(task);
   el.taskActualStart.value = toLocalDateTimeInput(task?.startOverrideAt || task?.startedAt);
   el.taskActualEnd.value = toLocalDateTimeInput(task?.completedAt);
-  el.taskBusinessBackground.value = task?.businessBackground || "";
+  // UI merges background / reason / description; originals stay in data until user saves.
+  el.taskBusinessBackground.value = mergeTaskContextText(task);
   el.taskProblemReason.value = task?.problemReason || "";
   el.taskDeliveryNote.value = task?.deliveryNote || "";
   el.taskDescription.value = task?.description || "";
-  el.taskMonthlyRecurring.checked = task?.recurrence?.frequency === "monthly";
   el.taskRecurringUntil.value = task?.recurrence?.until || defaultRecurringUntil(task?.dueDate || state.selectedDate);
   fillParentOptions(task);
   const parentId = task?.parentId || "";
@@ -2057,27 +2110,25 @@ function openTaskDialog(task = null, options = {}) {
   el.mergeTaskButton?.classList.toggle("hidden", !task);
   el.closeTaskButton.classList.toggle("hidden", !task || followUpDraft);
   el.closeTaskButton.textContent = task && TaskStatusPolicy.isEndedStatus(task.status) ? "恢复任务" : "关闭任务";
-  const hideFollowUpOption = !task
-    || followUpDraft
-    || TaskStatusPolicy.isEndedStatus(task.status)
-    || TaskStatusPolicy.isTrackingStatus(task);
-  el.taskFollowUpOption?.classList.toggle("hidden", hideFollowUpOption);
+  // Follow-up choice lives on the close-confirm dialog (关闭并跟踪), not a buried checkbox.
+  el.taskFollowUpOption?.classList.add("hidden");
   if (el.taskFollowUpTracking) el.taskFollowUpTracking.checked = false;
   if (el.businessBackgroundLabel?.querySelector("span")) {
     el.businessBackgroundLabel.querySelector("span").textContent = followUpDraft
-      ? "业务背景（来自已关闭任务）"
-      : "业务背景（可选）";
+      ? "背景与说明（来自已关闭任务）"
+      : "背景与说明";
   }
   const dueLabel = el.taskDueDateField?.querySelector("span");
-  if (dueLabel) dueLabel.textContent = followUpDraft ? "目标完成日期" : "目标日期（可选）";
-  const deliveryLabel = el.taskDeliveryField?.querySelector("span");
-  if (deliveryLabel) deliveryLabel.textContent = followUpDraft ? "详细计划 / 交付件（请填写）" : "详细计划 / 交付件（可选）";
+  if (dueLabel) dueLabel.textContent = followUpDraft ? "目标完成日期时间" : "目标日期时间";
+  el.taskDeliveryField?.classList.remove("follow-up-focus");
   const titleLabel = el.taskTitleField?.querySelector("span");
   if (titleLabel) titleLabel.textContent = followUpDraft ? "待办名称（可修改）" : "待办名称";
   updateProgressAvailability();
   updateParentRequirements();
   updateRecurringOptions();
+  renderTaskSubtasks(task);
   renderTaskDetailSummary(task);
+  el.taskDialogScroll?.scrollTo?.(0, 0);
   el.taskDialog.showModal();
   setTimeout(() => {
     if (followUpDraft) {
@@ -2092,7 +2143,7 @@ function openTaskDialog(task = null, options = {}) {
 function openTaskDialogForDate(dateKey) {
   state.selectedDate = dateKey;
   openTaskDialog();
-  el.taskDueDate.value = dateKey;
+  setTaskDueDateTime(dateKey, defaultWorkEndTime());
   el.taskRecurringUntil.value = defaultRecurringUntil(dateKey);
   updateRecurringOptions();
   renderWeek();
@@ -2274,27 +2325,33 @@ function chooseTaskParentOption(value) {
 
 function saveTask() {
   el.taskEditForm.querySelectorAll(".field-error").forEach(field => field.classList.remove("field-error"));
+  syncMonthlyRecurringFromPriority();
+  const editing = state.editingTaskId ? findTask(state.editingTaskId) : null;
+  const monthlySelected = isMonthlyPrioritySelected();
+  const dueParts = getTaskDueParts();
   const payload = {
     title: el.taskTitleInput.value.trim(),
-    dueDate: el.taskDueDate.value,
-    dueTime: el.taskDueTime.value,
+    dueDate: dueParts.dueDate,
+    dueTime: dueParts.dueTime,
     owner: el.taskOwner.value.trim() || "未指定",
     parentId: el.taskParent.value,
-    priority: el.taskPriority.value,
+    priority: resolvePersistedPriority(monthlySelected, editing?.task),
     progress: Number(el.taskProgress.value),
     status: el.taskStatus.value,
     startedAt: fromLocalDateTimeInput(el.taskActualStart.value),
     startOverrideAt: fromLocalDateTimeInput(el.taskActualStart.value),
     completedAt: fromLocalDateTimeInput(el.taskActualEnd.value),
-    businessBackground: el.taskBusinessBackground.value.trim(),
-    problemReason: el.taskProblemReason.value.trim(),
-    deliveryNote: el.taskDeliveryNote.value.trim(),
-    recurrence: el.taskMonthlyRecurring.checked ? {
+    businessBackground: el.taskBusinessBackground.value.trim().slice(0, 800),
+    // Consolidated into businessBackground on save so reopen won't duplicate.
+    problemReason: "",
+    // Keep historical deliveryNote; deliverables are edited as child tasks in UI.
+    deliveryNote: editing?.task?.deliveryNote || el.taskDeliveryNote?.value.trim() || "",
+    recurrence: monthlySelected ? {
       frequency: "monthly",
-      dayOfMonth: el.taskDueDate.value ? Number(el.taskDueDate.value.slice(-2)) : null,
+      dayOfMonth: dueParts.dueDate ? Number(dueParts.dueDate.slice(-2)) : null,
       until: el.taskRecurringUntil.value
     } : null,
-    description: el.taskDescription.value.trim()
+    description: ""
   };
   if (!payload.title) return showTaskFieldError(el.taskTitleInput, "请填写待办名称");
   if (payload.parentId && state.editingTaskId) {
@@ -2302,9 +2359,9 @@ function saveTask() {
     const invalidParentIds = new Set([state.editingTaskId, ...TaskOptionPolicy.descendantTaskIds({ tasks, parentId: state.editingTaskId })]);
     if (invalidParentIds.has(payload.parentId)) return showTaskFieldError(el.taskParent, "不能选择自己或下级任务作为上级");
   }
-  if (payload.dueTime && !payload.dueDate) return showTaskFieldError(el.taskDueDate, "填写目标时间时，请同时选择目标日期");
-  if (payload.dueDate && !payload.dueTime) payload.dueTime = "18:00";
-  if (payload.recurrence && !payload.dueDate) return showTaskFieldError(el.taskDueDate, "月度固定任务需要选择首次目标日期");
+  if (payload.dueTime && !payload.dueDate) return showTaskFieldError(el.taskDueDateTime, "填写目标时间时，请同时选择目标日期");
+  if (payload.dueDate && !payload.dueTime) payload.dueTime = defaultWorkEndTime();
+  if (payload.recurrence && !payload.dueDate) return showTaskFieldError(el.taskDueDateTime, "每月例行任务需要选择首次目标日期");
   if (payload.recurrence && !payload.recurrence.until) {
     return showTaskFieldError(el.taskRecurringUntil, "请选择月度规则有效至哪个月");
   }
@@ -2315,8 +2372,8 @@ function saveTask() {
     payload.status = "done";
     payload.progress = 100;
   } else if (!TaskStatusPolicy.isEndedStatus(payload.status)) {
-    const editing = state.editingTaskId ? findTask(state.editingTaskId)?.task : null;
-    if (TaskStatusPolicy.isTrackingStatus(editing) && !payload.completedAt) {
+    const editingTask = editing?.task || null;
+    if (TaskStatusPolicy.isTrackingStatus(editingTask) && !payload.completedAt) {
       payload.status = TaskStatusPolicy.TRACKING_STATUS;
     } else {
       payload.status = getAutomaticTaskStatusForPayload(state.editingTaskId, payload);
@@ -2332,6 +2389,7 @@ function saveTask() {
   if (payload.status === "done") payload.progress = 100;
   if (payload.status === "planned" || payload.status === TaskStatusPolicy.TRACKING_STATUS) payload.progress = 0;
 
+  let parentIdForChildren = state.editingTaskId;
   if (state.editingTaskId) {
     const found = findTask(state.editingTaskId);
     if (!found) return;
@@ -2343,10 +2401,14 @@ function saveTask() {
       state.data[found.dateKey].tasks = state.data[found.dateKey].tasks.filter(item => item.id !== found.task.id);
       getDay(targetTaskDate).tasks.push(found.task);
     }
+    parentIdForChildren = found.task.id;
   } else {
     const newTasks = buildRecurringTasks(payload);
     newTasks.forEach(task => getDay(task.dueDate || state.selectedDate).tasks.push(task));
+    parentIdForChildren = newTasks[0]?.id || "";
   }
+  createDraftChildTasks(parentIdForChildren, payload.dueDate || state.selectedDate);
+  state.taskSubtaskDrafts = [];
   saveData();
   el.taskDialog.close();
   render();
@@ -2538,7 +2600,8 @@ function appendGanttGroupHeading(labelContainer, chartContainer, group, onToggle
 
 function renderProjectSchedule() {
   const allProjects = getProjectSummaries();
-  const projects = ProjectCollapsePolicy.filterProjectsForStatus(allProjects, state.filter);
+  // Gantt shows every status group by default; left-panel status tabs do not apply here.
+  const projects = ProjectCollapsePolicy.filterProjectsForStatus(allProjects, "all");
   const meetings = getCalendarMeetingSummaries();
   el.timeline.innerHTML = "";
   el.timeline.className = "project-gantt";
@@ -2879,12 +2942,47 @@ function createCalendarGanttRow(meeting, buckets, scale = "day") {
   return { labelRow, chartRow };
 }
 
+function bindDialogDismissControls() {
+  const dismiss = event => {
+    const button = event.target?.closest?.("[data-close-dialog]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeDialogById(button.getAttribute("data-close-dialog"));
+  };
+  document.addEventListener("click", dismiss, true);
+}
+
+function closeDialogById(id) {
+  const dialog = id ? document.getElementById(id) : null;
+  if (!dialog) return false;
+  const wasEditingTask = id === "taskDialog";
+  try {
+    if (typeof dialog.close === "function") dialog.close("cancel");
+  } catch (_) {
+    /* ignore */
+  }
+  dialog.removeAttribute("open");
+  if (dialog.open) {
+    try { dialog.open = false; } catch (_) { /* ignore */ }
+  }
+  if (wasEditingTask) {
+    state.editingTaskId = null;
+    state.taskSubtaskDrafts = [];
+  }
+  return true;
+}
+
 function closeEditingTask() {
   const task = state.editingTaskId ? findTask(state.editingTaskId)?.task : null;
   if (!task) return;
-  const createFollowUp = Boolean(el.taskFollowUpTracking?.checked);
-  el.taskDialog.close();
-  toggleTaskCompletion(task, { createFollowUp });
+  closeDialogById("taskDialog");
+  if (TaskStatusPolicy.isEndedStatus(task.status)) {
+    toggleTaskCompletion(task);
+    return;
+  }
+  // Reuse the confirm dialog so「关闭并跟踪」stays available.
+  requestTaskCompletion(task);
 }
 
 function requestTaskCompletion(task) {
@@ -3047,9 +3145,19 @@ function getTaskDepth(task, rootId = "") {
   return depth;
 }
 
+function dayTimelineEntryMatchesFilter(entry, filter = state.filter) {
+  if (!filter || filter === "all") return true;
+  if (entry.entryType === "calendar" || !entry.taskId) return true;
+  const task = findTask(entry.taskId)?.task;
+  if (!task) return false;
+  return matchesUnifiedTaskFilter(task, filter);
+}
+
 function renderDayTimeline() {
   const day = getDay();
-  const hours = getVisibleTimelineHours(day.entries || []);
+  const allEntries = day.entries || [];
+  const hours = getVisibleTimelineHours(allEntries);
+  const visibleEntries = allEntries.filter(entry => dayTimelineEntryMatchesFilter(entry));
   el.timeline.innerHTML = "";
   el.timeline.style.minHeight = `calc(var(--hour-height) * ${hours.length})`;
   hours.forEach(hour => {
@@ -3067,7 +3175,12 @@ function renderDayTimeline() {
     });
     el.timeline.appendChild(row);
   });
-  const layoutItems = layoutOverlappingEntries(day.entries);
+  const endHour = ScheduleHoursPolicy.timelineEndLabelHour(hours, state.workEndHour);
+  const endRow = document.createElement("div");
+  endRow.className = "time-row time-row-end";
+  endRow.innerHTML = `<div class="time-label">${String(endHour).padStart(2, "0")}:00</div><div class="time-slot time-slot-end" aria-hidden="true"></div>`;
+  el.timeline.appendChild(endRow);
+  const layoutItems = layoutOverlappingEntries(visibleEntries);
   layoutItems.forEach(({ entry, column, columns }) => {
     const item = document.createElement("article");
     const top = (entry.start - hours[0]) * getHourHeight() + 3;
@@ -3103,8 +3216,8 @@ function renderDayTimeline() {
       el.timeline.appendChild(line);
     }
   }
-  const logged = day.entries.reduce((sum, entry) => sum + getEntryInvestedHours(state.selectedDate, entry), 0);
-  const scheduled = day.entries.reduce((sum, entry) => sum + entry.end - entry.start, 0);
+  const logged = allEntries.reduce((sum, entry) => sum + getEntryInvestedHours(state.selectedDate, entry), 0);
+  const scheduled = allEntries.reduce((sum, entry) => sum + entry.end - entry.start, 0);
   el.loggedHours.textContent = `${trimNumber(logged)}h`;
   el.freeHours.textContent = `${trimNumber(Math.max(0, hours.length - scheduled))}h`;
 }
@@ -3331,7 +3444,14 @@ function scheduleOverviewItemsForDate(dateKey) {
   items.forEach(item => {
     item.timeText = WeekEntryPolicy.formatScheduleTimeRange(item, formatTime);
   });
-  return items;
+  return items.filter(item => scheduleOverviewItemMatchesFilter(item));
+}
+
+function scheduleOverviewItemMatchesFilter(item, filter = state.filter) {
+  if (!filter || filter === "all") return true;
+  if (item.type === "meeting") return true;
+  if (!item.task) return false;
+  return matchesUnifiedTaskFilter(item.task, filter);
 }
 
 function scheduleTimeDecimal(value, fallback = 99) {
@@ -4248,7 +4368,8 @@ function priorityLabel(priority) {
     kpi: "KPI",
     follow_up: "跟踪关注",
     important_urgent: "重要紧急",
-    paused: "中止暂停"
+    paused: "中止暂停",
+    monthly_fixed: "每月例行"
   }[priority] || "一般日常";
 }
 
@@ -4258,7 +4379,8 @@ function priorityShortLabel(priority) {
     kpi: "KPI",
     follow_up: "跟踪",
     important_urgent: "紧急",
-    paused: "暂停"
+    paused: "暂停",
+    monthly_fixed: "例行"
   }[priority] || "日常";
 }
 
@@ -4268,13 +4390,180 @@ function migratePriority(priority) {
     medium: "follow_up",
     high: "important_urgent",
     urgent: "important_urgent"
-  }[priority] || (["general_daily", "kpi", "follow_up", "important_urgent", "paused"].includes(priority) ? priority : "general_daily");
+  }[priority] || (["general_daily", "kpi", "follow_up", "important_urgent", "paused", "monthly_fixed"].includes(priority) ? priority : "general_daily");
+}
+
+function isMonthlyPrioritySelected() {
+  return el.taskPriority?.value === "monthly_fixed";
+}
+
+/** UI sentinel `monthly_fixed` must not be written; monthly lives in recurrence. */
+function resolvePersistedPriority(monthlySelected, editingTask) {
+  if (!monthlySelected) {
+    const selected = el.taskPriority?.value;
+    if (!selected || selected === "monthly_fixed") return "general_daily";
+    return migratePriority(selected);
+  }
+  const existing = editingTask?.priority;
+  if (existing && existing !== "monthly_fixed") return migratePriority(existing);
+  return "general_daily";
+}
+
+function syncMonthlyRecurringFromPriority() {
+  if (!el.taskMonthlyRecurring) return;
+  el.taskMonthlyRecurring.checked = isMonthlyPrioritySelected();
+}
+
+function defaultWorkStartTime() {
+  const start = Math.max(0, Math.min(23, Math.floor(Number(state.workStartHour) || ScheduleHoursPolicy?.DEFAULT_WORK_START || 9)));
+  return `${String(start).padStart(2, "0")}:00`;
+}
+
+function defaultWorkEndTime() {
+  const end = Math.max(1, Math.min(24, Math.floor(Number(state.workEndHour) || ScheduleHoursPolicy?.DEFAULT_WORK_END || 18)));
+  if (end >= 24) return "23:59";
+  return `${String(end).padStart(2, "0")}:00`;
+}
+
+function defaultDueTime() {
+  return defaultWorkEndTime();
+}
+
+function normalizeTimeInput(time) {
+  const raw = String(time || "").trim();
+  if (/^\d{2}:\d{2}/.test(raw)) return raw.slice(0, 5);
+  return "";
+}
+
+function getTaskDueParts() {
+  const value = String(el.taskDueDateTime?.value || "").trim();
+  if (!value) return { dueDate: "", dueTime: "" };
+  const [dueDate = "", timePart = ""] = value.split("T");
+  return { dueDate, dueTime: normalizeTimeInput(timePart) };
+}
+
+function setTaskDueDateTime(dueDate, dueTime = "") {
+  if (!el.taskDueDateTime) return;
+  if (!dueDate) {
+    el.taskDueDateTime.value = "";
+    return;
+  }
+  el.taskDueDateTime.value = `${dueDate}T${normalizeTimeInput(dueTime) || defaultWorkEndTime()}`;
+}
+
+function defaultLocalDateTimeSeed(kind = "end") {
+  const dateKey = state.selectedDate || toDateKey(new Date());
+  const time = kind === "start" ? defaultWorkStartTime() : defaultWorkEndTime();
+  return `${dateKey}T${time}`;
+}
+
+function ensureDueDateTimeUsesWorkEnd(force = false) {
+  if (!el.taskDueDateTime) return;
+  const { dueDate, dueTime } = getTaskDueParts();
+  if (!dueDate) return;
+  if (force || !dueTime) setTaskDueDateTime(dueDate, defaultWorkEndTime());
+}
+
+function bindWorkHourDateTimeDefault(input, kind = "end") {
+  if (!input || input.dataset.workHourDefaultBound === "1") return;
+  input.dataset.workHourDefaultBound = "1";
+  const seedIfEmpty = () => {
+    if (input.value) return;
+    input.value = defaultLocalDateTimeSeed(kind);
+  };
+  // Seed only when opening the picker, not on keyboard focus/tab.
+  input.addEventListener("pointerdown", seedIfEmpty);
+}
+
+function mergeTaskContextText(task) {
+  if (!task) return "";
+  const parts = [];
+  const pushUnique = value => {
+    const text = String(value || "").trim();
+    if (!text) return;
+    if (parts.some(part => part.includes(text) || text.includes(part))) return;
+    parts.push(text);
+  };
+  pushUnique(task.businessBackground);
+  pushUnique(task.problemReason);
+  pushUnique(task.description);
+  return parts.join("\n\n").slice(0, 800);
+}
+
+function renderTaskSubtasks(task = null) {
+  if (!el.taskSubtaskList) return;
+  const children = task?.id ? getChildTasks(task.id) : [];
+  const drafts = state.taskSubtaskDrafts || [];
+  el.taskSubtaskList.innerHTML = "";
+  if (!children.length && !drafts.length) {
+    el.taskSubtaskList.innerHTML = `<li class="task-subtask-empty">还没有下级任务，可在下方快速添加</li>`;
+    return;
+  }
+  children.forEach((child, index) => {
+    const item = document.createElement("li");
+    item.className = "task-subtask-item";
+    item.innerHTML = `<button type="button"><b>${index + 1}</b><span>${escapeHtml(child.title)}</span><small>${escapeHtml(statusLabel(child.status))}</small></button>`;
+    item.querySelector("button").addEventListener("click", () => openTaskDialog(child));
+    el.taskSubtaskList.appendChild(item);
+  });
+  drafts.forEach((title, index) => {
+    const item = document.createElement("li");
+    item.className = "task-subtask-item is-draft";
+    item.innerHTML = `<div><b>${children.length + index + 1}</b><span>${escapeHtml(title)}</span><button type="button" class="task-subtask-remove" aria-label="移除">×</button></div>`;
+    item.querySelector(".task-subtask-remove").addEventListener("click", () => {
+      state.taskSubtaskDrafts.splice(index, 1);
+      renderTaskSubtasks(task);
+    });
+    el.taskSubtaskList.appendChild(item);
+  });
+}
+
+function commitTaskSubtaskDraft() {
+  const title = el.taskSubtaskDraftInput?.value.trim();
+  if (!title) return;
+  state.taskSubtaskDrafts.push(title);
+  el.taskSubtaskDraftInput.value = "";
+  const task = state.editingTaskId ? findTask(state.editingTaskId)?.task : null;
+  renderTaskSubtasks(task);
+}
+
+function createDraftChildTasks(parentId, dateKey = state.selectedDate) {
+  if (!parentId || !state.taskSubtaskDrafts.length) return;
+  const now = new Date();
+  state.taskSubtaskDrafts.forEach(title => {
+    const task = {
+      id: crypto.randomUUID(),
+      title,
+      dueDate: "",
+      dueTime: "",
+      owner: "我",
+      parentId,
+      description: "",
+      priority: "general_daily",
+      progress: 0,
+      status: "planned",
+      startedAt: "",
+      startOverrideAt: "",
+      completedAt: "",
+      businessBackground: "",
+      problemReason: "",
+      deliveryNote: "",
+      recurrence: null,
+      recurrenceGroupId: "",
+      createdAtIso: now.toISOString(),
+      updatedAt: now.toISOString(),
+      createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+    };
+    getDay(dateKey || state.selectedDate).tasks.push(task);
+  });
 }
 
 function updateRecurringOptions() {
-  el.recurringOptions.classList.toggle("hidden", !el.taskMonthlyRecurring.checked);
-  if (el.taskMonthlyRecurring.checked && !el.taskRecurringUntil.value) {
-    el.taskRecurringUntil.value = defaultRecurringUntil(el.taskDueDate.value || state.selectedDate);
+  syncMonthlyRecurringFromPriority();
+  const enabled = isMonthlyPrioritySelected();
+  el.recurringOptions.classList.toggle("hidden", !enabled);
+  if (enabled && !el.taskRecurringUntil.value) {
+    el.taskRecurringUntil.value = defaultRecurringUntil(getTaskDueParts().dueDate || state.selectedDate);
   }
 }
 
@@ -4428,10 +4717,14 @@ function updateProgressAvailability() {
 }
 
 function updateParentRequirements() {
-  el.businessBackgroundLabel.querySelector("span").textContent = "业务背景（可选）";
-  el.problemReasonLabel.querySelector("span").textContent = "问题原因（可选）";
+  if (el.businessBackgroundLabel?.querySelector("span")) {
+    const followUp = el.taskEditForm?.classList.contains("follow-up-draft");
+    el.businessBackgroundLabel.querySelector("span").textContent = followUp
+      ? "背景与说明（来自已关闭任务）"
+      : "背景与说明";
+  }
   el.taskBusinessBackground.required = false;
-  el.taskProblemReason.required = false;
+  if (el.taskProblemReason) el.taskProblemReason.required = false;
 }
 
 function toLocalDateTimeInput(iso) {
