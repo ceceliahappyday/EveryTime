@@ -65,6 +65,8 @@ GitHub Actions 会自动：
 
 注意：`npm run dist` 只生成本地安装包，不会发布 GitHub Release；只有推送 `v*.*.*` 标签并且 GitHub Actions 成功完成后，自动更新才可用。Release 必须同时包含安装包、`.blockmap` 和 `latest.yml`。
 
+**不要对同一 tag 做 force-push 重打。** 若第一次构建基于旧提交，后到的 workflow 可能用错误版本覆盖 `latest.yml`，导致安装版认为「已是最新」而收不到真正新版。需要发新版本时，递增 `package.json` 版本并推送新的 `vX.Y.Z` 标签。
+
 APP 安装版启动后会通过 GitHub Releases 检查新版本，并询问用户是否下载和安装。
 
 ## 安全约定

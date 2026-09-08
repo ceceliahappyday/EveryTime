@@ -25,8 +25,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify package version matches tag
+        shell: pwsh
+        run: |
+          $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          if ($pkg -ne $tag) {
+            throw "package.json version '$pkg' does not match tag '$tag'. Refusing to publish a mismatched release (this breaks latest.yml / auto-update)."
+          }
+
       - name: Build installer
         run: npm run dist -- --publish never
+
+      - name: Assert release artifacts match package version
+        shell: pwsh
+        run: |
+          $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $exe = Get-ChildItem "dist/EveryTime-Setup-$pkg.exe" -ErrorAction Stop
+          $map = Get-ChildItem "dist/EveryTime-Setup-$pkg.exe.blockmap" -ErrorAction Stop
+          $yml = Get-Content "dist/latest.yml" -Raw
+          if ($yml -notmatch "(?m)^version:\s*$([regex]::Escape($pkg))\s*$") {
+            throw "dist/latest.yml does not advertise version $pkg"
+          }
+          if ($yml -notmatch [regex]::Escape($exe.Name)) {
+            throw "dist/latest.yml does not reference $($exe.Name)"
+          }
+          Write-Host "Publishing $($exe.Name) + $($map.Name) with latest.yml for $pkg"
 
       - name: Publish GitHub Release assets
         uses: softprops/action-gh-release@v2

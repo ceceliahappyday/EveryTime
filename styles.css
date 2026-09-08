@@ -3174,7 +3174,45 @@ body.in-desktop .window-controls {
 }
 .small-modal { width: min(460px, calc(100% - 40px)); }
 .small-modal textarea { width: 100%; }
-.settings-modal { width: min(560px, calc(100% - 40px)); }
+.settings-modal {
+  width: min(560px, calc(100% - 40px));
+  padding: 0;
+  flex-direction: column;
+}
+.settings-modal[open] {
+  display: flex;
+}
+#settingsDialog form {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+#settingsDialog .modal-header {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 22px 24px 8px;
+}
+#settingsDialog .modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px 24px 12px;
+}
+#settingsDialog .modal-actions {
+  flex: 0 0 auto;
+  margin-top: 0;
+  padding: 12px 24px 18px;
+  border-top: 1px solid var(--line-soft);
+  background: #fff;
+  position: relative;
+  z-index: 2;
+}
+body.in-desktop.glass-mode #settingsDialog .modal-actions {
+  position: relative;
+  bottom: auto;
+  padding: 12px 24px 18px;
+  background: rgba(8, 22, 36, .92);
+  border-top-color: rgba(181, 218, 239, .28);
+}
 .settings-list { display: grid; gap: 10px; }
 .settings-work-hours {
   display: grid;

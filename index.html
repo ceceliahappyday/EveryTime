@@ -449,61 +449,63 @@
         <div><span class="eyebrow">SETTINGS</span><h3>桌面组件设置</h3></div>
         <button type="button" class="close-button" data-close-dialog="settingsDialog">×</button>
       </div>
-      <div class="settings-list">
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingAiEnabled" />
-          <span>启用 AI 任务助手（只读取本应用数据）</span>
-        </label>
-        <label><span>API Key（仅本机加密保存）</span><input id="settingAiApiKey" type="password" autocomplete="off" placeholder="粘贴 OpenAI / OpenRouter / DeepSeek / Anthropic / Gemini 等 Key" /></label>
-        <label><span>AI 服务商</span><select id="settingAiProvider"></select></label>
-        <label><span>AI 模型</span><select id="settingAiModel"></select></label>
-        <div class="settings-ai-actions">
-          <button type="button" class="soft-button" id="aiDetectModelsButton">识别服务商并加载模型</button>
-        </div>
-        <p class="form-hint" id="aiKeyStatus">API Key 未配置。填写 Key 后可自动识别厂商并拉取可用模型。</p>
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingGlass" />
-          <span>使用玻璃背景（保存后立即生效，可随时开关）</span>
-        </label>
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingPinned" />
-          <span>窗口保持置顶</span>
-        </label>
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingLocked" />
-          <span>默认进入低干扰模式</span>
-        </label>
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingCompact" />
-          <span>使用紧凑显示</span>
-        </label>
-        <div class="settings-work-hours">
-          <span class="settings-work-hours-label">日视图工作时段</span>
-          <div class="settings-work-hours-row">
-            <label>
-              <span>开始</span>
-              <select id="settingWorkStartHour"></select>
-            </label>
-            <label>
-              <span>结束</span>
-              <select id="settingWorkEndHour"></select>
-            </label>
+      <div class="modal-scroll" id="settingsDialogScroll">
+        <div class="settings-list">
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingAiEnabled" />
+            <span>启用 AI 任务助手（只读取本应用数据）</span>
+          </label>
+          <label><span>API Key（仅本机加密保存）</span><input id="settingAiApiKey" type="password" autocomplete="off" placeholder="粘贴 OpenAI / OpenRouter / DeepSeek / Anthropic / Gemini 等 Key" /></label>
+          <label><span>AI 服务商</span><select id="settingAiProvider"></select></label>
+          <label><span>AI 模型</span><select id="settingAiModel"></select></label>
+          <div class="settings-ai-actions">
+            <button type="button" class="soft-button" id="aiDetectModelsButton">识别服务商并加载模型</button>
           </div>
-          <p class="form-hint">默认只展开该时段；若某小时已有日程投入，会自动向两侧扩展显示。可选范围覆盖 0:00–24:00。</p>
+          <p class="form-hint" id="aiKeyStatus">API Key 未配置。填写 Key 后可自动识别厂商并拉取可用模型。</p>
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingGlass" />
+            <span>使用玻璃背景（保存后立即生效，可随时开关）</span>
+          </label>
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingPinned" />
+            <span>窗口保持置顶</span>
+          </label>
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingLocked" />
+            <span>默认进入低干扰模式</span>
+          </label>
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingCompact" />
+            <span>使用紧凑显示</span>
+          </label>
+          <div class="settings-work-hours">
+            <span class="settings-work-hours-label">日视图工作时段</span>
+            <div class="settings-work-hours-row">
+              <label>
+                <span>开始</span>
+                <select id="settingWorkStartHour"></select>
+              </label>
+              <label>
+                <span>结束</span>
+                <select id="settingWorkEndHour"></select>
+              </label>
+            </div>
+            <p class="form-hint">默认只展开该时段；若某小时已有日程投入，会自动向两侧扩展显示。可选范围覆盖 0:00–24:00。</p>
+          </div>
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingStartAtLogin" />
+            <span>开机自动启动</span>
+          </label>
         </div>
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingStartAtLogin" />
-          <span>开机自动启动</span>
-        </label>
-      </div>
-      <div class="settings-info">
-        <div class="settings-version-row">
-          <div><span>当前版本</span><strong id="settingsAppVersion">读取中…</strong></div>
-          <button type="button" class="soft-button desktop-only" id="checkUpdateButton">检查更新</button>
+        <div class="settings-info">
+          <div class="settings-version-row">
+            <div><span>当前版本</span><strong id="settingsAppVersion">读取中…</strong></div>
+            <button type="button" class="soft-button" id="checkUpdateButton">检查更新</button>
+          </div>
+          <div><span>数据保存位置</span><strong id="settingsDataPath">读取中…</strong></div>
+          <div><span>默认导出位置</span><strong id="settingsExportPath">读取中…</strong></div>
+          <p>玻璃背景、置顶、低干扰与紧凑显示在本页切换；左侧输入框用于新建待办。日历可用键盘 ← → 切换日期/周/月，按 T 回到今天。</p>
         </div>
-        <div><span>数据保存位置</span><strong id="settingsDataPath">读取中…</strong></div>
-        <div><span>默认导出位置</span><strong id="settingsExportPath">读取中…</strong></div>
-        <p>玻璃背景、置顶、低干扰与紧凑显示在本页切换；左侧输入框用于新建待办。日历可用键盘 ← → 切换日期/周/月，按 T 回到今天。</p>
       </div>
       <div class="modal-actions">
         <span></span><span></span>
