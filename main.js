@@ -60,6 +60,14 @@ function notifyMaximizeChanged(maximized = isWindowMaximized()) {
   return !!maximized;
 }
 
+function notifyShellLayoutWidth() {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+  const content = typeof mainWindow.getContentBounds === "function"
+    ? mainWindow.getContentBounds()
+    : mainWindow.getBounds();
+  mainWindow.webContents.send("window:shell-width", Math.round(content?.width || 0));
+}
+
 function createWindow() {
   const displays = screen.getAllDisplays().map((display) => ({
     ...display,
@@ -70,7 +78,7 @@ function createWindow() {
     savedBounds,
     displays,
     {
-      minWidth: 900,
+      minWidth: 380,
       minHeight: 520,
       defaultWidth: 1380,
       defaultHeight: 900,
@@ -82,7 +90,7 @@ function createWindow() {
     height: safeBounds.height,
     x: safeBounds.x,
     y: safeBounds.y,
-    minWidth: 900,
+    minWidth: 380,
     minHeight: 520,
     icon: appIconPath,
     title: isDevRuntime ? `今日日程 · 开发预览 v${app.getVersion()}` : "今日日程",
@@ -112,10 +120,12 @@ function createWindow() {
   mainWindow.on("resize", () => {
     saveWindowState();
     notifyMaximizeChanged();
+    notifyShellLayoutWidth();
   });
   mainWindow.on("resized", () => {
     saveWindowState();
     notifyMaximizeChanged();
+    notifyShellLayoutWidth();
   });
   mainWindow.on("maximize", () => notifyMaximizeChanged(true));
   mainWindow.on("unmaximize", () => {
@@ -222,7 +232,7 @@ if (singleInstanceLock) app.whenReady().then(() => {
       mainWindow.setBounds({
         x: fallback.x ?? mainWindow.getBounds().x,
         y: fallback.y ?? mainWindow.getBounds().y,
-        width: Math.max(900, fallback.width || 1380),
+        width: Math.max(380, fallback.width || 1380),
         height: Math.max(520, fallback.height || 900)
       });
       notifyMaximizeChanged(false);
@@ -276,14 +286,14 @@ if (singleInstanceLock) app.whenReady().then(() => {
     mainWindow.setBounds({
       x: bounds.x,
       y: bounds.y,
-      width: Math.max(900, Math.round(width)),
+      width: Math.max(380, Math.round(width)),
       height: Math.max(520, Math.round(height))
     });
   });
   ipcMain.on("window:set-bounds", (_event, next = {}) => {
     if (!mainWindow || locked) return;
     const bounds = mainWindow.getBounds();
-    const width = Math.max(900, Math.round(next.width ?? bounds.width));
+    const width = Math.max(380, Math.round(next.width ?? bounds.width));
     const height = Math.max(520, Math.round(next.height ?? bounds.height));
     mainWindow.setBounds({
       x: Math.round(next.x ?? bounds.x),
@@ -293,6 +303,7 @@ if (singleInstanceLock) app.whenReady().then(() => {
     });
     if (!isWindowMaximized()) restoredWindowBounds = null;
     notifyMaximizeChanged();
+    notifyShellLayoutWidth();
   });
   ipcMain.handle("data:export", async (_event, filename, format, data) => {
     const exportDir = defaultExportDir();

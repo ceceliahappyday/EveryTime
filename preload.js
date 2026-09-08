@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("desktopAPI", {
   isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
   toggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
   onMaximizeChanged: callback => ipcRenderer.on("window:maximize-changed", (_event, maximized) => callback(maximized)),
+  onShellWidthChanged: callback => ipcRenderer.on("window:shell-width", (_event, width) => callback(width)),
   quit: () => ipcRenderer.invoke("app:quit"),
   loadPlannerData: () => ipcRenderer.invoke("data:load-store"),
   savePlannerData: data => ipcRenderer.invoke("data:save-store", data),

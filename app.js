@@ -1,5 +1,6 @@
 ﻿const WORK_HOURS_STORAGE_KEY = "today-planner-work-hours";
 const WEEKDAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const MONTH_WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const STORAGE_KEY = "today-planner-v1";
 const CN_HOLIDAYS = {
   "2026-01-01": { name: "元旦", type: "holiday" },
@@ -108,6 +109,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "maximizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "taskPanelToggle",
+    "focusViewChrome", "focusViewButton", "focusViewMenu",
     "glassToggleButton",
     "topbarMain", "headerToolsSlot", "headerTools", "headerOverflow", "headerMoreButton", "headerMoreMenu", "headerActions",
     "settingsButton", "settingsDialog", "settingsForm", "settingGlass", "settingPinned", "settingLocked",
@@ -131,6 +133,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   bindWindowResize();
   bindHeaderOverflow();
   bindTaskPanelToggle();
+  bindFocusViewMenu();
   initDesktop();
   bindUpdateProgress();
   renderAppVersion();
@@ -268,17 +271,7 @@ function bindEvents() {
   el.viewSwitcher.addEventListener("click", event => {
     const button = event.target.closest("button[data-view]");
     if (!button) return;
-    const previousView = state.taskView;
-    state.taskView = button.dataset.view;
-    state.projectViewNeedsAnchor = state.taskView === "project" && previousView !== "project";
-    if (state.projectViewNeedsAnchor) state.projectAnchorDate = toDateKey(new Date());
-    if (state.taskView === "project") {
-      state.projectWindowStart = null;
-      state.projectWindowEnd = null;
-      state.projectGanttLastExtend = null;
-    }
-    el.viewSwitcher.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
-    render();
+    applyTaskView(button.dataset.view, { expand: false });
   });
 
   el.taskTabs.addEventListener("click", event => {
@@ -483,31 +476,89 @@ function enableNativePicker(input) {
 }
 
 let uiScaleResizeTimer = 0;
+let shellLayoutDragActive = false;
+let shellLayoutDragWidth = 0;
+let shellLayoutObserverWidth = 0;
+
+const SHELL_FOCUS_MAX_WIDTH = 560;
+const VIEW_EXPAND_WIDTHS = {
+  day: 920,
+  week: 920,
+  month: 1000,
+  project: 1200
+};
+
+function measureLayoutWidth() {
+  const docWidth = document.documentElement?.clientWidth;
+  const bodyWidth = document.body?.clientWidth;
+  const inner = window.innerWidth;
+  // Prefer layout viewport over innerWidth — Electron setBounds can leave
+  // innerWidth stale for a frame (or longer) after a live drag.
+  const width = docWidth || bodyWidth || inner || 0;
+  return Math.round(width);
+}
+
+function syncShellLayoutClasses(widthHint) {
+  const desktop = document.body.classList.contains("in-desktop");
+  const width = Number.isFinite(widthHint) ? widthHint : measureLayoutWidth();
+  const wasFocus = document.body.classList.contains("shell-focus");
+  const narrow = desktop && width < 1180;
+  const compact = desktop && width < 960;
+  // Todo-only strip until wider than ~todo panel + slim schedule (confirmed: 560).
+  const focus = desktop && width < SHELL_FOCUS_MAX_WIDTH;
+  document.body.classList.toggle("shell-narrow", narrow);
+  document.body.classList.toggle("shell-compact-topbar", compact);
+  document.body.classList.toggle("shell-focus", focus);
+  if (!focus) {
+    document.body.classList.remove("task-panel-open");
+    closeFocusViewMenu();
+  }
+  syncFocusSurfaceVisibility(focus, compact);
+  if (wasFocus !== focus) updateDateNavigationChrome();
+  syncHeaderOverflow();
+}
+
+function syncFocusSurfaceVisibility(focus, compact) {
+  const schedule = document.querySelector(".schedule-panel");
+  const weekStrip = document.querySelector(".week-strip");
+  // Author CSS `display:flex` can win over the UA [hidden] rule; pair the
+  // attribute with an !important CSS hook, and keep schedule out of the tree
+  // while focus mode is on so glass panels cannot ghost the calendar.
+  if (schedule) {
+    schedule.hidden = !!focus;
+    schedule.setAttribute("aria-hidden", focus ? "true" : "false");
+  }
+  if (weekStrip) {
+    const modeHidesWeek = document.body.classList.contains("month-mode")
+      || document.body.classList.contains("week-mode")
+      || document.body.classList.contains("project-mode");
+    weekStrip.hidden = !!(focus || compact || modeHidesWeek);
+  }
+}
+
+function scheduleShellLayoutSync(widthHint) {
+  if (shellLayoutDragActive) {
+    syncShellLayoutClasses(shellLayoutDragWidth);
+    return;
+  }
+  syncShellLayoutClasses(widthHint);
+}
 
 function applyUiScale() {
   const scale = UiScalePolicy?.uiScaleForWindow?.({
-    width: window.innerWidth,
+    width: measureLayoutWidth(),
     height: window.innerHeight,
     compact: document.body.classList.contains("compact")
   }) ?? 1;
   document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
-  const desktop = document.body.classList.contains("in-desktop");
-  const width = window.innerWidth;
-  document.body.classList.toggle("shell-narrow", desktop && width < 1180);
-  document.body.classList.toggle("shell-compact-topbar", desktop && width < 960);
-  const focus = desktop && width < 760;
-  document.body.classList.toggle("shell-focus", focus);
-  if (!focus) {
-    document.body.classList.remove("task-panel-open");
-    if (el.taskPanelToggle) el.taskPanelToggle.setAttribute("aria-pressed", "false");
-  }
-  syncHeaderOverflow();
+  scheduleShellLayoutSync();
 }
 
 function syncHeaderOverflow() {
   if (!el.headerTools || !el.headerToolsSlot || !el.headerMoreMenu || !el.headerMoreButton) return;
   const desktop = document.body.classList.contains("in-desktop");
   const actions = el.headerActions;
+  const topbar = document.querySelector(".topbar");
   const menuWasOpen = el.headerMoreMenu.getAttribute("aria-hidden") !== "true"
     && !el.headerMoreMenu.hasAttribute("hidden");
 
@@ -519,49 +570,53 @@ function syncHeaderOverflow() {
     document.body.classList.remove("header-tools-overflow");
   };
 
-  if (!desktop || !actions) {
+  if (!desktop || !actions || !topbar) {
     restoreToolsToSlot();
     closeHeaderOverflowMenu();
     return;
   }
 
-  const forceOverflow = document.body.classList.contains("shell-narrow")
-    || document.body.classList.contains("shell-compact-topbar")
-    || document.body.classList.contains("shell-focus")
-    || window.innerWidth < 1180;
-
-  // Measure with tools restored to the inline slot so we can detect real clipping.
+  // Measure with tools restored inline (Priority+ / overflow-toolbar pattern).
   restoreToolsToSlot();
-  void actions.offsetWidth;
+  void topbar.offsetWidth;
 
   const gap = Number.parseFloat(getComputedStyle(actions).gap) || 6;
   const visibleWidth = node => {
     if (!node) return 0;
     const style = getComputedStyle(node);
     if (style.display === "none" || style.visibility === "hidden") return 0;
-    return node.offsetWidth || 0;
+    return Math.ceil(node.getBoundingClientRect().width) || node.offsetWidth || 0;
   };
 
-  const panelToggle = el["task" + "Panel" + "Toggle"];
-  const parts = [
-    visibleWidth(panelToggle),
-    visibleWidth(el.headerTools),
-    visibleWidth(el.settingsButton)
-  ].filter(width => width > 0);
-  const inlineNeed = parts.reduce((sum, width, index) => sum + width + (index ? gap : 0), 0);
-  const widthClipped = inlineNeed > actions.clientWidth + 2;
+  const moreWidth = 34;
+  const toolsWidth = visibleWidth(el.headerTools);
+  const settingsWidth = visibleWidth(el.settingsButton);
+  const panelToggle = el.taskPanelToggle;
+  const toggleWidth = visibleWidth(panelToggle);
+  const viewWidth = visibleWidth(el.viewSwitcher);
+  const windowWidth = visibleWidth(document.querySelector(".window-controls"));
+  const brandWidth = visibleWidth(document.querySelector(".brand"));
+  const dateWidth = visibleWidth(el.topbarMain || document.querySelector(".topbar-main"));
+  const topbarPad = (() => {
+    const style = getComputedStyle(topbar);
+    return (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
+  })();
+  const topbarGap = Number.parseFloat(getComputedStyle(topbar).columnGap) || 10;
 
-  // Flex + overflow:hidden often keeps scrollWidth === clientWidth even while buttons are sliced.
-  const actionRect = actions.getBoundingClientRect();
-  const rectClipped = [...el.headerTools.querySelectorAll(":scope > button")].some(button => {
-    const rect = button.getBoundingClientRect();
-    if (rect.width < 2 || rect.height < 2) return false;
-    return rect.left < actionRect.left - 0.5 || rect.right > actionRect.right + 0.5;
-  });
+  // Budget left after reserved chrome that must never clip.
+  const reservedTrailing = settingsWidth + moreWidth + windowWidth + gap * 2;
+  const reservedLeading = viewWidth + brandWidth + dateWidth;
+  const reservedGaps = topbarGap * 3;
+  const availableForTools = topbar.clientWidth - topbarPad - reservedLeading - reservedTrailing - reservedGaps - toggleWidth;
+  const toolsNeedRoom = toolsWidth > 0 && availableForTools < toolsWidth + gap;
 
-  const clipped = forceOverflow || widthClipped || rectClipped;
+  const forceOverflow = document.body.classList.contains("shell-narrow")
+    || document.body.classList.contains("shell-compact-topbar")
+    || document.body.classList.contains("shell-focus")
+    || measureLayoutWidth() < 1180
+    || toolsNeedRoom;
 
-  if (clipped) {
+  if (forceOverflow) {
     if (el.headerTools.parentElement !== el.headerMoreMenu) {
       el.headerMoreMenu.appendChild(el.headerTools);
     }
@@ -569,8 +624,8 @@ function syncHeaderOverflow() {
     document.body.classList.add("header-tools-overflow");
   }
 
-  if (!clipped && menuWasOpen) closeHeaderOverflowMenu();
-  else if (clipped && menuWasOpen) openHeaderOverflowMenu();
+  if (!forceOverflow && menuWasOpen) closeHeaderOverflowMenu();
+  else if (forceOverflow && menuWasOpen) openHeaderOverflowMenu();
 }
 
 function setHeaderMoreButtonVisible(visible) {
@@ -650,6 +705,14 @@ function bindHeaderOverflow() {
     syncHeaderOverflow();
     positionHeaderOverflowMenu();
   }, { passive: true });
+  const topbar = document.querySelector(".topbar");
+  if (topbar && typeof ResizeObserver === "function") {
+    const observer = new ResizeObserver(() => {
+      syncHeaderOverflow();
+      positionHeaderOverflowMenu();
+    });
+    observer.observe(topbar);
+  }
   syncHeaderOverflow();
 }
 
@@ -681,15 +744,109 @@ async function toggleGlassMode() {
 
 function bindTaskPanelToggle() {
   el.taskPanelToggle?.addEventListener("click", () => {
+    if (!document.body.classList.contains("shell-focus")) return;
     const open = document.body.classList.toggle("task-panel-open");
     el.taskPanelToggle.setAttribute("aria-pressed", open ? "true" : "false");
     el.taskPanelToggle.title = open ? "收起待办清单" : "显示待办清单";
   });
 }
 
+function closeFocusViewMenu() {
+  if (!el.focusViewMenu || !el.focusViewButton) return;
+  el.focusViewMenu.hidden = true;
+  el.focusViewMenu.setAttribute("aria-hidden", "true");
+  el.focusViewButton.setAttribute("aria-expanded", "false");
+  if (el.focusViewChrome && el.focusViewMenu.parentElement !== el.focusViewChrome) {
+    el.focusViewChrome.appendChild(el.focusViewMenu);
+  }
+}
+
+function openFocusViewMenu() {
+  if (!el.focusViewMenu || !el.focusViewButton) return;
+  if (!document.body.classList.contains("shell-focus")) return;
+  el.focusViewMenu.hidden = false;
+  el.focusViewMenu.setAttribute("aria-hidden", "false");
+  el.focusViewButton.setAttribute("aria-expanded", "true");
+  const rect = el.focusViewButton.getBoundingClientRect();
+  const menu = el.focusViewMenu;
+  if (menu.parentElement !== document.body) document.body.appendChild(menu);
+  menu.style.position = "fixed";
+  menu.style.top = `${Math.round(rect.bottom + 6)}px`;
+  menu.style.left = `${Math.max(8, Math.round(rect.left))}px`;
+  menu.style.right = "auto";
+  menu.style.zIndex = "5000";
+}
+
+function toggleFocusViewMenu() {
+  if (!el.focusViewMenu) return;
+  if (el.focusViewMenu.hidden) openFocusViewMenu();
+  else closeFocusViewMenu();
+}
+
+function expandWindowForView(view) {
+  const targetWidth = VIEW_EXPAND_WIDTHS[view] || VIEW_EXPAND_WIDTHS.day;
+  const width = Math.max(window.outerWidth || window.innerWidth, targetWidth);
+  const height = Math.max(window.outerHeight || window.innerHeight, 700);
+  if (window.desktopAPI?.setWindowBounds) {
+    window.desktopAPI.setWindowBounds({
+      x: window.screenX,
+      y: window.screenY,
+      width,
+      height
+    });
+    return;
+  }
+  try {
+    window.resizeTo(width, height);
+  } catch {}
+}
+
+function applyTaskView(view, { expand = false } = {}) {
+  const previousView = state.taskView;
+  state.taskView = view;
+  state.projectViewNeedsAnchor = state.taskView === "project" && previousView !== "project";
+  if (state.projectViewNeedsAnchor) state.projectAnchorDate = toDateKey(new Date());
+  if (state.taskView === "project") {
+    state.projectWindowStart = null;
+    state.projectWindowEnd = null;
+    state.projectGanttLastExtend = null;
+  }
+  el.viewSwitcher?.querySelectorAll("button[data-view]").forEach(item => {
+    item.classList.toggle("active", item.dataset.view === view);
+  });
+  if (expand && document.body.classList.contains("shell-focus")) {
+    expandWindowForView(view);
+  }
+  render();
+}
+
+function bindFocusViewMenu() {
+  if (!el.focusViewButton || !el.focusViewMenu) return;
+  el.focusViewButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleFocusViewMenu();
+  });
+  el.focusViewMenu.addEventListener("click", event => {
+    const button = event.target.closest("button[data-view]");
+    if (!button) return;
+    event.preventDefault();
+    closeFocusViewMenu();
+    applyTaskView(button.dataset.view, { expand: true });
+  });
+  document.addEventListener("pointerdown", event => {
+    if (el.focusViewButton?.contains(event.target)) return;
+    if (el.focusViewMenu?.contains(event.target)) return;
+    closeFocusViewMenu();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeFocusViewMenu();
+  });
+}
+
 function bindWindowResize() {
   if (!window.desktopAPI?.setWindowBounds && !window.desktopAPI?.resizeBy) return;
-  const minWidth = 900;
+  const minWidth = 380;
   const minHeight = 520;
   document.querySelectorAll(".app-shell [data-resize-edge], .app-shell [data-resize-axis]").forEach(handle => {
     handle.addEventListener("pointerdown", event => {
@@ -708,6 +865,9 @@ function bindWindowResize() {
         width: window.outerWidth,
         height: window.outerHeight
       };
+      const frameChromeX = Math.max(0, startBounds.width - measureLayoutWidth());
+      shellLayoutDragActive = true;
+      shellLayoutDragWidth = measureLayoutWidth();
       handle.setPointerCapture(event.pointerId);
       const move = moveEvent => {
         const dx = moveEvent.screenX - startX;
@@ -743,15 +903,29 @@ function bindWindowResize() {
         } else {
           window.desktopAPI.resizeBy(width, height);
         }
+        // Live drag must not wait for a possibly-stale window.innerWidth / resize event.
+        shellLayoutDragWidth = Math.max(0, width - frameChromeX);
+        syncShellLayoutClasses(shellLayoutDragWidth);
       };
-      const up = () => {
+      const finish = () => {
         handle.removeEventListener("pointermove", move);
-        handle.removeEventListener("pointerup", up);
-        handle.removeEventListener("pointercancel", up);
+        handle.removeEventListener("pointerup", finish);
+        handle.removeEventListener("pointercancel", finish);
+        shellLayoutDragActive = false;
+        // Keep the drag target width first — a stale resize/innerWidth must not
+        // briefly restore the wide split layout after narrowing.
+        syncShellLayoutClasses(shellLayoutDragWidth);
+        requestAnimationFrame(() => {
+          syncShellLayoutClasses();
+          requestAnimationFrame(() => {
+            syncShellLayoutClasses();
+            applyUiScale();
+          });
+        });
       };
       handle.addEventListener("pointermove", move);
-      handle.addEventListener("pointerup", up);
-      handle.addEventListener("pointercancel", up);
+      handle.addEventListener("pointerup", finish);
+      handle.addEventListener("pointercancel", finish);
     });
   });
 }
@@ -768,10 +942,33 @@ function updateMaximizeChrome(maximized) {
 
 function bindUiScale() {
   applyUiScale();
-  window.addEventListener("resize", () => {
+  const onViewportResize = () => {
+    // During custom edge-drag, trust the target width; stale window resize
+    // events are what made wide→narrow differ from a cold narrow open.
+    scheduleShellLayoutSync();
     clearTimeout(uiScaleResizeTimer);
-    uiScaleResizeTimer = setTimeout(applyUiScale, 80);
-  });
+    uiScaleResizeTimer = setTimeout(() => {
+      if (shellLayoutDragActive) return;
+      const scale = UiScalePolicy?.uiScaleForWindow?.({
+        width: measureLayoutWidth(),
+        height: window.innerHeight,
+        compact: document.body.classList.contains("compact")
+      }) ?? 1;
+      document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
+    }, 80);
+  };
+  window.addEventListener("resize", onViewportResize, { passive: true });
+  window.visualViewport?.addEventListener("resize", onViewportResize, { passive: true });
+  if (typeof ResizeObserver === "function") {
+    shellLayoutObserverWidth = measureLayoutWidth();
+    const observer = new ResizeObserver(() => {
+      const next = measureLayoutWidth();
+      if (Math.abs(next - shellLayoutObserverWidth) < 1) return;
+      shellLayoutObserverWidth = next;
+      onViewportResize();
+    });
+    observer.observe(document.documentElement);
+  }
 }
 
 async function initDesktop() {
@@ -810,6 +1007,16 @@ async function initDesktop() {
     applyUiScale();
   });
   updateMaximizeChrome(await window.desktopAPI.isMaximized?.().catch(() => false));
+  window.desktopAPI.onShellWidthChanged?.(width => {
+    if (!Number.isFinite(width) || width <= 0) return;
+    // Authoritative content width from main process — beats stale renderer innerWidth.
+    if (shellLayoutDragActive) {
+      shellLayoutDragWidth = width;
+      syncShellLayoutClasses(width);
+      return;
+    }
+    syncShellLayoutClasses(width);
+  });
   el.closeWindow.addEventListener("click", () => window.desktopAPI.quit());
   el.glassToggleButton?.addEventListener("click", () => toggleGlassMode());
   el.settingsButton?.addEventListener("click", openSettingsDialog);
@@ -853,6 +1060,9 @@ async function initDesktop() {
   el.aiDetectModelsButton?.addEventListener("click", () => refreshAiProviderModels({ forceList: true }));
   el.settingAiApiKey?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
   el.settingAiProvider?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
+  // in-desktop is required for shell-* classes; sync after desktop boot so a
+  // cold narrow window matches a later wide→narrow drag.
+  applyUiScale();
 }
 
 async function renderAppVersion() {
@@ -1071,6 +1281,10 @@ function render() {
   document.body.classList.toggle("month-mode", state.taskView === "month");
   document.body.classList.toggle("week-mode", state.taskView === "week");
   document.body.classList.toggle("project-mode", state.taskView === "project");
+  syncFocusSurfaceVisibility(
+    document.body.classList.contains("shell-focus"),
+    document.body.classList.contains("shell-compact-topbar")
+  );
   el.viewSwitcher.querySelectorAll("button[data-view]").forEach(button => {
     button.classList.toggle("active", button.dataset.view === state.taskView);
   });
@@ -2545,6 +2759,9 @@ function clearProjectGanttChrome() {
 
 function renderSchedule() {
   el.timeline.className = "timeline";
+  // Week view sets an inline column count; clear it so day/month/project regain CSS layout.
+  el.timeline.style.gridTemplateColumns = "";
+  el.timeline.style.minHeight = "";
   if (state.taskView !== "project") {
     el.projectGanttScroll = null;
     el.projectGanttChartTrack = null;
@@ -3165,7 +3382,24 @@ function renderDayTimeline() {
     row.className = "time-row";
     row.innerHTML = `<div class="time-label">${String(hour).padStart(2, "0")}:00</div><div class="time-slot" data-hour="${hour}"></div>`;
     const slot = row.querySelector(".time-slot");
-    slot.addEventListener("click", event => event.target === slot && openEntryDialog(hour));
+    let slotClickTimer = 0;
+    slot.addEventListener("click", event => {
+      if (event.target !== slot) return;
+      if (slotClickTimer) clearTimeout(slotClickTimer);
+      slotClickTimer = setTimeout(() => {
+        slotClickTimer = 0;
+        openEntryDialog(hour);
+      }, 280);
+    });
+    slot.addEventListener("dblclick", event => {
+      if (event.target !== slot) return;
+      if (slotClickTimer) {
+        clearTimeout(slotClickTimer);
+        slotClickTimer = 0;
+      }
+      event.stopPropagation();
+      openTaskDialogForDate(state.selectedDate);
+    });
     slot.addEventListener("dragover", event => { event.preventDefault(); slot.classList.add("drag-over"); });
     slot.addEventListener("dragleave", () => slot.classList.remove("drag-over"));
     slot.addEventListener("drop", event => {
@@ -3306,42 +3540,67 @@ function renderWeekSchedule() {
 function renderMonthSchedule() {
   const selected = fromDateKey(state.selectedDate);
   const first = new Date(selected.getFullYear(), selected.getMonth(), 1);
-  const start = addDays(first, -first.getDay());
+  const start = getMonday(first);
   el.timeline.innerHTML = "";
   el.timeline.className = "schedule-month-calendar";
-  WEEKDAY_NAMES.forEach(name => {
+  MONTH_WEEKDAY_NAMES.forEach(name => {
     const head = document.createElement("div");
     head.className = "schedule-month-weekday";
     head.textContent = name;
     el.timeline.appendChild(head);
   });
   let logged = 0;
+  let monthClickTimer = 0;
   for (let i = 0; i < 42; i++) {
     const date = addDays(start, i);
     const key = toDateKey(date);
+    const weekdayIndex = (date.getDay() + 6) % 7; // Monday=0 … Sunday=6
     const entries = getDay(key).entries || [];
     const monthItems = scheduleOverviewItemsForDate(key);
     entries.forEach(entry => logged += getEntryInvestedHours(key, entry));
     const cell = document.createElement("section");
     cell.className = "schedule-month-cell";
+    if (weekdayIndex >= 5) cell.classList.add("weekend");
     if (date.getMonth() !== selected.getMonth()) cell.classList.add("outside");
     if (key === state.selectedDate) cell.classList.add("selected");
     if (isToday(date)) cell.classList.add("today");
+    const isEmptyDay = monthItems.length === 0;
+    if (isEmptyDay) cell.classList.add("is-empty");
     cell.innerHTML = `<header><span>${date.getDate()}</span><span>${holidayLabel(key)}</span></header>
-      ${renderDayOverviewList(monthItems, "month")}`;
+      ${renderDayOverviewList(monthItems, "month")}
+      ${isEmptyDay ? `<button type="button" class="month-add-task" aria-label="新建当天待办" title="新建目标日期为当天的待办">＋</button>` : ""}`;
     bindScheduleDrop(cell, key, 9);
-    cell.addEventListener("click", event => {
-      if (event.target.closest(".month-task-line")) return;
-      if (key === state.selectedDate) return;
+    cell.querySelector(".month-add-task")?.addEventListener("click", event => {
+      event.stopPropagation();
+      if (monthClickTimer) {
+        clearTimeout(monthClickTimer);
+        monthClickTimer = 0;
+      }
       state.selectedDate = key;
-      render();
+      openTaskDialogForDate(key);
+    });
+    cell.addEventListener("click", event => {
+      if (event.target.closest(".month-task-line, .month-add-task")) return;
+      if (monthClickTimer) clearTimeout(monthClickTimer);
+      // Delay so a double-click can create a task without first jumping to day view.
+      monthClickTimer = setTimeout(() => {
+        monthClickTimer = 0;
+        state.selectedDate = key;
+        state.taskView = "day";
+        el.viewSwitcher?.querySelectorAll("button").forEach(item => {
+          item.classList.toggle("active", item.dataset.view === "day");
+        });
+        render();
+      }, 280);
     });
     cell.addEventListener("dblclick", event => {
-      if (event.target.closest(".month-task-line")) return;
+      if (event.target.closest(".month-task-line, .month-add-task")) return;
+      if (monthClickTimer) {
+        clearTimeout(monthClickTimer);
+        monthClickTimer = 0;
+      }
       state.selectedDate = key;
-      state.taskView = "day";
-      el.viewSwitcher.querySelectorAll("button").forEach(item => item.classList.toggle("active", item.dataset.view === "day"));
-      render();
+      openTaskDialogForDate(key);
     });
     bindDayOverviewList(cell);
     el.timeline.appendChild(cell);
@@ -3479,17 +3738,33 @@ function renderDayOverviewList(items, mode) {
   </div>`;
 }
 
-function bindDayOverviewList(container) {
+function bindDayOverviewList(container, options = {}) {
+  const openOn = options.openOn === "dblclick" ? "dblclick" : "click";
+  const selectDateKey = options.selectDateKey || "";
   container.querySelectorAll(".week-task-line, .month-task-line").forEach(item => {
-    item.addEventListener("click", event => {
-      event.stopPropagation();
+    const openItem = () => {
       const foundEntry = item.dataset.entryId ? findEntry(item.dataset.entryId) : null;
       if (foundEntry) openEntryDialog(foundEntry.entry.start, foundEntry.entry, foundEntry.dateKey);
       else {
         const task = findTask(item.dataset.taskId)?.task;
         if (task) openTaskDialog(task);
       }
+    };
+    item.addEventListener("click", event => {
+      event.stopPropagation();
+      if (selectDateKey && selectDateKey !== state.selectedDate) {
+        state.selectedDate = selectDateKey;
+        render();
+        return;
+      }
+      if (openOn === "click") openItem();
     });
+    if (openOn === "dblclick") {
+      item.addEventListener("dblclick", event => {
+        event.stopPropagation();
+        openItem();
+      });
+    }
     item.addEventListener("dragstart", event => {
       event.stopPropagation();
       if (item.dataset.entryId) event.dataTransfer.setData("text/entry-id", item.dataset.entryId);
@@ -3813,9 +4088,15 @@ function promptEntryParentCreate(entryPayload, suggestedParentTitle = "") {
 
 function focusLinkedTaskFilter(taskId) {
   const linked = findTask(taskId)?.task;
-  if (!linked || state.taskView === "month") return;
-  state.filter = ["done", "closed"].includes(linked.status) ? "ended" : (isOngoingTask(linked) ? "in_progress" : state.filter);
+  if (!linked) return;
+  // Newly created schedule-linked leaves are usually planned/unplanned; keep the
+  // default in_progress tab from hiding them right after save.
+  if (["done", "closed"].includes(linked.status)) state.filter = "ended";
+  else if (isOngoingTask(linked)) state.filter = "in_progress";
+  else if (isUnplannedTask(linked)) state.filter = "unplanned";
+  else state.filter = "planned";
   TodoListPolicy.saveFilter(state.filter);
+  state.showContinueYesterdayOnly = false;
 }
 
 function fillEntryTaskOptions(entry = null) {
@@ -4011,14 +4292,21 @@ function createTaskFromEntryPayload(entryPayload, dateKey = state.selectedDate, 
 }
 
 function createParentAndLeafFromEntryPayload(entryPayload, parentTitle, dateKey = state.selectedDate) {
-  const parent = createTaskFromEntryPayload(
-    { ...entryPayload, title: parentTitle },
-    dateKey,
-    "从具体日程事项归纳创建的父级任务，可继续添加相关子任务。"
+  const normalizedParent = TodoListPolicy.normalizeTitle(parentTitle);
+  const existingParent = uniqueTasks(getAllTasks().map(({ task }) => task)).find(task =>
+    TodoListPolicy.normalizeTitle(task.title) === normalizedParent
   );
-  parent.dueDate = "";
-  parent.dueTime = "";
-  parent.status = "planned";
+  let parent = existingParent;
+  if (!parent) {
+    parent = createTaskFromEntryPayload(
+      { ...entryPayload, title: parentTitle },
+      dateKey,
+      "从具体日程事项归纳创建的父级任务，可继续添加相关子任务。"
+    );
+    parent.dueDate = "";
+    parent.dueTime = "";
+    parent.status = "planned";
+  }
   const leaf = createTaskFromEntryPayload(
     entryPayload,
     dateKey,
@@ -4341,9 +4629,39 @@ function hasOwnPlanningAnchor(task) {
 
 function getChildTasks(parentId) {
   if (!parentId) return [];
-  return uniqueTasks(getAllTasks()
-    .map(({ task }) => task)
-    .filter(task => (task.parentId || task.parentTaskId || task.parentTask || task.parent || "") === parentId));
+  const all = uniqueTasks(getAllTasks().map(({ task }) => task));
+  const parent = all.find(task => task.id === parentId) || findTask(parentId)?.task || null;
+  const relatedParentIds = RecurringPolicy?.relatedRecurringParentIds?.(all, parentId)
+    || new Set([parentId]);
+  return all.filter(task => RecurringPolicy?.childBelongsToParentInstance
+    ? RecurringPolicy.childBelongsToParentInstance({
+      child: task,
+      parent,
+      relatedParentIds
+    })
+    : (task.parentId || task.parentTaskId || task.parentTask || task.parent || "") === parentId);
+}
+
+function retargetChildrenToMonthlyParentInstance(newParent, groupId) {
+  if (!newParent?.id || !groupId) return false;
+  const instanceIds = new Set(
+    getAllTasks()
+      .map(({ task }) => task)
+      .filter(task => (task.recurrenceGroupId || "") === groupId || task.id === newParent.id)
+      .map(task => task.id)
+  );
+  let changed = false;
+  getAllTasks().forEach(({ task }) => {
+    if ((task.recurrenceGroupId || "") === groupId) return;
+    const pid = task.parentId || task.parentTaskId || task.parentTask || task.parent || "";
+    if (!instanceIds.has(pid) || pid === newParent.id) return;
+    const childMonth = task.dueDate?.slice(0, 7) || "";
+    const parentMonth = newParent.dueDate?.slice(0, 7) || "";
+    if (childMonth && parentMonth && childMonth !== parentMonth) return;
+    task.parentId = newParent.id;
+    changed = true;
+  });
+  return changed;
 }
 
 function matchesFilter(task, filter) {
@@ -4590,15 +4908,19 @@ function ensureRecurringTasksForMonth(targetMonth) {
       untilMonth: recurrence.until
     })) return;
     const groupId = template.recurrenceGroupId || template.id;
-    const exists = getAllTasks().some(({ task }) =>
+    const existing = getAllTasks().find(({ task }) =>
       task.id !== template.id &&
       (task.recurrenceGroupId === groupId || task.recurrenceGroupId === template.recurrenceGroupId) &&
       task.dueDate?.slice(0, 7) === targetMonth
-    ) || template.dueDate.slice(0, 7) === targetMonth;
-    if (exists) return;
+    )?.task || (template.dueDate.slice(0, 7) === targetMonth ? template : null);
+    if (existing) {
+      if (retargetChildrenToMonthlyParentInstance(existing, groupId)) changed = true;
+      return;
+    }
     const dueDate = recurringDateForMonth(template.dueDate, targetMonth);
     const task = cloneRecurringTaskForMonth(template, dueDate, groupId);
     getDay(dueDate).tasks.push(task);
+    if (retargetChildrenToMonthlyParentInstance(task, groupId)) changed = true;
     changed = true;
   });
   if (changed) saveData();
@@ -4798,10 +5120,12 @@ function formatDue(task) {
 function moveSelectedDate(days) { selectDate(addDays(fromDateKey(state.selectedDate), days)); }
 
 function navigateCalendar(direction = 1) {
-  if (!NavigationPolicy.shouldShowDateNav(state.taskView)) return;
+  // Narrow todo strip always steps by day so date picking matches "当天待办".
+  const view = document.body.classList.contains("shell-focus") ? "day" : state.taskView;
+  if (!NavigationPolicy.shouldShowDateNav(view)) return;
   const nextKey = NavigationPolicy.moveDateKey({
     dateKey: state.selectedDate,
-    view: state.taskView,
+    view,
     direction,
     addDays,
     fromDateKey,
@@ -4812,22 +5136,32 @@ function navigateCalendar(direction = 1) {
 }
 
 function updateDateNavigationChrome() {
-  const showNav = NavigationPolicy.shouldShowDateNav(state.taskView);
+  const view = document.body.classList.contains("shell-focus") ? "day" : state.taskView;
+  const showNav = NavigationPolicy.shouldShowDateNav(view);
   el.dateControls?.classList.toggle("date-controls-hidden-nav", !showNav);
   el.dateNavPrev?.classList.toggle("hidden", !showNav);
   el.dateNavNext?.classList.toggle("hidden", !showNav);
-  const labels = NavigationPolicy.navLabels(state.taskView);
+  const labels = NavigationPolicy.navLabels(view);
   el.dateNavPrev?.setAttribute("aria-label", labels.prev);
   el.dateNavNext?.setAttribute("aria-label", labels.next);
   if (el.monthLabel) {
-    el.monthLabel.textContent = NavigationPolicy.formatNavTitle({
-      view: state.taskView,
-      dateKey: state.selectedDate,
-      fromDateKey,
-      toDateKey,
-      getMonday,
-      addDays
-    });
+    const date = fromDateKey(state.selectedDate);
+    if (document.body.classList.contains("shell-focus")) {
+      el.monthLabel.textContent = date
+        ? `${date.getMonth() + 1}月${date.getDate()}日 · ${WEEKDAY_NAMES[date.getDay()]}`
+        : "";
+    } else if (document.body.classList.contains("shell-narrow") && date && view === "day") {
+      el.monthLabel.textContent = `${date.getMonth() + 1}月${date.getDate()}日 · ${WEEKDAY_NAMES[date.getDay()]}`;
+    } else {
+      el.monthLabel.textContent = NavigationPolicy.formatNavTitle({
+        view: state.taskView,
+        dateKey: state.selectedDate,
+        fromDateKey,
+        toDateKey,
+        getMonday,
+        addDays
+      });
+    }
   }
 }
 

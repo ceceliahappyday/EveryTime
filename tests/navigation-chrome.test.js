@@ -20,6 +20,33 @@ assert.ok(app.includes("updateGlassToggleChrome"));
 assert.ok(!html.includes("id=\"previousWeek\""));
 assert.ok(app.includes("bindWindowResize"));
 assert.ok(app.includes("setWindowBounds"));
+assert.match(
+  app,
+  /syncFocusSurfaceVisibility|schedule\.hidden/,
+  "focus mode must hard-hide schedule so glass cannot ghost the calendar"
+);
+assert.match(
+  app,
+  /frameChromeX[\s\S]*shellLayoutDragWidth\s*=\s*Math\.max\(0,\s*width\s*-\s*frameChromeX\)/s,
+  "live window drag must sync shell classes from estimated layout width"
+);
+assert.match(
+  app,
+  /onShellWidthChanged/,
+  "renderer must listen for main-process content width during resize"
+);
+const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+assert.match(
+  main,
+  /notifyShellLayoutWidth/,
+  "main process must publish content width after setBounds/resize"
+);
+const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+assert.match(
+  preload,
+  /onShellWidthChanged/,
+  "preload must expose shell width change events"
+);
 assert.ok(app.includes('edge === "left"'));
 assert.ok(app.includes('edge === "top"'));
 assert.ok(html.includes('data-resize-edge="left"'));
@@ -33,8 +60,11 @@ assert.ok(app.includes("shell-focus"));
 assert.ok(app.includes("bindTaskPanelToggle"));
 assert.ok(app.includes("window.innerWidth < 1180") || app.includes("width < 1180"));
 assert.ok(app.includes("width < 960"));
-assert.ok(app.includes("width < 760"));
+assert.ok(app.includes("SHELL_FOCUS_MAX_WIDTH") || app.includes("width < 560"));
 assert.ok(html.includes('id="maximizeWindow"'));
+assert.ok(html.includes('id="focusViewButton"'));
+assert.ok(app.includes("expandWindowForView"));
+assert.ok(app.includes("bindFocusViewMenu"));
 assert.ok(app.includes("toggleMaximize"));
 assert.ok(app.includes("updateMaximizeChrome"));
 assert.ok(html.includes('id="taskPanelToggle"'));

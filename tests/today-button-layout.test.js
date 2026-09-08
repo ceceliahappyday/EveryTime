@@ -46,8 +46,8 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop \.topbar\s*\{[^}]*grid-template-columns:\s*auto\s+auto\s+auto\s+minmax\(0,\s*1fr\)\s+max-content/s,
-  "window controls must occupy a dedicated max-content column after brand/date/view/actions"
+  /body\.in-desktop \.topbar\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto\s+max-content\s+max-content/s,
+  "window controls and actions must stay on max-content tracks; only date may flex"
 );
 assert.match(
   styles,

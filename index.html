@@ -39,7 +39,16 @@
       </div>
 
       <div class="header-actions" id="headerActions">
-        <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false"><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
+        <div class="focus-view-chrome desktop-only" id="focusViewChrome">
+          <button class="soft-button" id="focusViewButton" type="button" title="选择视图并放大窗口" aria-label="选择视图" aria-haspopup="menu" aria-expanded="false">视图</button>
+          <div class="focus-view-menu" id="focusViewMenu" role="menu" hidden>
+            <button type="button" role="menuitem" data-view="day">日视图</button>
+            <button type="button" role="menuitem" data-view="week">周历</button>
+            <button type="button" role="menuitem" data-view="month">月历</button>
+            <button type="button" role="menuitem" data-view="project">项目甘特</button>
+          </div>
+        </div>
+        <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false" hidden><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
         <div class="header-tools-slot" id="headerToolsSlot">
           <div class="header-tools" id="headerTools">
             <button class="soft-button" id="progressReviewButton" type="button" title="集中更新有投入的明细待办"><i class="btn-icon" aria-hidden="true">↻</i><span class="btn-label">更新进度</span></button>

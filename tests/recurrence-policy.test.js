@@ -55,6 +55,38 @@ assert.deepEqual(
 assert.equal(isNonCanonicalRecurringInstance(historical[0], keepIds), true);
 assert.equal(isNonCanonicalRecurringInstance(historical[2], keepIds), false);
 
+const {
+  relatedRecurringParentIds,
+  childBelongsToParentInstance
+} = require("../recurrence-policy");
+
+const monthlyParentFamily = [
+  { id: "jul-parent", title: "月度结账", dueDate: "2026-07-28", recurrence: { frequency: "monthly" }, recurrenceGroupId: "month-close" },
+  { id: "aug-parent", title: "月度结账", dueDate: "2026-08-28", recurrence: { frequency: "monthly" }, recurrenceGroupId: "month-close" },
+  { id: "child-undated", title: "对账明细", parentId: "jul-parent", dueDate: "", status: "planned" },
+  { id: "child-aug", title: "税务申报", parentId: "jul-parent", dueDate: "2026-08-15", status: "planned" }
+];
+const augRelated = relatedRecurringParentIds(monthlyParentFamily, "aug-parent");
+assert.ok(augRelated.has("jul-parent") && augRelated.has("aug-parent"));
+assert.equal(
+  childBelongsToParentInstance({
+    child: monthlyParentFamily[2],
+    parent: monthlyParentFamily[1],
+    relatedParentIds: augRelated
+  }),
+  true,
+  "undated children under an older monthly parent instance must still resolve for the current month parent"
+);
+assert.equal(
+  childBelongsToParentInstance({
+    child: monthlyParentFamily[3],
+    parent: monthlyParentFamily[1],
+    relatedParentIds: augRelated
+  }),
+  true,
+  "same-month dated children must resolve even when parentId still points at last month"
+);
+
 assert.equal(
   shouldGenerateRecurringMonth({
     targetMonth: "2026-08",

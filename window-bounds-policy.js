@@ -27,7 +27,7 @@ function centerBoundsInWorkArea(workArea, width, height) {
 }
 
 function sanitizeWindowBounds(saved, displays, options = {}) {
-  const minWidth = options.minWidth || 900;
+  const minWidth = options.minWidth || 380;
   const minHeight = options.minHeight || 520;
   const defaultWidth = options.defaultWidth || 1380;
   const defaultHeight = options.defaultHeight || 900;

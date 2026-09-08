@@ -87,10 +87,59 @@ assert.match(
 assert.ok(styles.includes("grid-template-columns: repeat(5, minmax(0, 1fr))"));
 assert.ok(app.includes("ScheduleHoursPolicy.shouldShowWeekColumn"));
 assert.ok(styles.includes("grid-template-rows: auto repeat(6, 136px)"));
-assert.ok(styles.includes("border-width: 0 0 1px"));
+assert.ok(styles.includes("border-radius: 8px"));
+assert.ok(styles.includes(".schedule-month-cell.weekend"));
 assert.ok(styles.includes(".schedule-month-cell.selected .month-task-list"));
 assert.ok(app.includes("goToTodayDayView"));
-assert.ok(app.includes('cell.addEventListener("dblclick"'));
+assert.ok(app.includes('class="month-add-task"'), "empty month days should offer a create affordance");
+assert.ok(app.includes("is-empty"), "empty month cells should be marked for hover plus styling");
+assert.ok(app.includes("MONTH_WEEKDAY_NAMES"), "month calendar should start the week on Monday");
+assert.ok(app.includes("getMonday(first)"), "month grid must align to Monday like the week view");
+assert.match(
+  app,
+  /function renderSchedule\(\)\s*\{[\s\S]*?el\.timeline\.style\.gridTemplateColumns\s*=\s*""/,
+  "leaving week view must clear inline column count so month stays 7 columns"
+);
+assert.ok(
+  styles.includes("grid-template-columns: repeat(7, minmax(0, 1fr))"),
+  "month calendar CSS must use 7 weekday columns"
+);
+assert.ok(app.includes('openTaskDialogForDate(state.selectedDate)'), "day empty-slot double-click should create a task");
+assert.match(
+  app,
+  /taskView = "day"/,
+  "month empty-cell single click should enter day view"
+);
+assert.match(
+  styles,
+  /\.month-add-task\s*\{[^}]*border-radius:\s*50%/s,
+  "month create affordance should be a centered circular plus"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus \.schedule-panel[\s\S]*display:\s*none\s*!important/s,
+  "narrow focus mode must hide the schedule view"
+);
+assert.match(
+  styles,
+  /\.schedule-panel\[hidden\][\s\S]*display:\s*none\s*!important/s,
+  "hidden schedule must beat author display:flex under glass focus"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus\.glass-mode \.task-panel[\s\S]*background:\s*rgba\(6,\s*16,\s*28,\s*\.62\)/s,
+  "focus glass todo surface must match the normal glass panel tint"
+);
+assert.doesNotMatch(
+  styles,
+  /body\.in-desktop\.shell-focus\.focus-schedule/,
+  "narrow focus must not use a stacked or dual calendar surface"
+);
+assert.match(
+  styles,
+  /\.schedule-month-cell\s*\{[^}]*border-radius:\s*8px/s,
+  "month cells should share one card chrome including weekend columns"
+);
 assert.ok(styles.includes(".project-gantt-group-chart-spacer"));
 assert.match(styles, /\.project-gantt-row-label,\s*\.project-gantt-row-chart\s*\{[^}]*height:\s*36px/s);
 assert.match(styles, /\.project-gantt-label-header\s*\{[^}]*height:\s*42px/s);

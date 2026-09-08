@@ -108,6 +108,31 @@
     return filterCanonicalRecurringTasks(tasks, currentMonth);
   }
 
+  function relatedRecurringParentIds(tasks = [], parentId = "") {
+    if (!parentId) return new Set();
+    const parent = tasks.find(task => task?.id === parentId);
+    if (!parent) return new Set([parentId]);
+    const group = recurringGroupKey(parent);
+    if (!group || !isMonthlyRecurringTask(parent)) return new Set([parentId]);
+    return new Set(
+      tasks
+        .filter(task => recurringGroupKey(task) === group)
+        .map(task => task.id)
+        .filter(Boolean)
+        .concat(parentId)
+    );
+  }
+
+  function childBelongsToParentInstance({ child, parent, relatedParentIds } = {}) {
+    if (!child || !relatedParentIds?.size) return false;
+    const pid = child.parentId || child.parentTaskId || child.parentTask || child.parent || "";
+    if (!relatedParentIds.has(pid)) return false;
+    const parentMonth = parent?.dueDate?.slice(0, 7) || "";
+    const childMonth = child.dueDate?.slice(0, 7) || "";
+    if (!parentMonth || !childMonth) return true;
+    return childMonth === parentMonth;
+  }
+
   return {
     currentMonthKey,
     dedupeRecurringTasksForDisplay,
@@ -117,6 +142,8 @@
     isNonCanonicalRecurringInstance,
     isMonthlyRecurringTask,
     recurringGroupKey,
+    relatedRecurringParentIds,
+    childBelongsToParentInstance,
     pickCanonicalRecurringTask,
     shouldGenerateRecurringMonth,
     isFutureRecurringInstance

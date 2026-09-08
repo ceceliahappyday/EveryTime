@@ -12,6 +12,96 @@
   --shadow: 0 18px 55px rgba(47, 48, 42, 0.09);
   --hour-height: 82px;
   --ui-scale: 1;
+  --scroll-size: 8px;
+  --scroll-thumb: rgba(90, 118, 108, .42);
+  --scroll-thumb-strong: rgba(90, 118, 108, .68);
+  --scroll-track: transparent;
+}
+
+/* Overlay scrollbars for Electron/Chromium.
+   Do not set scrollbar-width / scrollbar-color here — on Windows those
+   force native system bars and disable ::-webkit-scrollbar styling. */
+.task-list::-webkit-scrollbar,
+.timeline-wrap::-webkit-scrollbar,
+.project-gantt-rows-wrap::-webkit-scrollbar,
+.project-gantt-hscroll::-webkit-scrollbar,
+.project-gantt-scroll::-webkit-scrollbar,
+.week-schedule-day::-webkit-scrollbar,
+.task-trace-list.month::-webkit-scrollbar,
+.modal-scroll::-webkit-scrollbar,
+.entry-task-options::-webkit-scrollbar,
+.header-more-menu::-webkit-scrollbar,
+.schedule-month-cell.selected .month-task-list::-webkit-scrollbar {
+  width: var(--scroll-size);
+  height: var(--scroll-size);
+}
+.task-list::-webkit-scrollbar-button,
+.timeline-wrap::-webkit-scrollbar-button,
+.project-gantt-rows-wrap::-webkit-scrollbar-button,
+.project-gantt-hscroll::-webkit-scrollbar-button,
+.project-gantt-scroll::-webkit-scrollbar-button,
+.week-schedule-day::-webkit-scrollbar-button,
+.task-trace-list.month::-webkit-scrollbar-button,
+.modal-scroll::-webkit-scrollbar-button,
+.entry-task-options::-webkit-scrollbar-button,
+.header-more-menu::-webkit-scrollbar-button,
+.schedule-month-cell.selected .month-task-list::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.task-list::-webkit-scrollbar-corner,
+.timeline-wrap::-webkit-scrollbar-corner,
+.project-gantt-rows-wrap::-webkit-scrollbar-corner,
+.project-gantt-hscroll::-webkit-scrollbar-corner,
+.project-gantt-scroll::-webkit-scrollbar-corner,
+.week-schedule-day::-webkit-scrollbar-corner,
+.task-trace-list.month::-webkit-scrollbar-corner,
+.modal-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.task-list::-webkit-scrollbar-track,
+.timeline-wrap::-webkit-scrollbar-track,
+.project-gantt-rows-wrap::-webkit-scrollbar-track,
+.project-gantt-hscroll::-webkit-scrollbar-track,
+.project-gantt-scroll::-webkit-scrollbar-track,
+.week-schedule-day::-webkit-scrollbar-track,
+.task-trace-list.month::-webkit-scrollbar-track,
+.modal-scroll::-webkit-scrollbar-track,
+.entry-task-options::-webkit-scrollbar-track,
+.header-more-menu::-webkit-scrollbar-track,
+.schedule-month-cell.selected .month-task-list::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+}
+.task-list::-webkit-scrollbar-thumb,
+.timeline-wrap::-webkit-scrollbar-thumb,
+.project-gantt-rows-wrap::-webkit-scrollbar-thumb,
+.project-gantt-hscroll::-webkit-scrollbar-thumb,
+.project-gantt-scroll::-webkit-scrollbar-thumb,
+.week-schedule-day::-webkit-scrollbar-thumb,
+.task-trace-list.month::-webkit-scrollbar-thumb,
+.modal-scroll::-webkit-scrollbar-thumb,
+.entry-task-options::-webkit-scrollbar-thumb,
+.header-more-menu::-webkit-scrollbar-thumb,
+.schedule-month-cell.selected .month-task-list::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+  background-clip: padding-box;
+  min-height: 32px;
+}
+.task-list:hover::-webkit-scrollbar-thumb,
+.timeline-wrap:hover::-webkit-scrollbar-thumb,
+.timeline-wrap.is-scrolling::-webkit-scrollbar-thumb,
+.project-gantt-rows-wrap:hover::-webkit-scrollbar-thumb,
+.project-gantt-hscroll:hover::-webkit-scrollbar-thumb,
+.project-gantt-scroll:hover::-webkit-scrollbar-thumb,
+.project-gantt-scroll.is-scrolling::-webkit-scrollbar-thumb,
+.week-schedule-day:hover::-webkit-scrollbar-thumb,
+.task-trace-list.month:hover::-webkit-scrollbar-thumb,
+.modal-scroll:hover::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb-strong);
+  background-clip: padding-box;
 }
 
 .ai-modal { width: min(760px, calc(100vw - 32px)); }
@@ -66,6 +156,7 @@ body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
 .topbar input,
 .topbar select,
 .topbar .header-view-switcher,
+.topbar .focus-view-chrome,
 .topbar .window-controls,
 .resize-edge,
 .resize-handle { -webkit-app-region: no-drag; }
@@ -162,7 +253,9 @@ body.in-desktop .window-controls {
   margin-left: 0;
   padding: 0 8px 0 10px;
   border-left: 1px solid var(--line-soft);
-  background: inherit;
+  /* Transparent — never inherit topbar gradients (that restarts them in this
+     small box and looks like a dark opaque patch). */
+  background: transparent;
   overflow: visible;
   z-index: 140;
 }
@@ -503,11 +596,8 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   display: grid;
   align-content: start;
   gap: 0;
-  overflow-y: scroll;
+  overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-color: transparent transparent;
-  scrollbar-width: thin;
-  transition: scrollbar-color .18s ease;
 }
 .task-list.unified-view .task-group-heading {
   position: static;
@@ -520,18 +610,6 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
 }
 .task-list.week-view,
 .task-list.month-view { min-width: 0; }
-.task-list {
-  scrollbar-color: rgba(132, 174, 197, .62) transparent;
-}
-.task-list::-webkit-scrollbar { width: 7px; height: 7px; }
-.task-list::-webkit-scrollbar-track { background: transparent; }
-.task-list::-webkit-scrollbar-thumb {
-  min-height: 38px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: rgba(132, 174, 197, .62);
-  background-clip: padding-box;
-}
 .task-group-heading {
   position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between;
   padding: 8px 4px 6px; color: var(--muted); background: #f8f7f3; font-size: 10px;
@@ -836,12 +914,9 @@ button.task-group-heading {
   height: auto;
   min-height: 0;
   margin-top: 14px;
-  overflow-y: scroll;
+  overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  scrollbar-color: transparent transparent;
-  scrollbar-width: thin;
-  transition: scrollbar-color .18s ease;
 }
 .project-horizontal-scrollbar { display: none !important; }
 .project-gantt-split {
@@ -1007,17 +1082,6 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  scrollbar-color: rgba(132, 174, 197, .68) transparent;
-  scrollbar-width: thin;
-}
-.project-gantt-rows-wrap::-webkit-scrollbar { width: 7px; }
-.project-gantt-rows-wrap::-webkit-scrollbar-track { background: transparent; }
-.project-gantt-rows-wrap::-webkit-scrollbar-thumb {
-  min-height: 42px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: rgba(132, 174, 197, .68);
-  background-clip: padding-box;
 }
 .project-gantt-chart-pane {
   flex: 1;
@@ -1028,93 +1092,24 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   will-change: transform;
 }
 .project-gantt-hscroll {
-  flex: 0 0 14px;
+  flex: 0 0 var(--scroll-size);
+  height: var(--scroll-size);
+  max-height: var(--scroll-size);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
-  scrollbar-color: rgba(132, 174, 197, .78) transparent;
-  scrollbar-width: thin;
-  border-top: 1px solid var(--line-soft);
+  border-top: 0;
   background: transparent;
 }
 .project-gantt-hscroll-inner { height: 1px; }
-.project-gantt-hscroll::-webkit-scrollbar { height: 10px; }
-.project-gantt-hscroll::-webkit-scrollbar-track {
-  background: rgba(132, 174, 197, .12);
-  border-radius: 8px;
-}
-.project-gantt-hscroll::-webkit-scrollbar-thumb {
-  border-radius: 8px;
-  background: rgba(132, 174, 197, .78);
-}
 .project-gantt-scroll {
   flex: 1;
   min-width: 0;
   overflow: hidden;
 }
-.project-gantt-scroll:hover,
-.project-gantt-scroll.is-scrolling {
-  scrollbar-color: rgba(132, 174, 197, .68) transparent;
-}
-.project-gantt-scroll::-webkit-scrollbar { height: 7px; }
-.project-gantt-scroll::-webkit-scrollbar-track { background: transparent; }
-.project-gantt-scroll::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  background-clip: padding-box;
-}
-.project-gantt-scroll:hover::-webkit-scrollbar-thumb,
-.project-gantt-scroll.is-scrolling::-webkit-scrollbar-thumb {
-  background: rgba(132, 174, 197, .68);
-  background-clip: padding-box;
-}
-.timeline-wrap:hover,
-.timeline-wrap.is-scrolling { scrollbar-color: rgba(132, 174, 197, .68) transparent; }
-.timeline-wrap::-webkit-scrollbar { width: 7px; height: 7px; }
-.timeline-wrap::-webkit-scrollbar-track { background: transparent; }
-.timeline-wrap::-webkit-scrollbar-thumb {
-  min-height: 42px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  background-clip: padding-box;
-}
-.timeline-wrap:hover::-webkit-scrollbar-thumb,
-.timeline-wrap.is-scrolling::-webkit-scrollbar-thumb {
-  background: rgba(132, 174, 197, .68);
-  background-clip: padding-box;
-}
 .week-schedule-day,
 .task-trace-list.month {
-  scrollbar-color: transparent transparent;
-  scrollbar-width: thin;
-  transition: scrollbar-color .18s ease;
-}
-.week-schedule-day:hover,
-.task-trace-list.month:hover {
-  scrollbar-color: rgba(132, 174, 197, .62) transparent;
-}
-.week-schedule-day::-webkit-scrollbar,
-.task-trace-list.month::-webkit-scrollbar { width: 0; height: 0; }
-.week-schedule-day:hover::-webkit-scrollbar,
-.task-trace-list.month:hover::-webkit-scrollbar { width: 7px; height: 7px; }
-.week-schedule-day::-webkit-scrollbar-track,
-.task-trace-list.month::-webkit-scrollbar-track {
-  background: transparent;
-}
-.week-schedule-day::-webkit-scrollbar-thumb,
-.task-trace-list.month::-webkit-scrollbar-thumb {
-  min-height: 36px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  background-clip: padding-box;
-}
-.week-schedule-day:hover::-webkit-scrollbar-thumb,
-.task-trace-list.month:hover::-webkit-scrollbar-thumb {
-  background: rgba(132, 174, 197, .62);
-  background-clip: padding-box;
+  overflow: auto;
 }
 .timeline { position: relative; min-height: calc(var(--hour-height) * 15); padding-top: 6px; padding-bottom: 24px; }
 .project-gantt-chrome {
@@ -1735,6 +1730,7 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   letter-spacing: .08em;
 }
 .schedule-month-cell {
+  position: relative;
   min-width: 0;
   height: 136px;
   min-height: 136px;
@@ -1744,12 +1740,56 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--line-soft);
-  border-width: 0 0 1px;
-  border-radius: 0;
+  border-radius: 8px;
   background: transparent;
   cursor: pointer;
+  box-sizing: border-box;
+}
+.schedule-month-cell.weekend {
+  background: rgba(101, 180, 177, .03);
 }
 .schedule-month-cell:hover, .schedule-month-cell.selected { background: rgba(101,180,177,.08); border-color: var(--accent); }
+.month-add-task {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid rgba(255, 255, 255, .72);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, .92);
+  background: transparent;
+  font-size: 26px;
+  font-weight: 300;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease, transform .15s ease, border-color .15s ease, color .15s ease;
+  cursor: pointer;
+  z-index: 2;
+}
+.schedule-month-cell.is-empty:hover .month-add-task,
+.schedule-month-cell.is-empty.selected .month-add-task {
+  opacity: 1;
+  pointer-events: auto;
+}
+.month-add-task:hover {
+  transform: scale(1.06);
+  border-color: #fff;
+  color: #fff;
+}
+body:not(.glass-mode) .month-add-task,
+body.in-desktop:not(.glass-mode) .month-add-task {
+  border-color: rgba(70, 99, 87, .45);
+  color: rgba(70, 99, 87, .75);
+}
+body:not(.glass-mode) .month-add-task:hover,
+body.in-desktop:not(.glass-mode) .month-add-task:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .schedule-month-cell.today {
   border-color: rgba(101, 180, 177, .92);
   box-shadow: inset 3px 0 0 rgba(101,180,177,.72);
@@ -1786,12 +1826,6 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
 .schedule-month-cell.selected .month-task-list {
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-}
-.schedule-month-cell.selected .month-task-list::-webkit-scrollbar { width: 5px; }
-.schedule-month-cell.selected .month-task-list::-webkit-scrollbar-thumb {
-  border-radius: 6px;
-  background: rgba(101,180,177,.55);
 }
 .month-task-line {
   display: grid;
@@ -2111,16 +2145,6 @@ body.in-desktop:has(dialog[open]) .resize-handle {
   overflow-y: auto;
   padding: 22px 18px 14px 24px;
   scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(130, 165, 185, .55) transparent;
-}
-.modal-scroll::-webkit-scrollbar { width: 10px; }
-.modal-scroll::-webkit-scrollbar-track { background: transparent; }
-.modal-scroll::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: rgba(130, 165, 185, .45);
-  background-clip: padding-box;
 }
 .modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
 .modal h3 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
@@ -2378,6 +2402,16 @@ body.in-desktop:has(dialog[open]) .resize-handle {
 .hidden { display: none !important; }
 .desktop-only { display: none; }
 body.in-desktop .desktop-only { display: inline-block; }
+/* focus-view-chrome is desktop-only markup, but must stay hidden whenever
+   the full 日/周/月/项目 switcher is visible (not shell-focus). */
+body.in-desktop .focus-view-chrome.desktop-only,
+.focus-view-chrome {
+  display: none !important;
+}
+body.in-desktop.shell-focus .focus-view-chrome.desktop-only,
+body.in-desktop.shell-focus .focus-view-chrome {
+  display: inline-flex !important;
+}
 body.in-desktop.pinned #pinWindow { color: #fff; border-color: var(--accent); background: var(--accent); }
 body.in-desktop.glass-mode {
   /* Electron cannot frost the real desktop with backdrop-filter (it paints black).
@@ -2391,6 +2425,8 @@ body.in-desktop.glass-mode {
   --line-soft: rgba(210, 231, 243, .30);
   --accent: #65b4b1;
   --accent-soft: rgba(62, 154, 154, .24);
+  --scroll-thumb: rgba(175, 215, 236, .38);
+  --scroll-thumb-strong: rgba(175, 215, 236, .72);
   background: transparent;
 }
 body.in-desktop.glass-mode .app-shell {
@@ -2406,12 +2442,13 @@ body.in-desktop.glass-mode .topbar,
 body.in-desktop.glass-mode .week-strip {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, .10), transparent 55%),
-    linear-gradient(180deg, rgba(8, 22, 36, .58), rgba(6, 16, 28, .46));
+    linear-gradient(180deg, rgba(8, 22, 36, .72), rgba(6, 16, 28, .58));
 }
 body.in-desktop.glass-mode .task-panel,
 body.in-desktop.glass-mode .schedule-panel,
 body.in-desktop.glass-mode .workspace {
-  background: rgba(6, 16, 28, .28);
+  /* Keep glass feel but stop desktop content bleeding through scroll areas. */
+  background: rgba(6, 16, 28, .62);
 }
 body.in-desktop.glass-mode .schedule-heading {
   min-height: 58px;
@@ -2465,7 +2502,16 @@ body.in-desktop.glass-mode .window-controls button {
   text-shadow: 0 1px 3px rgba(0,0,0,.88);
 }
 body.in-desktop.glass-mode .window-controls {
-  border-left-color: rgba(219,238,249,.28);
+  border-left-color: rgba(219, 238, 249, .22);
+  background: transparent;
+}
+body.in-desktop.glass-mode .window-controls button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, .14);
+}
+body.in-desktop.glass-mode .window-controls .window-close:hover {
+  color: #fff;
+  background: #b94c48;
 }
 body.in-desktop.glass-mode .header-view-switcher button.active {
   color: #fff;
@@ -2872,8 +2918,20 @@ body.in-desktop.glass-mode .schedule-month-cell {
   background: transparent;
   box-shadow: none;
 }
+body.in-desktop.glass-mode .schedule-month-cell.weekend {
+  background: rgba(255, 255, 255, .03);
+}
 body.in-desktop.glass-mode .schedule-month-cell:hover,
 body.in-desktop.glass-mode .schedule-month-cell.selected { background: rgba(101,180,177,.10); }
+body.in-desktop.glass-mode .month-add-task {
+  border-color: rgba(255, 255, 255, .72);
+  color: rgba(255, 255, 255, .92);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .55);
+}
+body.in-desktop.glass-mode .month-add-task:hover {
+  border-color: #fff;
+  color: #fff;
+}
 body.in-desktop.glass-mode .schedule-month-cell.today {
   border-color: rgba(143,224,215,.60);
   box-shadow: inset 3px 0 0 rgba(143,224,215,.82);
@@ -2946,13 +3004,6 @@ body.in-desktop.glass-mode #taskDialog .modal-actions {
   padding: 12px 24px 18px;
   border-top: 1px solid rgba(181, 218, 239, .28);
   background: rgba(8, 22, 36, .92);
-}
-body.in-desktop.glass-mode .modal-scroll {
-  scrollbar-color: rgba(175, 215, 236, .55) transparent;
-}
-body.in-desktop.glass-mode .modal-scroll::-webkit-scrollbar-thumb {
-  background: rgba(175, 215, 236, .42);
-  background-clip: padding-box;
 }
 body.in-desktop.glass-mode .task-subtasks {
   background: rgba(0, 0, 0, .28);
@@ -3063,38 +3114,6 @@ body.in-desktop.glass-mode .task-detail-summary strong {
 body.in-desktop.glass-mode .project-gantt-hscroll {
   border-top-color: rgba(172,211,233,.28);
   background: transparent;
-  scrollbar-color: rgba(175, 215, 236, .78) transparent;
-}
-body.in-desktop.glass-mode .project-gantt-hscroll::-webkit-scrollbar-track {
-  background: rgba(175, 215, 236, .12);
-}
-body.in-desktop.glass-mode .project-gantt-hscroll::-webkit-scrollbar-thumb,
-body.in-desktop.glass-mode .project-gantt-rows-wrap::-webkit-scrollbar-thumb {
-  background: rgba(175, 215, 236, .78);
-  background-clip: padding-box;
-}
-body.in-desktop.glass-mode .project-gantt-rows-wrap {
-  scrollbar-color: rgba(175, 215, 236, .78) transparent;
-}
-body.in-desktop.glass-mode .task-list {
-  scrollbar-color: rgba(175, 215, 236, .72) transparent;
-}
-body.in-desktop.glass-mode .task-list::-webkit-scrollbar-thumb {
-  background: rgba(175, 215, 236, .72);
-  background-clip: padding-box;
-}
-body.in-desktop.glass-mode .timeline-wrap:hover,
-body.in-desktop.glass-mode .timeline-wrap.is-scrolling {
-  scrollbar-color: rgba(175, 215, 236, .76) transparent;
-}
-body.in-desktop.glass-mode .week-schedule-day:hover,
-body.in-desktop.glass-mode .task-trace-list.month:hover {
-  scrollbar-color: rgba(175, 215, 236, .72) transparent;
-}
-body.in-desktop.glass-mode .week-schedule-day:hover::-webkit-scrollbar-thumb,
-body.in-desktop.glass-mode .task-trace-list.month:hover::-webkit-scrollbar-thumb {
-  background: rgba(175, 215, 236, .72);
-  background-clip: padding-box;
 }
 .resize-edge {
   position: absolute;
@@ -3291,7 +3310,8 @@ body.compact .task-card { padding-top: 10px; padding-bottom: 10px; }
    Use grid so window-controls stay a fixed trailing track and never crush into a column. */
 body.in-desktop .topbar {
   display: grid;
-  grid-template-columns: auto auto auto minmax(0, 1fr) max-content;
+  /* brand | flexible date | fixed view | fixed actions | fixed window — never crush trailing chrome */
+  grid-template-columns: auto minmax(0, 1fr) auto max-content max-content;
   align-items: center;
   height: 72px;
   min-height: 72px;
@@ -3338,11 +3358,13 @@ body.in-desktop .header-actions {
   align-items: center;
   flex-wrap: nowrap;
   gap: 6px;
-  max-width: 100%;
-  width: auto;
-  min-width: 0;
-  overflow: hidden;
+  width: max-content;
+  max-width: none;
+  min-width: max-content;
+  flex: 0 0 auto;
+  overflow: visible;
   justify-content: flex-end;
+  justify-self: end;
   grid-column: 4;
 }
 body.in-desktop .window-controls {
@@ -3446,18 +3468,30 @@ body.in-desktop .workspace {
   position: relative;
 }
 
-/* ~1520: hide decorative copy; action buttons become icons so default windows fit. */
+/* ~1180: hide brand chrome; keep date + views + trailing actions on one row. */
+body.in-desktop.shell-narrow .brand {
+  display: none !important;
+}
 body.in-desktop.shell-narrow .brand p,
 body.in-desktop.shell-narrow .app-version {
   display: none;
 }
-body.in-desktop.shell-narrow .brand-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
-  font-size: 17px;
+body.in-desktop.shell-narrow .topbar {
+  grid-template-columns: minmax(0, 1fr) auto max-content max-content;
+  column-gap: 8px;
 }
-body.in-desktop.shell-narrow .brand h1 { font-size: 16px; }
+body.in-desktop.shell-narrow .topbar-main {
+  grid-column: 1;
+}
+body.in-desktop.shell-narrow .header-view-switcher {
+  grid-column: 2;
+}
+body.in-desktop.shell-narrow .header-actions {
+  grid-column: 3;
+}
+body.in-desktop.shell-narrow .window-controls {
+  grid-column: 4;
+}
 body.in-desktop.shell-narrow .date-controls { gap: 6px; }
 body.in-desktop.shell-narrow .date-controls .icon-button,
 body.in-desktop.shell-narrow .date-controls .soft-button,
@@ -3470,10 +3504,16 @@ body.in-desktop.shell-narrow .window-controls button {
 }
 body.in-desktop.shell-narrow .date-picker-button {
   min-width: 0;
-  padding: 0 11px;
+  max-width: 148px;
+  padding: 0 10px;
   justify-content: center;
 }
-body.in-desktop.shell-narrow .date-picker-button strong { font-size: 12px; }
+body.in-desktop.shell-narrow .date-picker-button strong {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 body.in-desktop.shell-narrow .header-actions .soft-button,
 body.in-desktop.shell-narrow .header-actions .primary-button {
   width: 34px;
@@ -3505,19 +3545,35 @@ body.in-desktop.shell-narrow #todayButton {
   flex: 0 0 auto;
 }
 
-/* ~960: hide secondary tools + week strip; keep core navigation. */
-body.in-desktop.shell-compact-topbar .topbar {
-  height: 60px;
-  min-height: 60px;
-  padding: 0 10px;
-  column-gap: 8px;
+/* Desktop week strip must not inherit web horizontal-scroll min-widths. */
+body.in-desktop .week-strip {
+  overflow: hidden;
 }
-body.in-desktop.shell-compact-topbar .brand > div:last-child { display: none; }
+body.in-desktop .week-days {
+  min-width: 0;
+  width: 100%;
+}
+
+/* ~960: denser chrome; hide week strip to protect the single topbar row. */
+body.in-desktop.shell-compact-topbar .topbar {
+  height: 56px;
+  min-height: 56px;
+  padding: 0 8px;
+  column-gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto max-content max-content;
+}
+body.in-desktop.shell-compact-topbar .brand {
+  display: none !important;
+}
+body.in-desktop.shell-compact-topbar .topbar-main { grid-column: 1; }
+body.in-desktop.shell-compact-topbar .header-view-switcher { grid-column: 2; }
+body.in-desktop.shell-compact-topbar .header-actions { grid-column: 3; }
+body.in-desktop.shell-compact-topbar .window-controls { grid-column: 4; }
 body.in-desktop.shell-compact-topbar #todayButton,
 body.in-desktop.shell-compact-topbar .shell-hide-compact {
   display: none !important;
 }
-body.in-desktop.shell-compact-topbar .week-strip { display: none; }
+body.in-desktop.shell-compact-topbar .week-strip { display: none !important; }
 body.in-desktop.shell-compact-topbar .date-controls .icon-button,
 body.in-desktop.shell-compact-topbar .date-controls .date-picker-button,
 body.in-desktop.shell-compact-topbar .header-actions .soft-button,
@@ -3527,7 +3583,8 @@ body.in-desktop.shell-compact-topbar .window-controls button {
   height: 30px;
 }
 body.in-desktop.shell-compact-topbar .date-picker-button {
-  padding: 0 10px;
+  max-width: 120px;
+  padding: 0 8px;
 }
 body.in-desktop.shell-compact-topbar .icon-button {
   width: 30px;
@@ -3558,66 +3615,242 @@ body.in-desktop.shell-compact-topbar.project-mode .workspace {
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* ~760: schedule-first; hide left task module unless toggled open. */
-body.in-desktop.shell-focus .topbar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) max-content;
+/* ~560: todo list only — never stack todo above schedule.
+   Wider than todo strip restores schedule automatically (confirmed).
+   Use higher-specificity selectors so shell-narrow/compact cannot leave a
+   different column map after wide→narrow vs cold refresh. */
+body.in-desktop.shell-focus .topbar,
+body.in-desktop.shell-focus.shell-narrow .topbar,
+body.in-desktop.shell-focus.shell-compact-topbar .topbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  /* date cluster | spacer | actions(含视图) | window — flex avoids grid
+     column squeeze that let 视图 paint over the date → control. */
+  gap: 6px;
   height: 56px;
   min-height: 56px;
+  padding: 0 6px 0 8px;
+  overflow: hidden;
 }
 body.in-desktop.shell-focus .brand,
+body.in-desktop.shell-focus .header-view-switcher,
+body.in-desktop.shell-focus .week-strip { display: none !important; }
 body.in-desktop.shell-focus .topbar-main,
-body.in-desktop.shell-focus .date-controls { display: none; }
-body.in-desktop.shell-focus .header-view-switcher {
-  grid-column: 1;
+body.in-desktop.shell-focus.shell-narrow .topbar-main,
+body.in-desktop.shell-focus.shell-compact-topbar .topbar-main {
+  display: flex !important;
   flex: 0 0 auto;
-  grid-template-columns: repeat(4, 24px);
+  grid-column: auto !important;
+  width: max-content;
+  min-width: max-content !important;
+  max-width: none;
+  overflow: visible;
 }
-body.in-desktop.shell-focus .header-actions {
-  grid-column: 2;
+body.in-desktop.shell-focus .date-controls {
+  display: flex !important;
+  flex: 0 0 auto;
+  min-width: max-content;
+  gap: 3px;
 }
-body.in-desktop.shell-focus .window-controls {
-  grid-column: 3;
+body.in-desktop.shell-focus #todayButton { display: none !important; }
+body.in-desktop.shell-focus .date-picker-button {
+  min-width: 0;
+  max-width: 108px;
+  padding: 0 7px;
+  height: 30px;
+}
+body.in-desktop.shell-focus .date-picker-button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+body.in-desktop.shell-focus .date-controls .icon-button {
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+}
+body.in-desktop.shell-focus .header-actions,
+body.in-desktop.shell-focus.shell-narrow .header-actions,
+body.in-desktop.shell-focus.shell-compact-topbar .header-actions {
+  grid-column: auto !important;
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: max-content;
+  max-width: none;
+  margin-left: auto;
+  overflow: visible;
+  justify-self: end;
+  gap: 4px;
+  z-index: 2;
+}
+body.in-desktop.shell-focus .window-controls,
+body.in-desktop.shell-focus.shell-narrow .window-controls,
+body.in-desktop.shell-focus.shell-compact-topbar .window-controls {
+  grid-column: auto !important;
+  flex: 0 0 auto;
+  min-width: max-content;
+  height: 30px;
+  padding: 0 4px 0 6px;
+}
+body.in-desktop.shell-focus .window-controls button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+}
+body.in-desktop.shell-focus .focus-view-chrome {
+  display: inline-flex !important;
+  position: relative;
+  align-items: center;
+  flex: 0 0 auto;
+  order: -1;
+}
+body.in-desktop.shell-focus .header-actions .btn-label {
+  display: none;
+}
+body.in-desktop.shell-focus .header-actions > .soft-button {
+  min-width: 30px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  justify-content: center;
+}
+body.in-desktop.shell-focus .focus-view-chrome .soft-button,
+body.in-desktop.shell-focus #focusViewButton {
+  width: auto !important;
+  min-width: 40px !important;
+  padding: 0 8px !important;
+  height: 30px;
+  font-size: 12px;
+}
+body.in-desktop.shell-focus .header-tools-slot:empty,
+body.in-desktop.shell-focus.header-tools-overflow .header-tools-slot {
+  display: none;
 }
 body.in-desktop.shell-focus .shell-hide-focus { display: none !important; }
 body.in-desktop.shell-focus .shell-only-focus {
-  display: inline-flex !important;
+  display: none !important;
 }
 body.in-desktop.shell-focus .workspace {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  grid-template-areas: "focus";
 }
-body.in-desktop.shell-focus .schedule-panel {
+body.in-desktop.shell-focus .task-panel {
+  display: flex !important;
+  grid-area: focus;
   grid-row: 1;
+  grid-column: 1 / -1;
   height: 100%;
   min-height: 0;
+  width: 100%;
+  max-width: none;
+  border-right: 0;
+  z-index: 2;
 }
-body.in-desktop.shell-focus:not(.task-panel-open) .task-panel {
-  display: none;
+body.in-desktop.shell-focus .schedule-panel,
+body.in-desktop.shell-focus.project-mode .schedule-panel,
+body.in-desktop.shell-focus .schedule-panel[hidden] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  inset: auto !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  z-index: -1 !important;
 }
-body.in-desktop.shell-focus.task-panel-open .task-panel {
+body.in-desktop.shell-focus .week-strip,
+body.in-desktop.shell-focus .week-strip[hidden],
+body.in-desktop.shell-compact-topbar .week-strip[hidden] {
+  display: none !important;
+}
+/* Keep focus glass on the same panel tint as wide windows; schedule is hard-hidden
+   so an extra-opaque plate is unnecessary and made the body look black vs gray topbar. */
+body.in-desktop.shell-focus.glass-mode .workspace,
+body.in-desktop.shell-focus.glass-mode .task-panel {
+  background: rgba(6, 16, 28, .62);
+}
+body.in-desktop.shell-focus.glass-mode .topbar {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .08), transparent 55%),
+    linear-gradient(180deg, rgba(8, 22, 36, .62), rgba(6, 16, 28, .62));
+  border-bottom-color: rgba(181, 218, 239, .22);
+}
+/* Focus chrome: quieter buttons so the bar reads as one surface, not patches. */
+body.in-desktop.shell-focus.glass-mode .topbar .icon-button,
+body.in-desktop.shell-focus.glass-mode .topbar .soft-button,
+body.in-desktop.shell-focus.glass-mode .topbar .date-picker-button {
+  background: rgba(255, 255, 255, .08);
+  border-color: rgba(219, 238, 249, .22);
+  box-shadow: none;
+}
+body.in-desktop.shell-focus.glass-mode .window-controls {
+  border-left-color: rgba(219, 238, 249, .18);
+  background: transparent;
+}
+body.in-desktop.shell-focus #taskPanelToggle {
+  display: none !important;
+}
+.schedule-panel[hidden],
+.week-strip[hidden] {
+  display: none !important;
+}
+.focus-view-chrome { display: none !important; }
+body:not(.shell-focus) .focus-view-menu {
+  display: none !important;
+}
+.focus-view-menu {
+  min-width: 148px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(251, 250, 247, .98);
+  box-shadow: 0 14px 34px rgba(20, 28, 34, .28);
+}
+.focus-view-menu[hidden] { display: none !important; }
+.focus-view-menu button {
   display: flex;
-  position: absolute;
-  z-index: 45;
-  inset: 0 auto 0 0;
-  width: min(320px, 86vw);
-  border-right: 1px solid var(--line-soft);
-  box-shadow: 12px 0 36px rgba(0, 0, 0, .22);
-  background: var(--surface-strong);
+  width: 100%;
+  min-height: 34px;
+  padding: 0 12px;
+  align-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ink);
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
 }
-body.in-desktop.shell-focus.task-panel-open #taskPanelToggle {
-  background: var(--accent-soft);
-  border-color: var(--line);
+.focus-view-menu button:hover {
+  background: rgba(60, 102, 85, .12);
+}
+body.in-desktop.glass-mode .focus-view-menu {
+  background: rgba(8, 22, 36, .94);
+  border-color: rgba(181, 218, 239, .42);
+}
+body.in-desktop.glass-mode .focus-view-menu button {
+  color: #f4fbff;
+}
+body.in-desktop.glass-mode .focus-view-menu button:hover {
+  background: rgba(175, 215, 236, .18);
 }
 
 @media (max-width: 1120px) {
-  .topbar { grid-template-columns: auto 1fr; padding: 0 18px; }
-  .date-controls { display: none; }
-  .header-actions { gap: 6px; }
-  .header-actions > .soft-button { padding-left: 9px; padding-right: 9px; font-size: 0; }
-  .header-actions > .soft-button::first-letter { font-size: 13px; }
-  .workspace { grid-template-columns: clamp(250px, 32vw, 310px) minmax(0, 1fr); }
-  body.project-mode .workspace { grid-template-columns: minmax(0, 1fr); }
+  body:not(.in-desktop) .topbar { grid-template-columns: auto 1fr; padding: 0 18px; }
+  body:not(.in-desktop) .date-controls { display: none; }
+  body:not(.in-desktop) .header-actions { gap: 6px; }
+  body:not(.in-desktop) .header-actions > .soft-button { padding-left: 9px; padding-right: 9px; font-size: 0; }
+  body:not(.in-desktop) .header-actions > .soft-button::first-letter { font-size: 13px; }
+  body:not(.in-desktop) .workspace { grid-template-columns: clamp(250px, 32vw, 310px) minmax(0, 1fr); }
+  body:not(.in-desktop).project-mode .workspace { grid-template-columns: minmax(0, 1fr); }
   .day-button { grid-template-columns: 38px 1fr; }
   .day-dot { display: none; }
 }
@@ -3638,120 +3871,132 @@ body.in-desktop.shell-focus.task-panel-open #taskPanelToggle {
 }
 
 @media (max-width: 900px) {
-  .topbar { height: 82px; }
-  .week-strip { height: 76px; padding: 8px 14px; }
-  .workspace {
+  body:not(.in-desktop) .topbar { height: 82px; }
+  body:not(.in-desktop) .week-strip { height: 76px; padding: 8px 14px; }
+  body:not(.in-desktop) .workspace {
     flex: 1;
     min-height: 0;
     height: auto;
     grid-template-columns: clamp(220px, 34vw, 275px) minmax(0, 1fr);
   }
-  body.project-mode .workspace {
+  body:not(.in-desktop).project-mode .workspace {
     grid-template-columns: minmax(0, 1fr);
   }
-  .task-panel { padding: 18px 16px 98px; }
-  .task-panel-footer { left: 16px; right: 16px; bottom: 16px; }
-  .schedule-panel { padding: 18px 16px; }
-  .brand p { display: none; }
-  .brand-mark { width: 36px; height: 36px; }
-  .header-view-switcher { grid-template-columns: repeat(4, 28px); }
+  body:not(.in-desktop) .task-panel { padding: 18px 16px 98px; }
+  body:not(.in-desktop) .task-panel-footer { left: 16px; right: 16px; bottom: 16px; }
+  body:not(.in-desktop) .schedule-panel { padding: 18px 16px; }
+  body:not(.in-desktop) .brand p { display: none; }
+  body:not(.in-desktop) .brand-mark { width: 36px; height: 36px; }
+  body:not(.in-desktop) .header-view-switcher { grid-template-columns: repeat(4, 28px); }
   .primary-button { padding-left: 10px; padding-right: 10px; }
 }
 
 @media (max-width: 760px) {
   body { min-width: 360px; }
-  body.in-desktop.shell-focus .workspace {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
-  }
-  body.in-desktop.shell-focus .topbar {
-    height: 56px;
-    min-height: 56px;
-    grid-template-columns: minmax(0, 1fr) max-content;
-    gap: 8px;
-    padding: 0 10px;
-  }
-  body.in-desktop.shell-focus .header-actions {
-    overflow: visible;
-    padding-bottom: 0;
-  }
-  .topbar {
+  /* Web-only stacked chrome. Desktop layout is owned by shell-* classes so
+     wide-to-narrow drag matches a cold narrow refresh. */
+  body:not(.in-desktop) .topbar {
     height: auto;
     min-height: 76px;
     grid-template-columns: 1fr;
     gap: 8px;
     padding: 12px;
   }
-  .brand { justify-content: space-between; }
-  .header-actions {
+  body:not(.in-desktop) .brand { justify-content: space-between; }
+  body:not(.in-desktop) .header-actions {
     justify-content: flex-start;
     gap: 6px;
     overflow-x: auto;
     padding-bottom: 2px;
   }
-  .header-actions > * { flex: 0 0 auto; }
-  .header-actions > .soft-button { font-size: 11px; padding: 8px 10px; }
-  .week-strip {
+  body:not(.in-desktop) .header-actions > * { flex: 0 0 auto; }
+  body:not(.in-desktop) .header-actions > .soft-button { font-size: 11px; padding: 8px 10px; }
+  body:not(.in-desktop) .week-strip {
     height: 70px;
     padding: 8px 10px;
     overflow-x: auto;
   }
-  .week-days {
+  body:not(.in-desktop) .week-days {
     min-width: 620px;
     grid-template-columns: repeat(5, 118px);
   }
-  .day-button { padding: 6px 8px; gap: 7px; }
-  .day-number { width: 34px; height: 34px; }
-  .workspace {
+  body:not(.in-desktop) .workspace {
     flex: 1;
     min-height: 0;
     height: auto;
     grid-template-columns: 1fr;
     grid-template-rows: minmax(190px, 38%) minmax(0, 1fr);
   }
-  body.project-mode .workspace {
+  body:not(.in-desktop).project-mode .workspace {
     grid-template-rows: minmax(0, 1fr);
   }
-  body.project-mode .task-panel {
+  body:not(.in-desktop).project-mode .task-panel {
     display: none;
   }
-  .task-panel {
-    border-right: 0;
-    border-bottom: 1px solid var(--line-soft);
-    padding: 16px 14px;
-    overflow-y: auto;
+  .day-button { padding: 6px 8px; gap: 7px; }
+  .day-number { width: 34px; height: 34px; }
+  body.in-desktop .week-strip { overflow: hidden; }
+  body.in-desktop .week-days {
+    min-width: 0;
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  }
+  body.in-desktop.shell-compact-topbar .week-strip,
+  body.in-desktop.shell-focus .week-strip {
+    display: none !important;
+  }
+  body.in-desktop:not(.shell-focus) .workspace {
+    grid-template-columns: clamp(200px, 34vw, 300px) minmax(0, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+  body.in-desktop.shell-focus .workspace {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+  body.in-desktop.shell-focus .schedule-panel {
+    display: none !important;
+  }
+  body.in-desktop.shell-focus .task-panel {
+    display: flex !important;
+    grid-row: 1;
+    height: 100%;
+    min-height: 0;
+    border-bottom: 0;
+  }
+  body.in-desktop.project-mode:not(.shell-focus) .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
   .project-gantt { min-width: 100%; }
-  .task-panel-footer {
+  body:not(.in-desktop) .task-panel-footer {
     position: static;
     margin-top: 12px;
     grid-template-columns: 1fr 1fr;
     padding: 12px;
   }
-  .task-list.week-view,
-  .task-list {
+  body:not(.in-desktop) .task-list.week-view,
+  body:not(.in-desktop) .task-list {
     max-height: none;
-    overflow-y: scroll;
+    overflow-y: auto;
   }
-  .schedule-panel { padding: 16px 14px; }
-  .schedule-heading {
+  body:not(.in-desktop) .schedule-panel { padding: 16px 14px; }
+  body:not(.in-desktop) .schedule-heading {
     height: auto;
     gap: 10px;
     flex-wrap: wrap;
   }
-  .schedule-stats { width: 100%; justify-content: space-between; gap: 12px; }
-  .all-day-row {
+  body:not(.in-desktop) .schedule-stats { width: 100%; justify-content: space-between; gap: 12px; }
+  body:not(.in-desktop) .all-day-row {
     grid-template-columns: auto 1fr;
     gap: 8px;
   }
-  .all-day-row button { grid-column: 2; }
-  .timeline-wrap { overflow-x: auto; }
-  .schedule-entry {
+  body:not(.in-desktop) .all-day-row button { grid-column: 2; }
+  body:not(.in-desktop) .timeline-wrap { overflow-x: auto; }
+  body:not(.in-desktop) .schedule-entry {
     --entry-left: 58px;
     --entry-gap: 4px;
     padding: 8px 9px;
   }
-  .week-schedule { grid-template-columns: repeat(5, minmax(72px, 1fr)); }
+  body:not(.in-desktop) .week-schedule { grid-template-columns: repeat(5, minmax(72px, 1fr)); }
   .schedule-month-calendar { min-width: 0; }
   .modal { width: min(520px, calc(100% - 18px)); padding: 18px; }
   .modal form { padding: 0; }
@@ -3762,7 +4007,7 @@ body.in-desktop.shell-focus.task-panel-open #taskPanelToggle {
   .header-view-switcher { grid-template-columns: repeat(4, 30px); }
   .app-version { margin-left: 4px; padding-inline: 6px; font-size: 9px; }
   .primary-button { font-size: 12px; }
-  .workspace { grid-template-rows: minmax(180px, 42%) minmax(0, 1fr); }
+  body:not(.in-desktop) .workspace { grid-template-rows: minmax(180px, 42%) minmax(0, 1fr); }
   .task-card { grid-template-columns: 20px 1fr; }
   .task-menu { grid-column: 2; justify-self: end; margin-top: -4px; }
   .form-row { grid-template-columns: 1fr; gap: 8px; }

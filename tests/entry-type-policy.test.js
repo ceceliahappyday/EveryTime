@@ -10,6 +10,16 @@ assert.match(app, /entry\.entryType \|\|= entry\.taskId \? "task_work" : "calend
 assert.match(app, /payload\.entryType !== "task_work"/, "calendar entries should not be linked into the todo list");
 assert.match(app, /resolveEntryTaskLinkWithGuard/, "task work entries should resolve an explicit leaf task link");
 assert.match(app, /entryType: "task_work", taskId: task\.id/, "dragging a task into the calendar should remain task work");
+assert.match(
+  app,
+  /function focusLinkedTaskFilter[\s\S]*state\.filter = "planned"/s,
+  "schedule-created planned leaves must switch the todo filter so they are visible"
+);
+assert.match(
+  app,
+  /retargetChildrenToMonthlyParentInstance|relatedRecurringParentIds/,
+  "monthly parent clones must keep children discoverable across instance ids"
+);
 assert.doesNotMatch(app, /从日程自动补建，确保左侧待办状态与右侧日程一致/, "unlinked calendar events should not be silently promoted to todos");
 assert.match(app, /state\.taskView === "day" && state\.filter === "in_progress"/, "day view should have a global ongoing-task pool");
 assert.match(app, /isOngoingTask\(task\)/, "unfinished work should remain draggable across dates until closed");

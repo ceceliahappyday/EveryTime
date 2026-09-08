@@ -35,8 +35,18 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.project-gantt-hscroll\s*\{[^}]*overflow-x:\s*auto/s,
-  "gantt horizontal scrollbar should stay fixed at the bottom of the chart area"
+  /Do not set scrollbar-width/,
+  "desktop scrollbars must avoid native Windows bars that ignore webkit styling"
+);
+assert.match(
+  styles,
+  /::-webkit-scrollbar-button[\s\S]*display:\s*none/s,
+  "custom scrollbars must hide native arrow buttons"
+);
+assert.match(
+  styles,
+  /\.project-gantt-hscroll\s*\{[^}]*flex:\s*0\s*0\s*var\(--scroll-size\)/s,
+  "gantt horizontal scrollbar should stay a thin overlay track"
 );
 assert.match(
   styles,
@@ -126,6 +136,11 @@ assert.match(
 );
 assert.match(
   styles,
+  /body\.in-desktop \.window-controls\s*\{[^}]*background:\s*transparent/s,
+  "window controls must not inherit topbar gradients as a dark patch"
+);
+assert.match(
+  styles,
   /\.resize-edge-left/s,
   "left resize edge should allow horizontal window sizing"
 );
@@ -151,8 +166,13 @@ assert.doesNotMatch(
 );
 assert.match(
   styles,
-  /body\.in-desktop\.glass-mode \.topbar,\s*body\.in-desktop\.glass-mode \.week-strip\s*\{[^}]*rgba\(8,\s*22,\s*36,\s*\.58\)/s,
+  /body\.in-desktop\.glass-mode \.topbar,\s*body\.in-desktop\.glass-mode \.week-strip\s*\{[^}]*rgba\(8,\s*22,\s*36,\s*\.72\)/s,
   "glass chrome should use translucent frosted panels, not opaque black"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.glass-mode \.task-panel[\s\S]*?background:\s*rgba\(6,\s*16,\s*28,\s*\.62\)/s,
+  "glass panels need enough opacity to stop desktop content bleeding through"
 );
 assert.match(
   styles,
@@ -181,13 +201,48 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop \.topbar\s*\{[^}]*grid-template-columns:\s*auto\s+auto\s+auto\s+minmax\(0,\s*1fr\)\s+max-content/s,
-  "desktop topbar must give brand/date/view/actions/window separate columns"
+  /body\.in-desktop \.topbar\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto\s+max-content\s+max-content/s,
+  "desktop topbar must keep view/actions/window on non-shrinking tracks"
 );
 assert.match(
   styles,
-  /body\.in-desktop\s+\.header-actions\s*\{[^}]*overflow:\s*hidden/s,
-  "desktop header actions must clip spilled tools so they cannot paint over the view switcher"
+  /body\.in-desktop\s+\.header-actions\s*\{[^}]*overflow:\s*visible/s,
+  "desktop header actions must never silently clip trailing chrome"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\s+\.header-actions\s*\{[^}]*min-width:\s*max-content/s,
+  "desktop header actions must reserve intrinsic width for settings and overflow"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus(?:\.shell-(?:narrow|compact-topbar))? \.topbar[\s\S]*?display:\s*flex/s,
+  "focus topbar must use flex so date and view never share a squeezed grid track"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus(?:\.shell-(?:narrow|compact-topbar))? \.topbar-main[\s\S]*?min-width:\s*max-content/s,
+  "focus date cluster must keep intrinsic width including ← date →"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus(?:\.shell-(?:narrow|compact-topbar))? \.header-actions[\s\S]*?margin-left:\s*auto/s,
+  "focus actions must sit after the date cluster without overlapping it"
+);
+assert.match(
+  styles,
+  /body:not\(\.in-desktop\) \.workspace\s*\{[^}]*grid-template-rows:\s*minmax\(190px,\s*38%\)/s,
+  "stacked todo/schedule under 760px is web-only; desktop uses shell-* instead"
+);
+assert.match(
+  app,
+  /ResizeObserver/,
+  "header overflow should resync from ResizeObserver, not only window resize"
+);
+assert.match(
+  app,
+  /availableForTools/,
+  "overflow sync must budget tools against reserved trailing chrome"
 );
 assert.match(
   styles,
@@ -236,13 +291,78 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop\.shell-focus:not\(\.task-panel-open\) \.task-panel\s*\{[^}]*display:\s*none/s,
-  "focus windows should hide the task module until toggled"
+  /body\.in-desktop\.shell-focus \.schedule-panel[\s\S]*display:\s*none\s*!important/s,
+  "focus windows must hide the schedule/gantt panel"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus \.task-panel\s*\{[^}]*display:\s*flex\s*!important/s,
+  "focus windows must keep the todo list visible"
+);
+assert.match(
+  styles,
+  /body\.in-desktop:not\(\.shell-focus\) \.workspace\s*\{[^}]*clamp\(200px/s,
+  "desktop wider than todo strip must restore split panes instead of stacking"
 );
 assert.match(
   styles,
   /body\.in-desktop\.shell-focus \.workspace\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)/s,
-  "focus schedule-only layout should fill the full workspace height"
+  "focus layout should fill the full workspace height with a single surface"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus \.header-view-switcher[\s\S]*display:\s*none\s*!important/s,
+  "narrow focus should hide the full day/week/month/project switcher"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus \.date-controls[\s\S]*display:\s*flex\s*!important/s,
+  "narrow focus should keep compact date selection for day todos"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-narrow \.brand\s*\{[^}]*display:\s*none\s*!important/s,
+  "narrow desktop should drop brand chrome so the topbar stays one clean row"
+);
+assert.match(
+  styles,
+  /body:not\(\.shell-focus\) \.focus-view-menu[\s\S]*display:\s*none\s*!important/s,
+  "focus view menu must not linger after the window expands out of focus mode"
+);
+assert.match(
+  styles,
+  /body\.in-desktop \.week-days\s*\{[^}]*min-width:\s*0/s,
+  "desktop week strip must not force a 620px horizontal scroller"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus \.focus-view-chrome[\s\S]*display:\s*inline-flex/s,
+  "narrow focus should expose a view menu affordance"
+);
+assert.match(
+  styles,
+  /body\.in-desktop \.focus-view-chrome\.desktop-only[\s\S]*display:\s*none\s*!important/s,
+  "wide desktop must hide the focus-only 视图 button even though it is desktop-only"
+);
+assert.match(
+  app,
+  /SHELL_FOCUS_MAX_WIDTH\s*=\s*560/,
+  "todo-only focus should end near todo-panel width (~560)"
+);
+assert.match(
+  app,
+  /expandWindowForView|VIEW_EXPAND_WIDTHS/,
+  "choosing a view in focus mode should expand the window"
+);
+assert.match(
+  app,
+  /bindFocusViewMenu/,
+  "focus mode needs an explicit view menu binder"
+);
+assert.match(
+  html,
+  /id="focusViewButton"/,
+  "focus view menu trigger must exist in markup"
 );
 assert.match(
   styles,
