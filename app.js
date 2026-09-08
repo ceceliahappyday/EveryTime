@@ -203,6 +203,12 @@ function migrateData() {
       task.startOverrideAt ||= "";
     });
   });
+  if (typeof ScheduleHierarchyRepairPolicy?.repairPlannerData === "function") {
+    ScheduleHierarchyRepairPolicy.repairPlannerData(state.data, {
+      createId: () => crypto.randomUUID(),
+      now: new Date()
+    });
+  }
   saveData();
 }
 
