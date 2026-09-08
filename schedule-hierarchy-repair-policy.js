@@ -105,9 +105,29 @@
     return started ? "in_progress" : "planned";
   }
 
+  function isMeetingEventTitle(title) {
+    const external = (typeof globalThis !== "undefined" && globalThis.ScheduleMeetingDemotePolicy)
+      || (typeof window !== "undefined" && window.ScheduleMeetingDemotePolicy);
+    if (typeof external?.isMeetingEventTitle === "function") {
+      return external.isMeetingEventTitle(title);
+    }
+    const t = normalizeTitle(title);
+    if (!t) return false;
+    if (!/(会议|例会|沟通会|对接会|研讨会|座谈会|讨论会|月会|周会|行政会)/.test(t)) return false;
+    if (/(纪要|材料|编写|修改|准备|整理|通知|审核|更新|输出|测算|报告|方案|讲解|拉通|复盘|检查|分析|拟稿|通报)/.test(t)) return false;
+    return true;
+  }
+
+  function demoteEntryToCalendar(entry) {
+    if (!entry) return;
+    entry.entryType = "calendar";
+    entry.taskId = "";
+  }
+
   /**
    * Promote mismatched task_work titles into leaf children and retarget entries.
    * calendar entries are left untouched. Idempotent by parentId + title.
+   * Meeting-event same-title blocks are demoted to calendar instead of becoming todos.
    */
   function repairPlannerData(data = {}, {
     createId = () => (globalThis.crypto?.randomUUID?.() || `leaf-${Date.now()}-${Math.random().toString(16).slice(2)}`),
@@ -116,6 +136,7 @@
     const next = data;
     let createdChildren = 0;
     let retargetedEntries = 0;
+    let demotedMeetingEntries = 0;
     const createdTitles = [];
     const retargetSamples = [];
 
@@ -137,6 +158,17 @@
       const entryTitle = normalizeTitle(row.entry.title);
       const parentTitle = normalizeTitle(parentRow.task.title);
       if (!entryTitle || entryTitle === parentTitle) {
+        // Meeting time-block logged as task_work on the meeting task → calendar only.
+        if (isMeetingEventTitle(parentTitle) && (!entryTitle || entryTitle === parentTitle)) {
+          demoteEntryToCalendar(row.entry);
+          demotedMeetingEntries += 1;
+          return;
+        }
+        if (isMeetingEventTitle(entryTitle)) {
+          demoteEntryToCalendar(row.entry);
+          demotedMeetingEntries += 1;
+          return;
+        }
         // Work on a non-leaf with the parent's own title still needs a leaf.
         if ((index.childrenMap.get(parentRow.task.id) || []).length) {
           const key = `${parentRow.task.id}\0${parentTitle}`;
@@ -152,6 +184,11 @@
         }
         return;
       }
+      if (isMeetingEventTitle(entryTitle)) {
+        demoteEntryToCalendar(row.entry);
+        demotedMeetingEntries += 1;
+        return;
+      }
       const key = `${parentRow.task.id}\0${entryTitle}`;
       if (!groups.has(key)) {
         groups.set(key, {
@@ -165,6 +202,13 @@
     });
 
     groups.forEach(group => {
+      if (isMeetingEventTitle(group.leafTitle)) {
+        group.entries.forEach(({ entry }) => {
+          demoteEntryToCalendar(entry);
+          demotedMeetingEntries += 1;
+        });
+        return;
+      }
       index = refresh();
       const existingChildren = index.childrenMap.get(group.parentId) || [];
       let leaf = findChildByTitle(existingChildren, group.leafTitle);
@@ -219,6 +263,14 @@
       const kids = index.childrenMap.get(entry.taskId) || [];
       if (!kids.length) return;
       const entryTitle = normalizeTitle(entry.title) || normalizeTitle(parentRow.task.title);
+      if (isMeetingEventTitle(entryTitle) || (
+        isMeetingEventTitle(normalizeTitle(parentRow.task.title)) &&
+        entryTitle === normalizeTitle(parentRow.task.title)
+      )) {
+        demoteEntryToCalendar(entry);
+        demotedMeetingEntries += 1;
+        return;
+      }
       let leaf = findChildByTitle(kids, entryTitle);
       if (!leaf) {
         leaf = createLeafTask({
@@ -243,10 +295,11 @@
 
     return {
       data: next,
-      changed: createdChildren > 0 || retargetedEntries > 0,
+      changed: createdChildren > 0 || retargetedEntries > 0 || demotedMeetingEntries > 0,
       report: {
         createdChildren,
         retargetedEntries,
+        demotedMeetingEntries,
         createdTitles,
         retargetSamples
       }
@@ -256,6 +309,7 @@
   return {
     normalizeTitle,
     isTaskWorkEntry,
+    isMeetingEventTitle,
     repairPlannerData
   };
 });

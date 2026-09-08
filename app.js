@@ -209,6 +209,9 @@ function migrateData() {
       now: new Date()
     });
   }
+  if (typeof ScheduleMeetingDemotePolicy?.demoteMeetingEventTasks === "function") {
+    ScheduleMeetingDemotePolicy.demoteMeetingEventTasks(state.data);
+  }
   saveData();
 }
 
@@ -4170,22 +4173,58 @@ function renderEntryTaskOptions(query) {
     statusText: task => statusLabel(task.status),
     dateText: task => task.dueDate || "未计划"
   });
-  const items = results.map(({ task, meta }) => `<button type="button" class="entry-task-option" role="option" aria-selected="${el.entryTaskLink.value === task.id}" data-value="${escapeHtml(task.id)}" title="${escapeHtml(meta.path)}"><strong>${escapeHtml(task.title)}</strong><span><b>第${meta.depth}层${meta.kind}</b>${meta.parentPath ? ` · ${escapeHtml(meta.parentPath)}` : ""}</span><small>${escapeHtml(statusLabel(task.status))} · ${task.dueDate ? escapeHtml(task.dueDate.slice(5)) : "未计划"}${el.entryTaskLink.value === task.id ? " · ✓ 已关联" : ""}</small></button>`).join("");
+  const matchedParents = TaskOptionPolicy.matchingParentContainers({
+    tasks,
+    query,
+    hasChildTasks,
+    isHiddenFutureRecurringInstance: task => isHiddenRecurringCatalogInstance(task, {
+      keepCurrentLinked: true,
+      selectedId: el.entryTaskLink.value
+    })
+  });
+  const parentHints = matchedParents.map(({ task, meta }) =>
+    `<div class="entry-task-parent-hint">「${escapeHtml(task.title)}」是父级容器，不能直接关联投入；下面列出其可关联的叶子待办。也可在其下新建当前事项。</div>`
+  ).join("");
+  const items = results.map(({ task, meta }) => {
+    const primary = meta.parentPath ? meta.path : task.title;
+    return `<button type="button" class="entry-task-option" role="option" aria-selected="${el.entryTaskLink.value === task.id}" data-value="${escapeHtml(task.id)}" title="${escapeHtml(meta.path)}"><strong>${escapeHtml(primary)}</strong><span><b>第${meta.depth}层叶子</b>${meta.parentPath ? ` · 归属 ${escapeHtml(meta.parentPath)}` : ""}</span><small>${escapeHtml(statusLabel(task.status))} · ${task.dueDate ? escapeHtml(task.dueDate.slice(5)) : "未计划"}${el.entryTaskLink.value === task.id ? " · ✓ 已关联" : ""}</small></button>`;
+  }).join("");
+  const entryTitle = el.entryTitle.value.trim() || "当前事项";
   const parentTitle = query.trim();
-  const create = `<button type="button" class="entry-task-option create-option" role="option" aria-selected="${el.entryTaskLink.value === "__create__"}" data-value="__create__">＋ 新建「${escapeHtml(el.entryTitle.value.trim() || "当前事项")}」并关联</button>
-    <button type="button" class="entry-task-option create-option create-parent-option" role="option" aria-selected="${el.entryTaskLink.value === "__create_parent__"}" data-value="__create_parent__">＋ ${parentTitle ? `新建父级「${escapeHtml(parentTitle)}」并挂入当前事项` : "新建父级任务并挂入当前事项"}</button>`;
-  el.entryTaskOptions.innerHTML = (items || `<div class="entry-task-no-results">无匹配叶子待办，可直接新建具体待办或新建父级后挂入</div>`) + create;
-  const createParentOption = el.entryTaskOptions.querySelector('[data-value="__create_parent__"]');
-  if (createParentOption) createParentOption.dataset.parentTitle = parentTitle;
+  const exactParent = matchedParents.find(item => item.rank === 0)?.task
+    || matchedParents.find(item => TodoListPolicy.normalizeTitle(item.task.title) === TodoListPolicy.normalizeTitle(parentTitle))?.task
+    || null;
+  const underExisting = exactParent
+    ? `<button type="button" class="entry-task-option create-option create-under-option" role="option" aria-selected="${el.entryTaskLink.value === "__create_parent__" && el.entryTaskCombobox.dataset.parentTitle === exactParent.title}" data-value="__create_parent__" data-parent-title="${escapeHtml(exactParent.title)}">＋ 在已有父级「${escapeHtml(exactParent.title)}」下新建「${escapeHtml(entryTitle)}」并关联</button>`
+    : "";
+  const create = `<button type="button" class="entry-task-option create-option" role="option" aria-selected="${el.entryTaskLink.value === "__create__"}" data-value="__create__">＋ 新建「${escapeHtml(entryTitle)}」并关联</button>
+    ${underExisting}
+    <button type="button" class="entry-task-option create-option create-parent-option" role="option" aria-selected="${el.entryTaskLink.value === "__create_parent__" && !exactParent}" data-value="__create_parent__">＋ ${parentTitle && !exactParent ? `新建父级「${escapeHtml(parentTitle)}」并挂入当前事项` : "新建父级任务并挂入当前事项"}</button>`;
+  const empty = items
+    ? ""
+    : `<div class="entry-task-no-results">${matchedParents.length
+      ? "该父级下暂无匹配叶子；请选择下方「在已有父级下新建」或换个关键词"
+      : "无匹配叶子待办。日程投入只能挂叶子；搜索父级名称可列出其下级"}</div>`;
+  el.entryTaskOptions.innerHTML = parentHints + (items || empty) + create;
+  const createParentOption = el.entryTaskOptions.querySelector('.create-parent-option[data-value="__create_parent__"]');
+  if (createParentOption) createParentOption.dataset.parentTitle = exactParent ? "" : parentTitle;
+  const createUnderOption = el.entryTaskOptions.querySelector(".create-under-option");
+  if (createUnderOption) createUnderOption.dataset.parentTitle = exactParent?.title || "";
   const current = [...el.entryTaskOptions.querySelectorAll('[role="option"]')].findIndex(option => option.getAttribute("aria-selected") === "true");
   entryTaskActiveIndex = current >= 0 ? current : 0;
-  el.entryTaskOptions.querySelectorAll('[role="option"]').forEach(option => option.addEventListener("click", () => chooseEntryTaskOption(option.dataset.value, option.dataset.parentTitle)));
+  el.entryTaskOptions.querySelectorAll('[role="option"]').forEach(option => {
+    option.addEventListener("click", () => chooseEntryTaskOption(option.dataset.value, option.dataset.parentTitle || ""));
+  });
   updateEntryTaskActiveOption(el.entryTaskOptions.querySelectorAll('[role="option"]'));
 }
 function updateEntryTaskActiveOption(options) { options.forEach((option, index) => option.classList.toggle("active", index === entryTaskActiveIndex)); }
 function chooseEntryTaskOption(value, parentTitle = "") {
   el.entryTaskLink.value = value;
   el.entryTaskCombobox.dataset.parentTitle = value === "__create_parent__" ? parentTitle : "";
+  if (value === "__create_parent__" && parentTitle) {
+    const existing = [...el.entryTaskLink.options].find(option => option.value === "__create_parent__");
+    if (existing) existing.textContent = `在已有父级「${parentTitle}」下新建并关联`;
+  }
   syncEntryTaskTrigger();
   closeEntryTaskPopup();
 }

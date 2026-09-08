@@ -1043,6 +1043,16 @@ body.gantt-label-resizing * {
 .entry-task-option span b { color: var(--accent); font-size: 9px; }
 .entry-task-option.create-option { color: var(--accent); border-bottom: 1px solid var(--line-soft); border-radius: 5px; }
 .entry-task-option.create-parent-option { color: #4f7895; }
+.entry-task-option.create-under-option { color: #3c6655; }
+.entry-task-parent-hint {
+  padding: 8px 9px;
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  background: rgba(101, 180, 177, .08);
+  font-size: 11px;
+  line-height: 1.45;
+}
 .entry-parent-create-field { display: grid; gap: 6px; text-align: left; }
 .entry-parent-create-field span { color: var(--muted); font-size: 11px; font-weight: 700; }
 .entry-parent-create-field input { width: 100%; }

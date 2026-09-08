@@ -19,6 +19,9 @@ assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "已关闭", stat
 assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "已关闭", includeEnded: true, statusText })[0].task.id, "ended");
 assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "资产", leafOnly: true, hasChildTasks: id => id === "root" || id === "child" })[0].task.id, "leaf");
 assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "准备", leafOnly: true, hasChildTasks: id => id === "root" || id === "child" })[0].task.id, "leaf");
+const parents = policy.matchingParentContainers({ tasks, query: "资产", hasChildTasks: id => id === "root" || id === "child" });
+assert.strictEqual(parents[0].task.id, "root", "searching a parent name should surface the container for entry-link hints");
+assert.ok(parents.every(item => item.meta.hasChildren), "only parent containers belong in matchingParentContainers");
 assert.strictEqual(policy.normalizeSearchText("资产管理 › 员工培训"), "资产管理 员工培训");
 const browsed = policy.parentPickerBrowseCandidates({ tasks, selectedId: "child" });
 assert.ok(browsed.some(item => item.task.id === "root"), "browse mode should keep top-level plans");

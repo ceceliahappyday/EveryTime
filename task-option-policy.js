@@ -168,6 +168,36 @@
     }).slice(0, limit);
   }
 
+  function matchingParentContainers({
+    tasks = [],
+    query = "",
+    hasChildTasks = () => false,
+    isHiddenFutureRecurringInstance = () => false,
+    limit = 6
+  } = {}) {
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedQuery) return [];
+    const keywords = normalizedQuery.split(" ").filter(Boolean);
+    return tasks
+      .filter(task => task?.id && hasChildTasks(task.id))
+      .filter(task => !["done", "closed"].includes(task.status))
+      .filter(task => !isHiddenFutureRecurringInstance(task))
+      .map(task => {
+        const meta = hierarchyMeta({ task, tasks });
+        const searchable = normalizeSearchText([task.title, meta.path].join(" "));
+        const title = normalizeSearchText(task.title);
+        const matched = keywords.every(keyword => searchable.includes(keyword));
+        let rank = 3;
+        if (title === normalizedQuery) rank = 0;
+        else if (title.startsWith(normalizedQuery)) rank = 1;
+        else if (title.includes(normalizedQuery)) rank = 2;
+        return { task, meta, matched, rank };
+      })
+      .filter(item => item.matched)
+      .sort((a, b) => a.rank - b.rank || a.meta.path.localeCompare(b.meta.path) || String(a.task.id).localeCompare(String(b.task.id)))
+      .slice(0, limit);
+  }
+
   return {
     shouldIncludeEntryTaskOption,
     entryTaskOptionLabel,
@@ -175,6 +205,7 @@
     parentTaskOptionCandidates,
     parentPickerBrowseCandidates,
     parentPickerSearchCandidates,
+    matchingParentContainers,
     taskHierarchyPath,
     parentIdOf,
     hierarchyMeta,
