@@ -339,7 +339,21 @@ function bindEvents() {
       if (TodoListPolicy.normalizeTitle(parentTitle) === TodoListPolicy.normalizeTitle(entryPayload.title)) {
         return showToast("父级任务名称需要与当前具体事项不同");
       }
+      const existingParent = findTaskByNormalizedTitle(parentTitle);
+      if (existingParent) {
+        const existingLeaf = findLeafUnderParentByTitle(existingParent.id, entryPayload.title);
+        if (existingLeaf) {
+          pendingEntrySave = null;
+          el.entryLinkConfirmDialog.close();
+          showToast(`已关联到「${existingParent.title}」下的已有子待办，未重复创建`);
+          resolve(existingLeaf.id);
+          return;
+        }
+      }
       task = createParentAndLeafFromEntryPayload(entryPayload, parentTitle);
+      showToast(existingParent
+        ? `已在已有父级「${existingParent.title}」下新建子待办`
+        : `已新建父级「${parentTitle}」并挂入子待办`);
     } else {
       task = createTaskFromEntryPayload(entryPayload);
     }
@@ -4082,17 +4096,66 @@ function promptEntryCreateConfirm(entryPayload) {
 function promptEntryParentCreate(entryPayload, suggestedParentTitle = "") {
   return new Promise(resolve => {
     pendingEntrySave = { entryPayload, resolve, similar: [], createMode: "parent" };
-    el.entryLinkConfirmTitle.textContent = "新建父级并挂入当前事项";
-    el.entryLinkConfirmMessage.textContent = `将创建一个父级任务，并把「${entryPayload.title}」作为具体子待办关联到当前日程。`;
     el.entryLinkConfirmOptions.innerHTML = `<label class="entry-parent-create-field">
       <span>父级任务名称</span>
-      <input id="entryParentTaskTitle" maxlength="80" placeholder="例如：年度审计整改" />
+      <input id="entryParentTaskTitle" maxlength="80" placeholder="例如：年度审计整改 / 月度结账" />
+      <small id="entryParentReuseHint" class="entry-parent-reuse-hint"></small>
     </label>`;
-    el.entryLinkConfirmOptions.querySelector("#entryParentTaskTitle").value = suggestedParentTitle;
-    el.entryLinkConfirmCreate.textContent = "创建父级并关联";
+    const input = el.entryLinkConfirmOptions.querySelector("#entryParentTaskTitle");
+    input.value = suggestedParentTitle;
+    const sync = () => syncEntryParentCreateDialog(entryPayload);
+    input.addEventListener("input", sync);
+    sync();
     el.entryLinkConfirmDialog.showModal();
-    setTimeout(() => el.entryLinkConfirmOptions.querySelector("#entryParentTaskTitle")?.focus(), 0);
+    setTimeout(() => input.focus(), 0);
   });
+}
+
+function findTaskByNormalizedTitle(title) {
+  const normalized = TodoListPolicy.normalizeTitle(title);
+  if (!normalized) return null;
+  return uniqueTasks(getAllTasks().map(({ task }) => task)).find(task =>
+    TodoListPolicy.normalizeTitle(task.title) === normalized
+  ) || null;
+}
+
+function findLeafUnderParentByTitle(parentId, title) {
+  if (!parentId) return null;
+  const normalized = TodoListPolicy.normalizeTitle(title);
+  if (!normalized) return null;
+  return getChildTasks(parentId).find(task =>
+    TodoListPolicy.normalizeTitle(task.title) === normalized &&
+    TodoListPolicy.canLinkEntryToTask(task, hasChildTasks)
+  ) || null;
+}
+
+function syncEntryParentCreateDialog(entryPayload) {
+  const input = el.entryLinkConfirmOptions.querySelector("#entryParentTaskTitle");
+  const hint = el.entryLinkConfirmOptions.querySelector("#entryParentReuseHint");
+  const parentTitle = input?.value.trim() || "";
+  const existing = findTaskByNormalizedTitle(parentTitle);
+  const existingLeaf = existing ? findLeafUnderParentByTitle(existing.id, entryPayload.title) : null;
+  if (existing && existingLeaf) {
+    el.entryLinkConfirmTitle.textContent = "挂入已有父级与子待办";
+    el.entryLinkConfirmMessage.textContent = `已找到父级「${existing.title}」及其子待办「${existingLeaf.title}」。将直接关联，不会重复创建。`;
+    el.entryLinkConfirmCreate.textContent = "关联已有子待办";
+    if (hint) hint.textContent = "匹配到已有父子任务，避免重复创建。";
+  } else if (existing) {
+    el.entryLinkConfirmTitle.textContent = "挂入已有父级";
+    el.entryLinkConfirmMessage.textContent = `已找到父级「${existing.title}」，不会再新建同名父级。将把「${entryPayload.title}」作为其子待办关联到当前日程。`;
+    el.entryLinkConfirmCreate.textContent = "挂入已有父级并关联";
+    if (hint) hint.textContent = "将复用已有父级，仅新建当前这项子待办。";
+  } else if (parentTitle) {
+    el.entryLinkConfirmTitle.textContent = "新建父级并挂入当前事项";
+    el.entryLinkConfirmMessage.textContent = `未找到同名父级。将新建「${parentTitle}」，并把「${entryPayload.title}」作为具体子待办关联到当前日程。`;
+    el.entryLinkConfirmCreate.textContent = "创建父级并关联";
+    if (hint) hint.textContent = "当前名称没有匹配到已有父级。";
+  } else {
+    el.entryLinkConfirmTitle.textContent = "新建父级并挂入当前事项";
+    el.entryLinkConfirmMessage.textContent = `请填写父级任务名称。若与已有父级同名，会自动复用，不会重复创建。`;
+    el.entryLinkConfirmCreate.textContent = "创建父级并关联";
+    if (hint) hint.textContent = "";
+  }
 }
 
 function focusLinkedTaskFilter(taskId) {
