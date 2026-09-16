@@ -4036,15 +4036,35 @@ function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dat
   showToast(wasEditing ? "日程已更新" : "日程已添加");
 }
 
+function resolveCreateUnderExistingParent(entryPayload, parentTitle) {
+  const existingParent = findTaskByNormalizedTitle(parentTitle);
+  if (!existingParent) return null;
+  const existingLeaf = findLeafUnderParentByTitle(existingParent.id, entryPayload.title);
+  if (existingLeaf) {
+    showToast(`已关联到「${existingParent.title}」下的已有子待办，未重复创建`);
+    return existingLeaf.id;
+  }
+  const leaf = createParentAndLeafFromEntryPayload(entryPayload, existingParent.title);
+  showToast(`已在父级「${existingParent.title}」下新建子待办并关联`);
+  return leaf.id;
+}
+
 function resolveEntryTaskLinkWithGuard(entryPayload, existingEntry = null) {
   const selected = el.entryTaskLink.value;
   if (selected === "__create_parent__") {
-    return promptEntryParentCreate(entryPayload, el.entryTaskCombobox.dataset.parentTitle || "");
+    const parentTitle = el.entryTaskCombobox.dataset.parentTitle || "";
+    // Selecting an existing parent means: create a sibling leaf under it and link.
+    // Skip the extra dialog when the parent is already identified.
+    if (parentTitle) {
+      const linkedId = resolveCreateUnderExistingParent(entryPayload, parentTitle);
+      if (linkedId) return Promise.resolve(linkedId);
+    }
+    return promptEntryParentCreate(entryPayload, parentTitle);
   }
   if (selected && selected !== "__create__" && selected !== "") {
     const linked = findTask(selected)?.task;
     if (!linked || !TodoListPolicy.canLinkEntryToTask(linked, hasChildTasks)) {
-      showToast("只能关联叶子待办，请选择没有子任务的具体待办");
+      showToast("工时只能记在叶子待办上；请选已有叶子，或选父级以在其下新建子待办");
       return Promise.resolve(null);
     }
     return Promise.resolve(selected);
@@ -4247,13 +4267,17 @@ function renderEntryTaskOptions(query) {
     })
   });
   // Partial matches count (e.g. 年度激励 → 完成ROIC…年度激励方案调整).
+  // Parents are first-class: choose one to create a sibling leaf under it (not to log hours on the parent).
   const preferredParents = matchedParents.slice(0, 3).map(item => item.task);
-  const parentHints = preferredParents.map(task =>
-    `<div class="entry-task-parent-hint">
-      <p>「${escapeHtml(task.title)}」是父级容器，不能直接关联投入。请选择其下级叶子，或点下面按钮在其下新建当前事项。</p>
-      <button type="button" class="entry-task-option create-option create-under-option" role="option" data-value="__create_parent__" data-parent-title="${escapeHtml(task.title)}">＋ 在「${escapeHtml(task.title)}」下新建「${escapeHtml(entryTitle)}」并关联</button>
-    </div>`
-  ).join("");
+  const selectedParentTitle = el.entryTaskCombobox.dataset.parentTitle || "";
+  const parentOptions = preferredParents.map(task => {
+    const selected = el.entryTaskLink.value === "__create_parent__" && selectedParentTitle === task.title;
+    return `<button type="button" class="entry-task-option create-option create-under-option" role="option" aria-selected="${selected}" data-value="__create_parent__" data-parent-title="${escapeHtml(task.title)}" title="在父级下新建当前事项，与现有子任务同级">
+      <strong>挂到父级「${escapeHtml(task.title)}」</strong>
+      <span>新建「${escapeHtml(entryTitle)}」作为其子待办并关联</span>
+      <small>与现有子任务同级 · 工时记在新子待办上</small>
+    </button>`;
+  }).join("");
   const items = results.map(({ task, meta }) => {
     const primary = meta.parentPath ? meta.path : task.title;
     return `<button type="button" class="entry-task-option" role="option" aria-selected="${el.entryTaskLink.value === task.id}" data-value="${escapeHtml(task.id)}" title="${escapeHtml(meta.path)}"><strong>${escapeHtml(primary)}</strong><span><b>第${meta.depth}层叶子</b>${meta.parentPath ? ` · 归属 ${escapeHtml(meta.parentPath)}` : ""}</span><small>${escapeHtml(statusLabel(task.status))} · ${task.dueDate ? escapeHtml(task.dueDate.slice(5)) : "未计划"}${el.entryTaskLink.value === task.id ? " · ✓ 已关联" : ""}</small></button>`;
@@ -4264,9 +4288,9 @@ function renderEntryTaskOptions(query) {
   const empty = items
     ? ""
     : `<div class="entry-task-no-results">${matchedParents.length
-      ? "该父级下暂无匹配叶子；请点上方「在已有父级下新建」"
-      : "无匹配叶子待办。日程投入只能挂叶子；搜索父级名称可列出其下级"}</div>`;
-  el.entryTaskOptions.innerHTML = parentHints + (items || empty) + create;
+      ? "没有同名叶子。可直接点上方父级：在其下新建当前事项（与现有子任务同级）"
+      : "无匹配叶子待办。可选已有叶子关联，或搜索父级名称后挂到该父级下新建"}</div>`;
+  el.entryTaskOptions.innerHTML = parentOptions + (items || empty) + create;
   const createParentOption = el.entryTaskOptions.querySelector('.create-parent-option[data-value="__create_parent__"]');
   if (createParentOption) createParentOption.dataset.parentTitle = preferredParents.length ? "" : parentTitle;
   const current = [...el.entryTaskOptions.querySelectorAll('[role="option"]')].findIndex(option => option.getAttribute("aria-selected") === "true");
@@ -4282,7 +4306,7 @@ function chooseEntryTaskOption(value, parentTitle = "") {
   el.entryTaskCombobox.dataset.parentTitle = value === "__create_parent__" ? parentTitle : "";
   if (value === "__create_parent__" && parentTitle) {
     const existing = [...el.entryTaskLink.options].find(option => option.value === "__create_parent__");
-    if (existing) existing.textContent = `在已有父级「${parentTitle}」下新建并关联`;
+    if (existing) existing.textContent = `挂到父级「${parentTitle}」· 新建子待办并关联`;
   }
   syncEntryTaskTrigger();
   closeEntryTaskPopup();
