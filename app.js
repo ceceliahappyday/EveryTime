@@ -1872,8 +1872,9 @@ function saveGanttLabelWidth(width) {
   return next;
 }
 
-function bindGanttLabelResize(handle, split) {
-  if (!handle || !split) return;
+function bindGanttLabelResize(handle, splits = []) {
+  if (!handle) return;
+  const targets = (Array.isArray(splits) ? splits : [splits]).filter(Boolean);
   handle.addEventListener("pointerdown", event => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -1882,10 +1883,14 @@ function bindGanttLabelResize(handle, split) {
     handle.classList.add("is-dragging");
     document.body.classList.add("gantt-label-resizing");
     handle.setPointerCapture(event.pointerId);
+    const applyWidth = width => {
+      const next = `${width}px`;
+      targets.forEach(split => split.style.setProperty("--gantt-label-width", next));
+    };
     const onMove = moveEvent => {
       const next = clampGanttLabelWidth(startWidth + (moveEvent.clientX - startX));
       state.ganttLabelWidth = next;
-      split.style.setProperty("--gantt-label-width", `${next}px`);
+      applyWidth(next);
     };
     const onUp = upEvent => {
       handle.classList.remove("is-dragging");
@@ -1979,6 +1984,7 @@ function handleProjectGanttScroll() {
   projectGanttScrollTimer = setTimeout(() => scroller.classList.remove("is-scrolling"), 700);
   maybeExtendProjectGanttWindow();
   state.projectScrollLeft = scroller.scrollLeft;
+  syncProjectGanttChartOffset(scroller.scrollLeft);
 }
 
 function maybeExtendProjectGanttWindow() {
@@ -3088,7 +3094,9 @@ function mapGanttSegments(segments, buckets) {
 
 function syncProjectGanttChartOffset(scrollLeft = state.projectScrollLeft || 0) {
   const next = Math.max(0, Number(scrollLeft) || 0);
-  if (el.projectGanttChartTrack) el.projectGanttChartTrack.style.transform = `translateX(-${next}px)`;
+  const offset = `translateX(-${next}px)`;
+  if (el.projectGanttChartTrack) el.projectGanttChartTrack.style.transform = offset;
+  if (el.projectGanttDaysTrack) el.projectGanttDaysTrack.style.transform = offset;
 }
 
 function setProjectScrollLeft(value) {
@@ -3117,10 +3125,13 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   labelRow.className = `project-gantt-row-label ${task.status}${options.isParent ? " is-parent" : ""}`;
   labelRow.style.setProperty("--task-depth", depth);
   labelRow.dataset.depth = String(depth);
+  labelRow.dataset.taskId = task.id;
+  labelRow.title = "拖到其他任务名称上可改挂接；双击编辑；右侧拖到日期可安排投入";
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin">
         ${hasChildren ? `<button class="project-collapse-button task-tree-toggle" type="button">${collapsed ? "▸" : "▾"}</button>` : ""}
         <strong title="${escapeHtml(taskTitle)}">${escapeHtml(taskTitle)}</strong>
       </div>`;
+  bindGanttLabelReparent(labelRow, task);
   const chartRow = document.createElement("div");
   chartRow.className = `project-gantt-row-chart ${task.status}${options.isParent ? " is-parent" : ""}`;
   chartRow.draggable = !["done", "closed"].includes(task.status);
@@ -3148,6 +3159,75 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   labelRow.addEventListener("dblclick", openTask);
   chartRow.addEventListener("dblclick", openTask);
   return { labelRow, chartRow };
+}
+
+function bindGanttLabelReparent(labelRow, task) {
+  if (!labelRow || !task?.id) return;
+  labelRow.draggable = true;
+  labelRow.addEventListener("dragstart", event => {
+    if (event.target?.closest?.(".task-tree-toggle")) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.setData("text/task-id", task.id);
+    event.dataTransfer.setData("text/gantt-reparent", "1");
+    event.dataTransfer.effectAllowed = "move";
+    labelRow.classList.add("dragging");
+  });
+  labelRow.addEventListener("dragend", () => {
+    labelRow.classList.remove("dragging");
+    document.querySelectorAll(".project-gantt-row-label.drop-reparent").forEach(node => {
+      node.classList.remove("drop-reparent");
+    });
+  });
+  labelRow.addEventListener("dragover", event => {
+    const sourceId = [...(event.dataTransfer?.types || [])].includes("text/task-id") ||
+      [...(event.dataTransfer?.types || [])].includes("text/gantt-reparent");
+    if (!sourceId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    labelRow.classList.add("drop-reparent");
+  });
+  labelRow.addEventListener("dragleave", event => {
+    if (event.relatedTarget && labelRow.contains(event.relatedTarget)) return;
+    labelRow.classList.remove("drop-reparent");
+  });
+  labelRow.addEventListener("drop", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    labelRow.classList.remove("drop-reparent");
+    const sourceId = event.dataTransfer.getData("text/task-id");
+    if (!sourceId) return;
+    reparentTaskOnto(sourceId, task.id);
+  });
+}
+
+function reparentTaskOnto(sourceId, parentId) {
+  if (!sourceId || !parentId) return false;
+  const tasks = uniqueTasks(getAllTasks().map(({ task }) => task));
+  if (!TaskOptionPolicy.isValidParentTarget({ sourceId, parentId, tasks })) {
+    showToast("不能挂到自己或下级任务下");
+    return false;
+  }
+  const source = findTask(sourceId)?.task;
+  const parent = findTask(parentId)?.task;
+  if (!source || !parent) return false;
+  if ((source.parentId || source.parentTaskId || source.parentTask || source.parent || "") === parentId) {
+    showToast(`已在「${parent.title}」下`);
+    return false;
+  }
+  updateTaskRecords(sourceId, task => {
+    task.parentId = parentId;
+    task.parentTaskId = "";
+    task.parentTask = "";
+    task.parent = "";
+    task.updatedAt = new Date().toISOString();
+  });
+  saveData();
+  render();
+  showToast(`已挂到「${parent.title}」下`);
+  return true;
 }
 
 function calendarMeetingTimelineParts(meeting, buckets, scale = "day") {

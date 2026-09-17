@@ -38,6 +38,15 @@
       .sort((a, b) => taskHierarchyPath({ task: a, tasks }).localeCompare(taskHierarchyPath({ task: b, tasks })));
   }
 
+  function isValidParentTarget({ sourceId = "", parentId = "", tasks = [] } = {}) {
+    if (!sourceId || !parentId || sourceId === parentId) return false;
+    const blocked = new Set([
+      sourceId,
+      ...descendantTaskIds({ tasks, parentId: sourceId })
+    ].filter(Boolean));
+    return !blocked.has(parentId);
+  }
+
   function taskHierarchyPath({ task, tasks = [], separator = " / " }) {
     if (!task) return "";
     const byId = new Map(tasks.map(item => [item.id, item]));
@@ -203,6 +212,7 @@
     entryTaskOptionLabel,
     descendantTaskIds,
     parentTaskOptionCandidates,
+    isValidParentTarget,
     parentPickerBrowseCandidates,
     parentPickerSearchCandidates,
     matchingParentContainers,

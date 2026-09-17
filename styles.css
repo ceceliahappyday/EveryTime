@@ -106,7 +106,7 @@
 
 .ai-modal { width: min(760px, calc(100vw - 32px)); }
 .task-trace-item[draggable="true"], .due-task-item[draggable="true"], .completed-task-item[draggable="true"], .schedule-entry[draggable="true"], .project-gantt-row-chart[draggable="true"] { cursor: grab; }
-.task-trace-item.dragging, .due-task-item.dragging, .completed-task-item.dragging, .schedule-entry.dragging, .project-gantt-row-chart.dragging { opacity: .55; }
+.task-trace-item.dragging, .due-task-item.dragging, .completed-task-item.dragging, .schedule-entry.dragging, .project-gantt-row-chart.dragging, .project-gantt-row-label.dragging { opacity: .55; }
 .ai-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .ai-range { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ai-status { min-height: 24px; color: var(--muted-text); font-size: 13px; margin-top: 10px; }
@@ -1047,6 +1047,13 @@ body.gantt-label-resizing * {
   align-items: center;
   padding-right: 8px;
   padding-left: calc(4px + var(--task-depth, 0) * 16px);
+  cursor: grab;
+}
+.project-gantt-row-label.dragging { opacity: .55; cursor: grabbing; }
+.project-gantt-row-label.drop-reparent {
+  border-radius: 8px;
+  outline: 2px solid var(--accent);
+  background: rgba(101, 180, 177, .18);
 }
 .project-gantt-row-chart { position: relative; }
 .visually-hidden-select { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

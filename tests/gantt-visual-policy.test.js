@@ -22,6 +22,8 @@ const requiredApp = [
   "GANTT_LABEL_WIDTH",
   "bindGanttLabelResize",
   "project-gantt-resize-handle",
+  "bindGanttLabelReparent",
+  "reparentTaskOnto",
   "dataset.depth"
 ];
 requiredApp.forEach(token => {
