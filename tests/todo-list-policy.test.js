@@ -94,4 +94,11 @@ assert.strictEqual(
   "top-level plan nodes should not appear in progress review"
 );
 
+const byCreated = policy.sortByCreatedAtDesc([
+  { id: "old", title: "旧", createdAtIso: "2026-09-01T08:00:00.000Z" },
+  { id: "new", title: "新", createdAtIso: "2026-09-17T10:00:00.000Z" },
+  { id: "mid", title: "中", createdAtIso: "2026-09-10T12:00:00.000Z" }
+]);
+assert.deepStrictEqual(byCreated.map(task => task.id), ["new", "mid", "old"], "unplanned inbox should list newest created tasks first");
+
 console.log("todo list policy tests passed");

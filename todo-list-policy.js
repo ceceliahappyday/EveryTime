@@ -234,6 +234,20 @@
     return list;
   }
 
+  function taskCreatedAtMs(task) {
+    const iso = task?.createdAtIso || task?.updatedAt || "";
+    const ms = Date.parse(iso);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  function sortByCreatedAtDesc(tasks = []) {
+    return [...tasks].sort((a, b) =>
+      taskCreatedAtMs(b) - taskCreatedAtMs(a) ||
+      String(b.id || "").localeCompare(String(a.id || "")) ||
+      String(a.title || "").localeCompare(String(b.title || ""))
+    );
+  }
+
   return {
     FILTER_STORAGE_KEY,
     DEFAULT_FILTER,
@@ -255,6 +269,8 @@
     sectionLabels,
     shouldKeepVisibleWithWorkHistory,
     isProgressReviewCandidate,
-    progressReviewCandidates
+    progressReviewCandidates,
+    taskCreatedAtMs,
+    sortByCreatedAtDesc
   };
 });

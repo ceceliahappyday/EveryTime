@@ -194,9 +194,13 @@
         <button type="button" class="close-button" data-close-dialog="taskMergeDialog" aria-label="关闭">×</button>
       </div>
       <p class="task-merge-message" id="taskMergeMessage"></p>
-      <label>
+      <label class="task-merge-target-field">
         <span>合并到</span>
-        <select id="taskMergeTarget"></select>
+        <select id="taskMergeTarget" class="visually-hidden-select" tabindex="-1" aria-hidden="true"></select>
+        <div class="task-merge-picker">
+          <input id="taskMergeSearch" type="search" autocomplete="off" placeholder="搜索目标待办名称或上级路径…" aria-label="搜索合并目标" aria-controls="taskMergeOptions" />
+          <div id="taskMergeOptions" class="entry-task-options task-merge-options" role="listbox"></div>
+        </div>
       </label>
       <div class="modal-actions">
         <span></span>

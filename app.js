@@ -102,7 +102,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "deleteTaskButton", "closeTaskButton", "mergeTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle", "entryType",
     "entryLinkConfirmDialog", "entryLinkConfirmTitle", "entryLinkConfirmMessage", "entryLinkConfirmOptions", "entryLinkConfirmCancel", "entryLinkConfirmCreate",
     "taskCloseConfirmDialog", "taskCloseConfirmTitle", "taskCloseConfirmMessage", "taskCloseOnlyButton", "taskCloseFollowUpButton",
-    "taskMergeDialog", "taskMergeForm", "taskMergeMessage", "taskMergeTarget",
+    "taskMergeDialog", "taskMergeForm", "taskMergeMessage", "taskMergeTarget", "taskMergeSearch", "taskMergeOptions",
     "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
     "updateProgress", "updateProgressText", "updateProgressBar",
@@ -321,6 +321,7 @@ function bindEvents() {
   });
 
   el.mergeTaskButton?.addEventListener("click", () => openTaskMergeDialog());
+  bindTaskMergePicker();
   el.taskMergeForm?.addEventListener("submit", event => {
     event.preventDefault();
     mergeTaskIntoTarget(state.editingTaskId, el.taskMergeTarget.value);
@@ -1410,8 +1411,12 @@ function renderUnifiedTodoList() {
   }
 
   const includeSections = !query && (state.filter === "all" || state.filter === "in_progress" || state.filter === "planned" || state.filter === "unplanned");
+  // Unplanned inbox: newest created first so quick-adds stay on top.
+  const orderedVisible = state.filter === "unplanned"
+    ? TodoListPolicy.sortByCreatedAtDesc(visibleTasks)
+    : orderedTasks(visibleTasks);
   const groups = TodoListPolicy.buildTodoGroups({
-    tasks: orderedTasks(visibleTasks),
+    tasks: orderedVisible,
     selectedDate: state.selectedDate,
     yesterdayKey,
     entriesByDate,
@@ -1546,7 +1551,7 @@ function renderTasks() {
     const monthTasks = tasksInMonth(fromDateKey(state.selectedDate));
     updateTaskStats(monthTasks.concat(allVisibleTasks.filter(isUnplannedTask)));
     if (state.filter === "unplanned") {
-      const unplannedTasks = orderedTasks(allVisibleTasks.filter(isUnplannedTask));
+      const unplannedTasks = TodoListPolicy.sortByCreatedAtDesc(allVisibleTasks.filter(isUnplannedTask));
       if (unplannedTasks.length) {
         const heading = document.createElement("div");
         heading.className = "task-group-heading";
@@ -1589,7 +1594,7 @@ function renderTasks() {
   let rendered = 0;
 
   if (state.filter === "unplanned") {
-    const unplannedTasks = orderedTasks(allVisibleTasks.filter(isUnplannedTask));
+    const unplannedTasks = TodoListPolicy.sortByCreatedAtDesc(allVisibleTasks.filter(isUnplannedTask));
     if (unplannedTasks.length) {
       const heading = document.createElement("div");
       heading.className = "task-group-heading";
@@ -4354,22 +4359,98 @@ function updateEntryTypeControls() {
   syncEntryTaskTrigger();
 }
 
+let taskMergeCandidates = [];
+let taskMergeActiveIndex = 0;
+
+function bindTaskMergePicker() {
+  if (!el.taskMergeSearch) return;
+  el.taskMergeSearch.addEventListener("input", () => {
+    taskMergeActiveIndex = 0;
+    renderTaskMergeOptions(el.taskMergeSearch.value);
+  });
+  el.taskMergeSearch.addEventListener("keydown", event => {
+    const options = el.taskMergeOptions?.querySelectorAll('[role="option"]') || [];
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      taskMergeActiveIndex = Math.max(0, Math.min(Math.max(0, options.length - 1), taskMergeActiveIndex + (event.key === "ArrowDown" ? 1 : -1)));
+      updateTaskMergeActiveOption(options);
+    } else if (event.key === "Enter" && options[taskMergeActiveIndex]) {
+      event.preventDefault();
+      chooseTaskMergeOption(options[taskMergeActiveIndex].dataset.value || "");
+    }
+  });
+}
+
 function openTaskMergeDialog() {
   const source = findTask(state.editingTaskId)?.task;
   if (!source) return;
-  const candidates = uniqueTasks(getAllTasks().map(({ task }) => task))
+  const allTasks = uniqueTasks(getAllTasks().map(({ task }) => task));
+  taskMergeCandidates = allTasks
     .filter(task => task.id !== source.id && isTodoListTask(task) && !["done", "closed"].includes(task.status));
-  if (!candidates.length) return showToast("没有可合并的目标待办");
+  if (!taskMergeCandidates.length) return showToast("没有可合并的目标待办");
   el.taskMergeMessage.textContent = `将把「${source.title}」的所有任务投入合并到另一个待办，并关闭当前待办。`;
-  el.taskMergeTarget.innerHTML = candidates.map(task => {
-    const path = TaskOptionPolicy.taskHierarchyPath({ task, tasks: candidates, separator: " › " });
+  el.taskMergeTarget.innerHTML = taskMergeCandidates.map(task => {
+    const path = TaskOptionPolicy.taskHierarchyPath({ task, tasks: allTasks, separator: " › " });
     return `<option value="${escapeHtml(task.id)}">${escapeHtml(path || task.title)}</option>`;
   }).join("");
+  el.taskMergeTarget.value = taskMergeCandidates[0]?.id || "";
+  if (el.taskMergeSearch) el.taskMergeSearch.value = "";
+  taskMergeActiveIndex = 0;
+  renderTaskMergeOptions("");
   el.taskMergeDialog.showModal();
+  setTimeout(() => el.taskMergeSearch?.focus(), 20);
+}
+
+function renderTaskMergeOptions(query = "") {
+  if (!el.taskMergeOptions) return;
+  const allTasks = uniqueTasks(getAllTasks().map(({ task }) => task));
+  const selectedId = el.taskMergeTarget?.value || "";
+  const candidateIds = new Set(taskMergeCandidates.map(task => task.id));
+  const results = TaskOptionPolicy.searchTaskCandidates({
+    tasks: allTasks,
+    query,
+    selectedId,
+    leafOnly: false,
+    hasChildTasks,
+    statusText: task => statusLabel(task.status),
+    dateText: task => (task.dueDate ? task.dueDate.slice(5) : "未计划")
+  }).filter(item => candidateIds.has(item.task.id));
+  if (!results.length) {
+    el.taskMergeOptions.innerHTML = `<div class="entry-task-no-results">${String(query || "").trim() ? "没有匹配的目标待办" : "暂无可合并的目标待办"}</div>`;
+    return;
+  }
+  el.taskMergeOptions.innerHTML = results.map(({ task, meta }) => {
+    const selected = selectedId === task.id;
+    const date = task.dueDate ? task.dueDate.slice(5) : "未计划";
+    return `<button type="button" class="entry-task-option${selected ? " active" : ""}" role="option" aria-selected="${selected}" data-value="${escapeHtml(task.id)}" title="${escapeHtml(meta.path)}">
+      <strong>${escapeHtml(task.title)}</strong>
+      <span><b>第${meta.depth}层叶子</b>${meta.parentPath ? ` · ${escapeHtml(meta.parentPath)}` : ""}</span>
+      <small>${escapeHtml(statusLabel(task.status))} · ${escapeHtml(date)}${selected ? " · ✓ 已选择" : ""}</small>
+    </button>`;
+  }).join("");
+  const options = el.taskMergeOptions.querySelectorAll('[role="option"]');
+  options.forEach(option => {
+    option.addEventListener("click", () => chooseTaskMergeOption(option.dataset.value || ""));
+  });
+  const selectedIndex = [...options].findIndex(option => option.dataset.value === selectedId);
+  taskMergeActiveIndex = selectedIndex >= 0 ? selectedIndex : Math.min(taskMergeActiveIndex, options.length - 1);
+  updateTaskMergeActiveOption(options);
+}
+
+function updateTaskMergeActiveOption(options) {
+  options.forEach((option, index) => option.classList.toggle("active", index === taskMergeActiveIndex));
+  options[taskMergeActiveIndex]?.scrollIntoView({ block: "nearest" });
+}
+
+function chooseTaskMergeOption(value) {
+  if (!value || !el.taskMergeTarget) return;
+  if (![...el.taskMergeTarget.options].some(option => option.value === value)) return;
+  el.taskMergeTarget.value = value;
+  renderTaskMergeOptions(el.taskMergeSearch?.value || "");
 }
 
 function mergeTaskIntoTarget(sourceId, targetId) {
-  if (!sourceId || !targetId || sourceId === targetId) return showToast("请选择不同的目标待办");
+  if (!sourceId || !targetId || sourceId === targetId) return showToast("请搜索并选择要合并到的目标待办");
   const source = findTask(sourceId)?.task;
   const target = findTask(targetId)?.task;
   if (!source || !target || !isTodoListTask(source) || !isTodoListTask(target)) return showToast("只能合并叶子待办");

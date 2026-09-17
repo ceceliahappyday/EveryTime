@@ -563,6 +563,27 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   color: var(--muted);
 }
 
+.task-merge-target-field {
+  position: relative;
+  z-index: 4;
+}
+.task-merge-picker {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(248, 247, 243, .88);
+}
+.task-merge-picker input[type="search"] {
+  width: 100%;
+  margin: 0;
+}
+.task-merge-options {
+  max-height: min(240px, 36vh);
+  min-height: 120px;
+}
+
 .entry-link-confirm-options {
   display: grid;
   gap: 8px;
@@ -2579,6 +2600,10 @@ body.in-desktop.glass-mode .entry-link-confirm-message,
 body.in-desktop.glass-mode .task-merge-message {
   color: #cfe0ea;
   text-shadow: 0 1px 3px rgba(0,0,0,.85);
+}
+body.in-desktop.glass-mode .task-merge-picker {
+  background: rgba(0, 0, 0, .42);
+  border-color: rgba(181, 218, 239, .35);
 }
 body.in-desktop.glass-mode .day-button.active .day-number {
   color: #fff;
