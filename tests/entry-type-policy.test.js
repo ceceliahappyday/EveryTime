@@ -9,7 +9,9 @@ assert.match(html, /id="entryType"/, "entry dialog should expose an explicit sch
 assert.match(app, /entry\.entryType \|\|= entry\.taskId \? "task_work" : "calendar"/, "existing entries should migrate without losing records");
 assert.match(app, /payload\.entryType !== "task_work"/, "calendar entries should not be linked into the todo list");
 assert.match(app, /resolveEntryTaskLinkWithGuard/, "task work entries should resolve an explicit leaf task link");
-assert.match(app, /entryType: "task_work", taskId: task\.id/, "dragging a task into the calendar should remain task work");
+assert.match(app, /entryType: "task_work", taskId: workTask\.id/, "dragging a task into the calendar should remain task work");
+assert.match(app, /materializeWorkTodoFromMemo/, "investing on a memo reminder must spawn a new work todo");
+assert.match(app, /isMemoReminderTask\(task\)/, "memo reminders are distinct from work leaf todos");
 assert.match(
   app,
   /function focusLinkedTaskFilter[\s\S]*state\.filter = "planned"/s,

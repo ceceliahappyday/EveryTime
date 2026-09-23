@@ -5,7 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : window, function () {
   const FILTER_STORAGE_KEY = "today-planner-task-filter";
   const DEFAULT_FILTER = "in_progress";
-  const VALID_FILTERS = new Set(["all", "unplanned", "planned", "in_progress", "ended"]);
+  const VALID_FILTERS = new Set(["all", "unplanned", "planned", "in_progress", "memo", "ended"]);
 
   function normalizeTitle(value) {
     return String(value || "")
@@ -128,7 +128,7 @@
     if (!task || !isLeafTask(task, hasChildTasks)) return false;
     if (isOngoingTask(task)) return false;
     if (["done", "closed"].includes(task.status)) return false;
-    if (task.status === "tracking") return true;
+    if (task.status === "tracking") return false;
     if (isUnplannedTask(task)) return true;
     if (task.status !== "planned") return false;
     const hasTodayWork = (entriesByDate[selectedDate] || []).some(entry => entry.taskId === task.id && entry.entryType === "task_work");

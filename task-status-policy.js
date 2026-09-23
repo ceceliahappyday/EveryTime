@@ -16,7 +16,18 @@
   }
 
   function isSchedulableStatus(status) {
-    return status === "planned" || status === "in_progress" || status === TRACKING_STATUS;
+    // Memo reminders (tracking) are not work todos and cannot take task_work investment.
+    return status === "planned" || status === "in_progress";
+  }
+
+  function isMemoReminder(taskOrStatus) {
+    return isTrackingStatus(taskOrStatus);
+  }
+
+  function countsTowardWorkHours(taskOrStatus) {
+    return !isMemoReminder(taskOrStatus) && !isEndedStatus(
+      typeof taskOrStatus === "string" ? taskOrStatus : taskOrStatus?.status
+    );
   }
 
   function followUpTaskTitle(sourceTitle = "") {
@@ -59,15 +70,45 @@
     };
   }
 
+  function buildWorkTodoFromMemo(memo = {}, options = {}) {
+    const opts = options || {};
+    const now = new Date().toISOString();
+    const title = String(memo.title || "").trim() || "后续事项";
+    return {
+      title,
+      dueDate: opts.dueDate || "",
+      dueTime: opts.dueTime || "",
+      owner: memo.owner || "我",
+      parentId: memo.parentId || "",
+      description: String(memo.description || "").trim().slice(0, 240),
+      // Memo is reminder-only; spawned work returns to normal todo priority.
+      priority: memo.priority === "follow_up" ? "general_daily" : (memo.priority || "general_daily"),
+      progress: 0,
+      status: "planned",
+      startedAt: "",
+      startOverrideAt: "",
+      completedAt: "",
+      businessBackground: String(memo.businessBackground || "").trim().slice(0, 800),
+      problemReason: "",
+      deliveryNote: "",
+      recurrence: null,
+      recurrenceGroupId: "",
+      memoFromTaskId: memo.id || "",
+      createdAtIso: now,
+      updatedAt: now
+    };
+  }
+
   function scheduleOverviewKind({ taskStatus = "", investedHours = 0 } = {}) {
-    if (investedHours > 0) return "actual";
+    // Memo reminders never count as actual work investment on themselves.
     if (taskStatus === TRACKING_STATUS) return "tracking";
+    if (investedHours > 0) return "actual";
     return "planned";
   }
 
   function scheduleOverviewBadge(item = {}) {
     if (item.type === "meeting") return "会议";
-    if (item.kind === "tracking") return "跟踪";
+    if (item.kind === "tracking") return "备忘";
     if (item.kind === "actual") return "进行";
     return "计划";
   }
@@ -77,7 +118,7 @@
       unplanned: "未计划",
       planned: "计划中",
       in_progress: "进行中",
-      tracking: "待跟踪",
+      tracking: "备忘提醒",
       done: "已关闭",
       closed: "已关闭"
     }[status] || "计划中";
@@ -88,7 +129,7 @@
       return { className: "status-mark closed", text: "关闭", title: "已关闭" };
     }
     if (isTrackingStatus(task)) {
-      return { className: "status-mark tracking", text: "跟踪", title: "待跟踪" };
+      return { className: "status-mark tracking", text: "备忘", title: "备忘提醒（不计入投入）" };
     }
     return null;
   }
@@ -98,10 +139,13 @@
     TRACKING_STATUS,
     isEndedStatus,
     isTrackingStatus,
+    isMemoReminder,
+    countsTowardWorkHours,
     isSchedulableStatus,
     followUpTaskTitle,
     buildFollowUpBusinessBackground,
     buildFollowUpTask,
+    buildWorkTodoFromMemo,
     scheduleOverviewKind,
     scheduleOverviewBadge,
     statusLabel,

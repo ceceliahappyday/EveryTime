@@ -118,9 +118,10 @@ EveryTime 同时包含三种能力，但三者必须分开：
 - 国家节假日目前是应用内置数据，不等同于实时联网更新。
 - 多设备云同步尚未完成，GitHub Releases 只负责软件发布，不负责用户数据同步。
 - 会议参与人、地点、提醒、会议链接等字段还可以继续扩展。
-## AI assistant policy (v2.0.37)
-- AI is an optional, focused assistant for EveryTime data only: unfinished-task answers, task search/location, and date-range work summaries.
-- The user enters their own OpenAI API Key in Settings. The key is handled by Electron main process, encrypted with Windows safeStorage when available, and never returned to the renderer.
-- Requests use the OpenAI Responses API with `store: false`; only a reduced task/calendar/work-log context is sent, not the full local database.
-- AI cannot create, edit, close, delete, or sync tasks, and is not a general-purpose chatbot.
-- If AI is disabled or no key is configured, the rest of the planner remains fully usable offline.
+## AI assistant policy (v2.0.75+)
+- AI is an optional assistant. Default mode is read-only over EveryTime task/calendar/work-log context: unfinished-task answers, task search/location, and date-range work summaries.
+- The user enters their own API Key in Settings. The key is handled by Electron main process, encrypted with Windows safeStorage when available, and never returned to the renderer.
+- Chat requests use the provider’s chat/completions, Anthropic messages, or Gemini generateContent protocols (not a single OpenAI-only Responses API).
+- When the user **actively** drops/pastes/attaches a screenshot (new-task dialog or AI assistant) and sends it, AI may extract **one or more** todos (up to 12). A single match is created immediately; multiple matches open a review panel to edit/select before batch create. Images are sent only for that request to the user-configured provider; they are not persisted by the app.
+- Aside from that explicit screenshot-create path, AI cannot edit, close, delete, or sync tasks, and is not a general-purpose chatbot.
+- Screenshot parsing needs a vision-capable model (for example gpt-4o / gpt-4.1 / Claude / Gemini). If AI is disabled or no key is configured, the rest of the planner remains fully usable offline.

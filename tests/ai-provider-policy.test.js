@@ -55,4 +55,41 @@ assert.equal(
   "Claude 回复"
 );
 
+const visionOpenAi = policy.buildChatRequest({
+  provider: policy.getProvider("openai"),
+  apiKey: "sk-test",
+  model: "gpt-4o",
+  mode: "extract_task",
+  systemPrompt: "extract json",
+  userText: "today",
+  images: [{ mimeType: "image/png", base64: "AAAA" }]
+});
+assert.equal(visionOpenAi.body.messages[0].content, "extract json");
+assert.ok(Array.isArray(visionOpenAi.body.messages[1].content));
+assert.equal(visionOpenAi.body.messages[1].content[1].type, "image_url");
+
+const visionAnthropic = policy.buildChatRequest({
+  provider: policy.getProvider("anthropic"),
+  apiKey: "sk-ant-test",
+  model: "claude-sonnet-4-0",
+  mode: "extract_task",
+  systemPrompt: "extract json",
+  userText: "today",
+  images: [{ mimeType: "image/jpeg", base64: "BBBB" }]
+});
+assert.equal(visionAnthropic.body.system, "extract json");
+assert.equal(visionAnthropic.body.messages[0].content[1].type, "image");
+assert.equal(visionAnthropic.body.messages[0].content[1].source.media_type, "image/jpeg");
+
+const visionGemini = policy.buildChatRequest({
+  provider: policy.getProvider("gemini"),
+  apiKey: "AIzaTest",
+  model: "gemini-2.5-flash",
+  mode: "extract_task",
+  systemPrompt: "extract json",
+  userText: "today",
+  images: [{ mimeType: "image/webp", base64: "CCCC" }]
+});
+assert.ok(visionGemini.body.contents[0].parts.some(part => part.inline_data?.data === "CCCC"));
+
 console.log("ai provider policy tests passed");

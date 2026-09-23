@@ -25,8 +25,18 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /\.project-gantt-days\s*\{[^}]*position:\s*sticky/s,
-  "gantt date header should stay visible while task rows scroll vertically"
+  /\.project-gantt-header-split\s*\{[^}]*flex:\s*0\s*0\s*auto/s,
+  "gantt date header should stay fixed above the vertically scrolling task rows"
+);
+assert.match(
+  app,
+  /project-gantt-header-split/,
+  "gantt render must place label/date headers outside the rows scroller"
+);
+assert.match(
+  app,
+  /projectGanttDaysTrack/,
+  "gantt date header track must sync with horizontal scroll independently"
 );
 assert.match(
   styles,
@@ -301,7 +311,7 @@ assert.match(
 );
 assert.match(
   styles,
-  /body\.in-desktop:not\(\.shell-focus\) \.workspace\s*\{[^}]*clamp\(200px/s,
+  /body\.in-desktop:not\(\.shell-focus\) \.workspace\s*\{[^}]*var\(--task-panel-width\)/s,
   "desktop wider than todo strip must restore split panes instead of stacking"
 );
 assert.match(
@@ -346,8 +356,8 @@ assert.match(
 );
 assert.match(
   app,
-  /SHELL_FOCUS_MAX_WIDTH\s*=\s*560/,
-  "todo-only focus should end near todo-panel width (~560)"
+  /SHELL_FOCUS_MAX_WIDTH\s*=\s*680/,
+  "todo-only focus should end near dual-pane squeeze width (~680)"
 );
 assert.match(
   app,

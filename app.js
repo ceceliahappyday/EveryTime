@@ -87,11 +87,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   [
     "todaySummary", "monthLabel", "monthPickerButton", "datePicker", "dateControls", "dateNavPrev", "dateNavNext",
     "appVersionBadge",
-    "todayButton", "weekDays", "taskCount", "taskList", "taskListSearch", "continueYesterdayButton", "unplannedCount", "openCount", "doneCount", "closedCount", "exportButton",
+    "todayButton", "weekDays", "taskCount", "taskList", "taskListSearch", "taskSearchWrap", "continueYesterdayButton", "unplannedCount", "openCount", "doneCount", "closedCount", "memoCount", "exportButton",
     "plannedHours", "progressLabel", "progressBar", "scheduleTitle", "loggedHours", "freeHours",
-    "timeline", "timelineWrap", "projectGanttChrome", "quickAddButton", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "viewSwitcher",
+    "timeline", "timelineWrap", "projectGanttChrome", "quickAddButton", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "workspaceSplitHandle", "viewSwitcher",
     "taskTabs", "allCount", "taskViewTitle", "taskDialog", "taskEditForm", "taskDialogEyebrow", "taskDialogTitle",
     "taskDetailSummary", "followUpDraftHint", "taskDialogScroll", "taskDialogCloseButton", "taskDialogCancelButton",
+    "taskTabsWrap", "taskTabsMore", "taskTabsMoreButton", "taskTabsMoreMenu",
     "taskTitleInput", "taskDueDateTime", "taskOwner", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
     "taskProgress", "taskProgressValue", "taskStatus", "taskMonthlyRecurring", "taskRecurringUntil",
     "taskFollowUpOption", "taskFollowUpTracking",
@@ -107,6 +108,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
     "updateProgress", "updateProgressText", "updateProgressBar",
     "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "maximizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
+    "aiChatLog", "aiAttachment", "aiAttachmentPreview", "aiAttachmentClear", "aiImageInput", "aiAttachImageButton", "aiSubmitButton", "aiScreenshotHintButton",
+    "taskAiDropzone", "taskAiDropzoneBody", "taskAiDropzoneStatus", "taskAiImageInput", "taskAiPickImageButton",
+    "aiBatchDraftDialog", "aiBatchDraftForm", "aiBatchDraftTitle", "aiBatchDraftHint", "aiBatchDraftList", "aiBatchSelectAllButton", "aiBatchCreateButton",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "taskPanelToggle",
     "focusViewChrome", "focusViewButton", "focusViewMenu",
@@ -134,6 +138,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   bindHeaderOverflow();
   bindTaskPanelToggle();
   bindFocusViewMenu();
+  applyTaskPanelWidth(loadTaskPanelWidth());
+  bindWorkspaceSplitResize();
   initDesktop();
   bindUpdateProgress();
   renderAppVersion();
@@ -182,7 +188,8 @@ function migrateData() {
       // monthly_fixed is UI-only; never persist it. Repair any earlier mistaken writes.
       if (task.priority === "monthly_fixed") task.priority = "general_daily";
       task.progress = Number(task.progress || (task.status === "done" ? 100 : 0));
-      if (!["done", "closed"].includes(task.status)) task.status = "planned";
+      const knownStatuses = new Set(["planned", "in_progress", "tracking", "done", "closed"]);
+      if (!knownStatuses.has(task.status)) task.status = "planned";
       task.startedAt ||= "";
       task.completedAt ||= "";
       task.createdAtIso ||= new Date(`${dateKey}T09:00:00`).toISOString();
@@ -192,11 +199,13 @@ function migrateData() {
       task.deliveryNote ||= "";
       task.recurrence ||= null;
       task.recurrenceGroupId ||= "";
+      task.followUpFromTaskId ||= "";
+      task.memoFromTaskId ||= "";
       if (task.status === "closed") {
         task.status = "done";
         task.completedAt ||= task.updatedAt || new Date().toISOString();
       }
-      if (task.completedAt) {
+      if (task.completedAt && !TaskStatusPolicy.isTrackingStatus(task)) {
         task.status = "done";
         task.progress = 100;
       }
@@ -272,9 +281,16 @@ function bindEvents() {
   el.quickAddButton?.addEventListener("click", () => openTaskDialog());
   el.quickTaskForm.addEventListener("submit", event => {
     event.preventDefault();
-    const title = el.quickTaskInput.value.trim();
-    if (!title) return openTaskDialog();
-    createQuickUnplannedTask(title);
+    openNewTaskFromQuickAdd();
+  });
+  el.taskAddTrigger?.addEventListener("click", event => {
+    event.preventDefault();
+    openNewTaskFromQuickAdd();
+  });
+  el.quickTaskInput?.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    openNewTaskFromQuickAdd();
   });
 
   el.viewSwitcher.addEventListener("click", event => {
@@ -286,19 +302,37 @@ function bindEvents() {
   el.taskTabs.addEventListener("click", event => {
     const button = event.target.closest("button[data-filter]");
     if (!button) return;
-    state.filter = button.dataset.filter;
-    state.showContinueYesterdayOnly = false;
-    TodoListPolicy.saveFilter(state.filter);
-    el.taskTabs.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
-    renderTasks();
-    // Day/week/month calendars follow the todo status tabs; gantt already groups by status and stays unfiltered.
-    if (state.taskView !== "project") renderSchedule();
+    applyTaskFilter(button.dataset.filter);
   });
+  el.taskTabsMoreMenu?.addEventListener("click", event => {
+    const button = event.target.closest("button[data-filter]");
+    if (!button) return;
+    applyTaskFilter(button.dataset.filter);
+    closeTaskTabsMoreMenu();
+  });
+  el.taskTabsMoreButton?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const open = el.taskTabsMoreMenu?.hidden;
+    if (open) openTaskTabsMoreMenu();
+    else closeTaskTabsMoreMenu();
+  });
+  document.addEventListener("pointerdown", event => {
+    if (el.taskTabsMore?.contains(event.target)) return;
+    closeTaskTabsMoreMenu();
+  });
+  window.addEventListener("resize", () => {
+    adaptTaskTabsOverflow();
+  }, { passive: true });
+  if (el.taskTabsWrap && typeof ResizeObserver === "function") {
+    new ResizeObserver(() => adaptTaskTabsOverflow()).observe(el.taskTabsWrap);
+  }
 
   el.taskListSearch?.addEventListener("input", () => {
     state.taskListSearch = el.taskListSearch.value;
     state.showContinueYesterdayOnly = false;
     el.continueYesterdayButton?.classList.remove("active");
+    el.taskSearchWrap?.classList.toggle("has-query", Boolean((el.taskListSearch.value || "").trim()));
     clearTimeout(taskListSearchTimer);
     taskListSearchTimer = setTimeout(() => {
       const selectionStart = el.taskListSearch.selectionStart;
@@ -306,6 +340,16 @@ function bindEvents() {
       el.taskListSearch.focus({ preventScroll: true });
       if (selectionStart !== null) el.taskListSearch.setSelectionRange(selectionStart, selectionStart);
     }, 120);
+  });
+  el.taskListSearch?.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    if ((el.taskListSearch.value || "").trim()) {
+      el.taskListSearch.value = "";
+      state.taskListSearch = "";
+      el.taskSearchWrap?.classList.remove("has-query");
+      renderTasks();
+    }
   });
 
   el.continueYesterdayButton?.addEventListener("click", () => {
@@ -504,7 +548,7 @@ let shellLayoutDragActive = false;
 let shellLayoutDragWidth = 0;
 let shellLayoutObserverWidth = 0;
 
-const SHELL_FOCUS_MAX_WIDTH = 560;
+const SHELL_FOCUS_MAX_WIDTH = 680;
 const VIEW_EXPAND_WIDTHS = {
   day: 920,
   week: 920,
@@ -528,7 +572,7 @@ function syncShellLayoutClasses(widthHint) {
   const wasFocus = document.body.classList.contains("shell-focus");
   const narrow = desktop && width < 1180;
   const compact = desktop && width < 960;
-  // Todo-only strip until wider than ~todo panel + slim schedule (confirmed: 560).
+  // Todo-only strip until dual-pane would squeeze the schedule (~680).
   const focus = desktop && width < SHELL_FOCUS_MAX_WIDTH;
   document.body.classList.toggle("shell-narrow", narrow);
   document.body.classList.toggle("shell-compact-topbar", compact);
@@ -538,7 +582,12 @@ function syncShellLayoutClasses(widthHint) {
     closeFocusViewMenu();
   }
   syncFocusSurfaceVisibility(focus, compact);
-  if (wasFocus !== focus) updateDateNavigationChrome();
+  if (wasFocus !== focus) {
+    updateDateNavigationChrome();
+    if (el.taskViewTitle) {
+      el.taskViewTitle.textContent = state.filter === "memo" ? "待跟踪" : "待办清单";
+    }
+  }
   syncHeaderOverflow();
 }
 
@@ -1065,18 +1114,45 @@ async function initDesktop() {
   });
   el.aiAssistantButton?.addEventListener("click", openAiDialog);
   el.aiQuickActions?.addEventListener("click", event => {
+    const screenshotHint = event.target.closest("#aiScreenshotHintButton, [data-ai-mode='screenshot']");
+    if (screenshotHint) {
+      el.aiStatus.textContent = "请粘贴或附加一张截图，然后发送；将直接创建 1 条待办。";
+      el.aiImageInput?.click();
+      return;
+    }
     const button = event.target.closest("[data-ai-prompt]");
     if (!button) return;
     el.aiPrompt.value = button.dataset.aiPrompt;
     if (button.textContent.includes("本周")) setAiRangeForWeek();
     el.aiPrompt.focus();
   });
-  el.aiForm?.addEventListener("submit", event => { event.preventDefault(); askAi(); });
+  el.aiForm?.addEventListener("submit", event => { event.preventDefault(); submitAiAssistant(); });
   el.aiCopyButton?.addEventListener("click", async () => {
-    if (!el.aiResult?.textContent) return;
-    await navigator.clipboard?.writeText(el.aiResult.textContent);
+    const text = getAiCopyText();
+    if (!text) return;
+    await navigator.clipboard?.writeText(text);
     showToast("AI 结果已复制");
   });
+  el.aiAttachImageButton?.addEventListener("click", () => el.aiImageInput?.click());
+  el.aiImageInput?.addEventListener("change", async () => {
+    const file = el.aiImageInput.files?.[0];
+    el.aiImageInput.value = "";
+    if (file) await setAiAttachmentFromFile(file);
+  });
+  el.aiAttachmentClear?.addEventListener("click", clearAiAttachment);
+  el.aiPrompt?.addEventListener("paste", event => handleAiImagePaste(event));
+  el.aiDialog?.addEventListener("dragover", event => {
+    if (![...event.dataTransfer?.types || []].includes("Files")) return;
+    event.preventDefault();
+  });
+  el.aiDialog?.addEventListener("drop", async event => {
+    const file = [...(event.dataTransfer?.files || [])].find(item => item.type.startsWith("image/"));
+    if (!file) return;
+    event.preventDefault();
+    await setAiAttachmentFromFile(file);
+  });
+  bindTaskAiDropzone();
+  bindAiBatchDraftDialog();
   el.settingsForm?.addEventListener("submit", event => {
     event.preventDefault();
     saveDesktopSettings();
@@ -1242,6 +1318,10 @@ function setAiRangeForWeek() {
   el.aiPeriodEnd.value = toDateKey(end);
 }
 
+let aiChatMessages = [];
+let aiPendingAttachment = null;
+let aiExtractBusy = false;
+
 function openAiDialog() {
   const date = fromDateKey(state.selectedDate);
   const first = new Date(date.getFullYear(), date.getMonth(), 1);
@@ -1249,9 +1329,71 @@ function openAiDialog() {
   el.aiPeriodStart.value = toDateKey(first);
   el.aiPeriodEnd.value = toDateKey(last);
   el.aiPrompt.value = "";
-  el.aiStatus.textContent = "仅使用 EveryTime 内的任务、日程和工时数据。";
-  el.aiResult.textContent = "AI 结果会显示在这里。";
+  clearAiAttachment();
+  aiChatMessages = [];
+  renderAiChatLog();
+  el.aiStatus.textContent = "可查询本地任务，或附加截图直接创建 1 条待办。";
+  if (el.aiResult) {
+    el.aiResult.textContent = "";
+    el.aiResult.classList.add("hidden");
+  }
   el.aiDialog.showModal();
+  setTimeout(() => el.aiPrompt?.focus(), 40);
+}
+
+function renderAiChatLog() {
+  if (!el.aiChatLog) return;
+  if (!aiChatMessages.length) {
+    el.aiChatLog.innerHTML = `<div class="ai-chat-bubble assistant"><span class="ai-chat-meta">助手</span>在这里提问，或粘贴截图后发送以创建待办。</div>`;
+    return;
+  }
+  el.aiChatLog.innerHTML = aiChatMessages.map(item => `
+    <div class="ai-chat-bubble ${escapeHtml(item.role)}">
+      <span class="ai-chat-meta">${item.role === "user" ? "我" : "助手"}</span>${escapeHtml(item.text)}
+    </div>
+  `).join("");
+  el.aiChatLog.scrollTop = el.aiChatLog.scrollHeight;
+}
+
+function appendAiChat(role, text) {
+  aiChatMessages.push({ role, text: String(text || "").trim() });
+  renderAiChatLog();
+  if (el.aiResult) {
+    el.aiResult.textContent = aiChatMessages.filter(item => item.role === "assistant").map(item => item.text).join("\n\n");
+  }
+}
+
+function getAiCopyText() {
+  const assistants = aiChatMessages.filter(item => item.role === "assistant").map(item => item.text).filter(Boolean);
+  if (assistants.length) return assistants[assistants.length - 1];
+  return el.aiResult?.textContent?.trim() || "";
+}
+
+function clearAiAttachment() {
+  aiPendingAttachment = null;
+  if (el.aiAttachment) el.aiAttachment.classList.add("hidden");
+  if (el.aiAttachmentPreview) el.aiAttachmentPreview.removeAttribute("src");
+}
+
+async function setAiAttachmentFromFile(file) {
+  try {
+    aiPendingAttachment = await readImageAsAttachment(file);
+    if (el.aiAttachmentPreview) el.aiAttachmentPreview.src = aiPendingAttachment.dataUrl;
+    el.aiAttachment?.classList.remove("hidden");
+    el.aiStatus.textContent = "已附加截图。发送后将直接创建 1 条待办。";
+  } catch (error) {
+    showToast(error?.message || "无法读取图片");
+  }
+}
+
+function handleAiImagePaste(event) {
+  const items = [...(event.clipboardData?.items || [])];
+  const imageItem = items.find(item => item.type.startsWith("image/"));
+  if (!imageItem) return;
+  const file = imageItem.getAsFile();
+  if (!file) return;
+  event.preventDefault();
+  setAiAttachmentFromFile(file);
 }
 
 function buildAiContext(startKey, endKey) {
@@ -1273,20 +1415,390 @@ function buildAiContext(startKey, endKey) {
   return { period: { start: startKey, end: endKey }, tasks, calendarEntries: entries, dayNotes: Object.entries(state.data).filter(([date, day]) => date >= startKey && date <= endKey && day.note).map(([date, day]) => ({ date, note: day.note })) };
 }
 
+async function submitAiAssistant() {
+  if (aiPendingAttachment) {
+    await extractAndCreateTaskFromImage({
+      attachment: aiPendingAttachment,
+      note: el.aiPrompt.value.trim(),
+      source: "ai-dialog"
+    });
+    return;
+  }
+  await askAi();
+}
+
 async function askAi() {
   const question = el.aiPrompt.value.trim();
-  if (!question) { el.aiStatus.textContent = "请先输入问题。"; return; }
+  if (!question) {
+    el.aiStatus.textContent = "请先输入问题，或附加截图后发送。";
+    return;
+  }
+  if (!window.desktopAPI?.aiAsk) {
+    el.aiStatus.textContent = "请在桌面版使用 AI 助手。";
+    return;
+  }
   const startKey = el.aiPeriodStart.value || "1900-01-01";
   const endKey = el.aiPeriodEnd.value || "2999-12-31";
+  appendAiChat("user", question);
+  el.aiPrompt.value = "";
   el.aiStatus.textContent = "正在整理本地任务数据并请求 AI…";
-  el.aiResult.textContent = "处理中，请稍候…";
   try {
     const result = await window.desktopAPI.aiAsk({ question, rangeLabel: `${startKey} 至 ${endKey}`, context: buildAiContext(startKey, endKey) });
-    el.aiResult.textContent = result;
+    appendAiChat("assistant", result);
     el.aiStatus.textContent = "已完成。结果只来自当前应用数据。";
+    el.aiDialogScroll?.scrollTo?.({ top: el.aiDialogScroll.scrollHeight, behavior: "smooth" });
   } catch (error) {
     el.aiStatus.textContent = error?.message || "AI 请求失败";
-    el.aiResult.textContent = "请检查设置中的 API Key、模型名称和网络连接。";
+    appendAiChat("assistant", "请检查设置中的 API Key、模型名称和网络连接。");
+  }
+}
+
+function bindTaskAiDropzone() {
+  const zone = el.taskAiDropzone;
+  const body = el.taskAiDropzoneBody;
+  if (!zone || !body) return;
+  el.taskAiPickImageButton?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    el.taskAiImageInput?.click();
+  });
+  body.addEventListener("click", () => el.taskAiImageInput?.click());
+  body.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      el.taskAiImageInput?.click();
+    }
+  });
+  el.taskAiImageInput?.addEventListener("change", async () => {
+    const file = el.taskAiImageInput.files?.[0];
+    el.taskAiImageInput.value = "";
+    if (file) await extractAndCreateTaskFromImage({ file, source: "task-dialog" });
+  });
+  zone.addEventListener("dragover", event => {
+    if (![...event.dataTransfer?.types || []].includes("Files")) return;
+    event.preventDefault();
+    zone.classList.add("dragover");
+  });
+  zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+  zone.addEventListener("drop", async event => {
+    zone.classList.remove("dragover");
+    const file = [...(event.dataTransfer?.files || [])].find(item => item.type.startsWith("image/"));
+    if (!file) return;
+    event.preventDefault();
+    await extractAndCreateTaskFromImage({ file, source: "task-dialog" });
+  });
+  el.taskDialog?.addEventListener("paste", event => {
+    if (el.taskAiDropzone?.classList.contains("hidden")) return;
+    const items = [...(event.clipboardData?.items || [])];
+    const imageItem = items.find(item => item.type.startsWith("image/"));
+    if (!imageItem) return;
+    const file = imageItem.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    extractAndCreateTaskFromImage({ file, source: "task-dialog" });
+  });
+}
+
+function setTaskAiDropzoneStatus(message = "", kind = "") {
+  if (!el.taskAiDropzoneStatus) return;
+  const text = String(message || "").trim();
+  el.taskAiDropzoneStatus.textContent = text;
+  el.taskAiDropzoneStatus.classList.toggle("hidden", !text);
+  el.taskAiDropzoneStatus.classList.toggle("busy", kind === "busy");
+  el.taskAiDropzoneStatus.classList.toggle("error", kind === "error");
+}
+
+async function readImageAsAttachment(fileOrBlob) {
+  if (!fileOrBlob) throw new Error("未找到图片");
+  const type = String(fileOrBlob.type || "").toLowerCase();
+  if (type && !type.startsWith("image/")) throw new Error("请选择图片文件");
+  const dataUrl = await compressImageToDataUrl(fileOrBlob);
+  const parsed = (typeof AiTaskDraftPolicy !== "undefined" && AiTaskDraftPolicy.stripDataUrl)
+    ? AiTaskDraftPolicy.stripDataUrl(dataUrl)
+    : (() => {
+      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
+      return { mimeType: match?.[1] || "image/png", base64: match?.[2] || "" };
+    })();
+  if (!parsed.base64) throw new Error("图片读取失败");
+  return {
+    mimeType: parsed.mimeType || type || "image/png",
+    base64: parsed.base64,
+    dataUrl
+  };
+}
+
+function compressImageToDataUrl(fileOrBlob, { maxEdge = 1600, maxBytes = 1.2 * 1024 * 1024 } = {}) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(fileOrBlob);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("无法压缩图片"));
+        return;
+      }
+      ctx.drawImage(image, 0, 0, width, height);
+      let quality = 0.86;
+      let dataUrl = canvas.toDataURL("image/jpeg", quality);
+      while (dataUrl.length > maxBytes * 1.37 && quality > 0.5) {
+        quality -= 0.08;
+        dataUrl = canvas.toDataURL("image/jpeg", quality);
+      }
+      resolve(dataUrl);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("图片加载失败"));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function createTaskFromAiDraft(draft = {}, { persist = true } = {}) {
+  const now = new Date();
+  const dueDate = String(draft.dueDate || "").trim();
+  const dueTime = String(draft.dueTime || "").trim();
+  const task = {
+    id: crypto.randomUUID(),
+    title: String(draft.title || "").trim().slice(0, 80),
+    dueDate,
+    dueTime: dueDate ? (dueTime || defaultWorkEndTime()) : "",
+    owner: String(draft.owner || "我").trim().slice(0, 30) || "我",
+    parentId: "",
+    description: "",
+    priority: draft.priority || "general_daily",
+    progress: 0,
+    status: "planned",
+    startedAt: "",
+    startOverrideAt: "",
+    completedAt: "",
+    businessBackground: String(draft.businessBackground || "").trim().slice(0, 800),
+    problemReason: "",
+    deliveryNote: "",
+    recurrence: null,
+    recurrenceGroupId: "",
+    createdFromAiScreenshot: true,
+    createdAtIso: now.toISOString(),
+    updatedAt: now.toISOString(),
+    createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+  };
+  if (!task.title) throw new Error("截图中未能识别出待办名称");
+  const dayKey = dueDate || state.selectedDate;
+  getDay(dayKey).tasks.unshift(task);
+  if (persist) {
+    state.filter = dueDate ? "planned" : "unplanned";
+    TodoListPolicy.saveFilter?.(state.filter);
+    saveData();
+    render();
+  }
+  return task;
+}
+
+function createTasksFromAiDrafts(drafts = []) {
+  const created = [];
+  drafts.forEach(draft => {
+    try {
+      created.push(createTaskFromAiDraft(draft, { persist: false }));
+    } catch {}
+  });
+  if (!created.length) throw new Error("没有可创建的待办");
+  const hasDue = created.some(task => task.dueDate);
+  state.filter = hasDue ? "planned" : "unplanned";
+  TodoListPolicy.saveFilter?.(state.filter);
+  saveData();
+  render();
+  return created;
+}
+
+let pendingAiBatchDrafts = [];
+let pendingAiBatchSource = "task-dialog";
+
+function priorityOptionsHtml(selected = "general_daily") {
+  return [
+    ["general_daily", "一般日常"],
+    ["kpi", "KPI"],
+    ["follow_up", "跟踪关注"],
+    ["important_urgent", "重要紧急"],
+    ["paused", "中止暂停"]
+  ].map(([value, label]) =>
+    `<option value="${value}"${value === selected ? " selected" : ""}>${label}</option>`
+  ).join("");
+}
+
+function openAiBatchDraftDialog(drafts = [], source = "task-dialog") {
+  pendingAiBatchDrafts = drafts.map(draft => ({ ...draft, selected: true }));
+  pendingAiBatchSource = source;
+  if (el.aiBatchDraftTitle) {
+    el.aiBatchDraftTitle.textContent = drafts.length > 1
+      ? `确认 ${drafts.length} 条待办`
+      : "确认待办";
+  }
+  if (el.aiBatchDraftHint) {
+    el.aiBatchDraftHint.textContent = drafts.length > 1
+      ? "可勾选、修改后再批量创建。创建后会打开第一条供继续编辑。"
+      : "可修改后创建，创建后会打开编辑窗。";
+  }
+  renderAiBatchDraftList();
+  el.aiBatchDraftDialog?.showModal();
+}
+
+function draftDueDateTimeValue(draft = {}) {
+  const dueDate = String(draft.dueDate || "").trim();
+  if (!dueDate) return "";
+  const dueTime = String(draft.dueTime || "").trim() || defaultWorkEndTime();
+  return `${dueDate}T${dueTime.length === 5 ? dueTime : String(dueTime).slice(0, 5)}`;
+}
+
+function renderAiBatchDraftList() {
+  if (!el.aiBatchDraftList) return;
+  el.aiBatchDraftList.innerHTML = pendingAiBatchDrafts.map((draft, index) => `
+    <section class="ai-batch-card" data-index="${index}">
+      <div class="ai-batch-card-top">
+        <label class="ai-batch-select">
+          <input type="checkbox" data-field="selected" ${draft.selected ? "checked" : ""} />
+          <span>创建此条</span>
+        </label>
+        <span class="form-hint">把握 ${Math.round((Number(draft.confidence) || 0) * 100)}%</span>
+      </div>
+      <label><span>待办名称</span><input type="text" data-field="title" maxlength="80" value="${escapeHtml(draft.title || "")}" /></label>
+      <label>
+        <span>目标日期时间</span>
+        <input type="datetime-local" data-field="dueDateTime" step="60" value="${escapeHtml(draftDueDateTimeValue(draft))}" />
+      </label>
+      <div class="form-row">
+        <label><span>责任人</span><input type="text" data-field="owner" maxlength="30" value="${escapeHtml(draft.owner || "我")}" /></label>
+        <label><span>优先级</span><select data-field="priority">${priorityOptionsHtml(draft.priority || "general_daily")}</select></label>
+      </div>
+      <label><span>背景与说明</span><textarea data-field="businessBackground" maxlength="800">${escapeHtml(draft.businessBackground || "")}</textarea></label>
+    </section>
+  `).join("");
+  el.aiBatchDraftList.querySelectorAll('input[data-field="dueDateTime"]').forEach(input => {
+    bindWorkHourDateTimeDefault(input, "end");
+  });
+}
+
+function collectAiBatchDraftsFromForm() {
+  if (!el.aiBatchDraftList) return [];
+  return [...el.aiBatchDraftList.querySelectorAll(".ai-batch-card")].map(card => {
+    const read = field => card.querySelector(`[data-field="${field}"]`);
+    const selected = Boolean(read("selected")?.checked);
+    const title = String(read("title")?.value || "").trim().slice(0, 80);
+    const dueValue = String(read("dueDateTime")?.value || "").trim();
+    const [dueDate = "", timePart = ""] = dueValue.split("T");
+    const dueTime = timePart ? String(timePart).slice(0, 5) : "";
+    return {
+      selected,
+      title,
+      dueDate,
+      dueTime,
+      owner: String(read("owner")?.value || "我").trim().slice(0, 30) || "我",
+      priority: String(read("priority")?.value || "general_daily"),
+      businessBackground: String(read("businessBackground")?.value || "").trim().slice(0, 800),
+      confidence: pendingAiBatchDrafts[Number(card.dataset.index)]?.confidence
+    };
+  }).filter(item => item.selected && item.title);
+}
+
+function bindAiBatchDraftDialog() {
+  el.aiBatchSelectAllButton?.addEventListener("click", () => {
+    el.aiBatchDraftList?.querySelectorAll('[data-field="selected"]').forEach(input => {
+      input.checked = true;
+    });
+  });
+  el.aiBatchDraftForm?.addEventListener("submit", event => {
+    event.preventDefault();
+    const drafts = collectAiBatchDraftsFromForm();
+    if (!drafts.length) {
+      showToast("请至少勾选一条有效待办");
+      return;
+    }
+    try {
+      const created = createTasksFromAiDrafts(drafts);
+      el.aiBatchDraftDialog?.close();
+      showToast(created.length > 1 ? `已创建 ${created.length} 条待办` : `已创建「${created[0].title}」`);
+      if (pendingAiBatchSource === "ai-dialog") {
+        appendAiChat("assistant", created.length > 1
+          ? `已批量创建 ${created.length} 条待办。已打开第一条供继续编辑。`
+          : `已创建待办「${created[0].title}」。已打开编辑窗，可继续调整。`);
+        el.aiStatus.textContent = created.length > 1 ? `已创建 ${created.length} 条待办。` : "已从截图创建待办。";
+      }
+      requestAnimationFrame(() => openTaskDialog(created[0]));
+    } catch (error) {
+      showToast(error?.message || "创建失败");
+    }
+  });
+}
+
+async function extractAndCreateTaskFromImage({ file = null, attachment = null, note = "", source = "task-dialog" } = {}) {
+  if (aiExtractBusy) {
+    showToast("正在解析截图，请稍候");
+    return null;
+  }
+  if (!window.desktopAPI?.aiExtractTask) {
+    const message = "请在桌面版使用截图解析";
+    if (source === "task-dialog") setTaskAiDropzoneStatus(message, "error");
+    else el.aiStatus.textContent = message;
+    showToast(message);
+    return null;
+  }
+  aiExtractBusy = true;
+  if (source === "task-dialog") setTaskAiDropzoneStatus("正在识别截图中的待办…", "busy");
+  else {
+    el.aiStatus.textContent = "正在识别截图中的待办…";
+    appendAiChat("user", note ? `${note}\n（附截图）` : "（附截图，请提取待办）");
+  }
+  try {
+    const image = attachment || await readImageAsAttachment(file);
+    const result = await window.desktopAPI.aiExtractTask({
+      note,
+      imageBase64: image.base64,
+      mimeType: image.mimeType,
+      today: state.selectedDate || toDateKey(new Date())
+    });
+    const drafts = Array.isArray(result?.drafts)
+      ? result.drafts
+      : (result?.draft ? [result.draft] : (result?.title ? [result] : []));
+    if (!drafts.length) throw new Error("截图中未能识别出待办");
+    if (el.taskDialog?.open) el.taskDialog.close();
+    clearAiAttachment();
+    if (source === "ai-dialog") el.aiPrompt.value = "";
+    setTaskAiDropzoneStatus("");
+    if (drafts.length === 1) {
+      const task = createTaskFromAiDraft(drafts[0]);
+      const confidence = Number(drafts[0].confidence);
+      const hint = Number.isFinite(confidence) && confidence < 0.55 ? "（把握较低，请核对）" : "";
+      showToast(`已从截图创建「${task.title}」${hint}`);
+      if (source === "ai-dialog") {
+        appendAiChat("assistant", `已创建待办「${task.title}」。已打开编辑窗，可继续调整。`);
+        el.aiStatus.textContent = "已从截图创建待办。";
+      }
+      requestAnimationFrame(() => openTaskDialog(task));
+      return [task];
+    }
+    if (source === "ai-dialog") {
+      appendAiChat("assistant", `识别到 ${drafts.length} 条待办，请勾选修改后创建。`);
+      el.aiStatus.textContent = `识别到 ${drafts.length} 条，请确认后创建。`;
+    }
+    openAiBatchDraftDialog(drafts, source);
+    return drafts;
+  } catch (error) {
+    const message = error?.message || "截图解析失败";
+    if (source === "task-dialog") setTaskAiDropzoneStatus(message, "error");
+    else {
+      el.aiStatus.textContent = message;
+      appendAiChat("assistant", message);
+    }
+    showToast(message);
+    return null;
+  } finally {
+    aiExtractBusy = false;
   }
 }
 
@@ -1338,7 +1850,7 @@ function renderWeek() {
     if (isToday(date)) button.classList.add("is-today");
     if (day && (day.tasks?.length || day.entries?.length || day.note)) button.classList.add("has-data");
     button.innerHTML = `<span class="day-number">${date.getDate()}</span><span class="day-name">
-      <strong>${WEEKDAY_NAMES[date.getDay()]}${isToday(date) ? " · 今天" : ""}</strong>
+      <strong>${WEEKDAY_NAMES[date.getDay()]}</strong>
       <span>${date.getMonth() + 1}月${date.getDate()}日</span></span><i class="day-dot"></i>`;
     button.addEventListener("click", () => selectDate(date));
     el.weekDays.appendChild(button);
@@ -1364,14 +1876,19 @@ function renderUnifiedTodoList() {
     ),
     RecurringPolicy.currentMonthKey()
   ).filter(isTodoListTask);
+  const workLeafTasks = allLeafTasks.filter(isWorkLeafTask);
+  const memoLeafTasks = allLeafTasks.filter(isMemoReminderTask);
 
-  updateTaskStats(allLeafTasks);
+  updateTaskStats(workLeafTasks, memoLeafTasks);
 
   const query = (state.taskListSearch || el.taskListSearch?.value || "").trim();
   let visibleTasks = allLeafTasks.filter(task => matchesUnifiedTaskFilter(task, state.filter));
   if (query) {
+    const searchPool = state.filter === "memo" ? memoLeafTasks
+      : state.filter === "all" ? allLeafTasks
+        : workLeafTasks;
     visibleTasks = TaskOptionPolicy.searchTaskCandidates({
-      tasks: allLeafTasks,
+      tasks: searchPool,
       query,
       selectedId: "",
       includeEnded: true,
@@ -1381,7 +1898,7 @@ function renderUnifiedTodoList() {
     }).map(item => item.task);
   }
 
-  el.taskViewTitle.textContent = "待办清单";
+  el.taskViewTitle.textContent = state.filter === "memo" ? "待跟踪" : "待办清单";
   el.taskList.className = "task-list unified-view";
   el.taskList.innerHTML = "";
   el.taskTabs.classList.remove("hidden");
@@ -1389,6 +1906,7 @@ function renderUnifiedTodoList() {
     item.classList.toggle("active", item.dataset.filter === state.filter)
   );
   el.continueYesterdayButton?.classList.toggle("active", state.showContinueYesterdayOnly);
+  requestAnimationFrame(() => adaptTaskTabsOverflow());
 
   const entriesByDate = getWorkEntriesByDate();
   const yesterdayKey = shiftDateKey(state.selectedDate, -1);
@@ -1410,47 +1928,64 @@ function renderUnifiedTodoList() {
     linkedWorkItems = [];
   }
 
-  const includeSections = !query && (state.filter === "all" || state.filter === "in_progress" || state.filter === "planned" || state.filter === "unplanned");
-  // Unplanned inbox: newest created first so quick-adds stay on top.
-  const orderedVisible = state.filter === "unplanned"
-    ? TodoListPolicy.sortByCreatedAtDesc(visibleTasks)
-    : orderedTasks(visibleTasks);
-  const groups = TodoListPolicy.buildTodoGroups({
-    tasks: orderedVisible,
-    selectedDate: state.selectedDate,
-    yesterdayKey,
-    entriesByDate,
-    isOngoingTask,
-    isUnplannedTask,
-    hasChildTasks: taskId => hasChildTasks(taskId),
-    includeSections
-  });
+  let sections;
+  if (state.filter === "memo") {
+    const memos = query
+      ? visibleTasks.filter(isMemoReminderTask)
+      : TodoListPolicy.sortByCreatedAtDesc(memoLeafTasks);
+    sections = memos.length
+      ? [{ key: "memo", label: "待跟踪（不计入投入）", tasks: memos }]
+      : [];
+  } else {
+    const workVisible = visibleTasks.filter(task => !isMemoReminderTask(task));
+    const includeSections = !query && (state.filter === "all" || state.filter === "in_progress" || state.filter === "planned" || state.filter === "unplanned");
+    const orderedVisible = state.filter === "unplanned"
+      ? TodoListPolicy.sortByCreatedAtDesc(workVisible)
+      : orderedTasks(workVisible);
+    const groups = TodoListPolicy.buildTodoGroups({
+      tasks: orderedVisible,
+      selectedDate: state.selectedDate,
+      yesterdayKey,
+      entriesByDate,
+      isOngoingTask,
+      isUnplannedTask,
+      hasChildTasks: taskId => hasChildTasks(taskId),
+      includeSections
+    });
 
-  let sections = TodoListPolicy.flattenGroups(groups).filter(section => section.label || section.tasks.length);
-  if (!query && state.filter === "all") {
-    const remaining = sections.find(section => section.key === "remaining");
-    if (remaining?.tasks.length) remaining.label = "其他任务";
-  }
-  if (linkedWorkItems.length) {
-    if (query) {
-      sections = [{ key: "search", label: "搜索结果", tasks: [...visibleTasks, ...linkedWorkItems] }];
-    } else {
-      const yesterdayItems = linkedWorkItems.filter(item => item.isFromYesterday);
-      const earlierItems = linkedWorkItems.filter(item => !item.isFromYesterday);
-      const continueYesterday = sections.find(section => section.key === "continueYesterday");
-      const continueToday = sections.find(section => section.key === "continueToday");
-      if (continueYesterday) continueYesterday.tasks.push(...yesterdayItems);
-      else if (yesterdayItems.length) sections.unshift({ key: "continueYesterday", label: "继续昨天", tasks: yesterdayItems });
-      if (continueToday) continueToday.tasks.push(...earlierItems);
-      else if (earlierItems.length) sections.unshift({ key: "continueToday", label: "今日可继续", tasks: earlierItems });
+    sections = TodoListPolicy.flattenGroups(groups).filter(section => section.label || section.tasks.length);
+    if (!query && state.filter === "all") {
+      const remaining = sections.find(section => section.key === "remaining");
+      if (remaining?.tasks.length) remaining.label = "其他任务";
+      if (memoLeafTasks.length) {
+        sections.push({
+          key: "memo",
+          label: "待跟踪（不计入投入）",
+          tasks: TodoListPolicy.sortByCreatedAtDesc(memoLeafTasks)
+        });
+      }
     }
-  }
-  if (state.showContinueYesterdayOnly) {
-    sections = [{
-      key: "continueYesterday",
-      label: "继续昨天",
-      tasks: [...groups.continueYesterday, ...linkedWorkItems.filter(item => item.isFromYesterday)]
-    }];
+    if (linkedWorkItems.length) {
+      if (query) {
+        sections = [{ key: "search", label: "搜索结果", tasks: [...workVisible, ...linkedWorkItems] }];
+      } else {
+        const yesterdayItems = linkedWorkItems.filter(item => item.isFromYesterday);
+        const earlierItems = linkedWorkItems.filter(item => !item.isFromYesterday);
+        const continueYesterday = sections.find(section => section.key === "continueYesterday");
+        const continueToday = sections.find(section => section.key === "continueToday");
+        if (continueYesterday) continueYesterday.tasks.push(...yesterdayItems);
+        else if (yesterdayItems.length) sections.unshift({ key: "continueYesterday", label: "继续昨天", tasks: yesterdayItems });
+        if (continueToday) continueToday.tasks.push(...earlierItems);
+        else if (earlierItems.length) sections.unshift({ key: "continueToday", label: "今日可继续", tasks: earlierItems });
+      }
+    }
+    if (state.showContinueYesterdayOnly) {
+      sections = [{
+        key: "continueYesterday",
+        label: "继续昨天",
+        tasks: [...groups.continueYesterday, ...linkedWorkItems.filter(item => item.isFromYesterday)]
+      }];
+    }
   }
 
   const renderedCount = sections.reduce((sum, section) => sum + section.tasks.length, 0);
@@ -1461,7 +1996,9 @@ function renderUnifiedTodoList() {
       ? "昨天没有可继续的任务投入"
       : query
         ? "没有匹配的待办任务"
-        : "当前分类没有待办任务<br>会议和普通日程只显示在右侧日程中"}</div>`;
+        : state.filter === "memo"
+          ? "暂无待跟踪事项<br>关闭任务并选择「关闭并跟踪」后会出现在这里"
+          : "当前分类没有待办任务<br>会议和普通日程只显示在右侧日程中"}</div>`;
     return;
   }
 
@@ -1510,6 +2047,8 @@ function taskHasWorkHistory(taskId) {
 }
 
 function matchesUnifiedTaskFilter(task, filter) {
+  if (filter === "memo") return isMemoReminderTask(task);
+  if (isMemoReminderTask(task)) return filter === "all";
   if (filter === "in_progress") return isOngoingTask(task);
   if (filter === "all") return true;
   if (filter === "ended") return task.status === "done" || task.status === "closed";
@@ -1796,7 +2335,7 @@ function projectStatusGroups(projects) {
 }
 
 function projectStatusLabel(status) {
-  return { unplanned: "未计划", planned: "计划中", in_progress: "进行中", tracking: "待跟踪", ended: "已关闭" }[status] || "计划中";
+  return { unplanned: "未计划", planned: "计划中", in_progress: "进行中", tracking: "备忘", ended: "已关闭" }[status] || "计划中";
 }
 
 function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
@@ -1815,7 +2354,8 @@ function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
     const leafTasks = descendants.filter(task =>
       !descendants.some(candidate => candidate.parentId === task.id && descendantIds.has(candidate.id))
     );
-    const summaryTasks = leafTasks.length ? leafTasks : [root];
+    const summaryTasks = (leafTasks.length ? leafTasks : [root])
+      .filter(task => !TaskStatusPolicy.isTrackingStatus(task));
     return ProjectSummaryPolicy.summarizeProject({
       parent: root,
       children,
@@ -1900,6 +2440,72 @@ function bindGanttLabelResize(handle, splits = []) {
       handle.removeEventListener("pointerup", onUp);
       handle.removeEventListener("pointercancel", onUp);
       saveGanttLabelWidth(state.ganttLabelWidth);
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
+  });
+}
+
+const TASK_PANEL_WIDTH_DEFAULT = 280;
+const TASK_PANEL_WIDTH_MIN = 200;
+const TASK_PANEL_WIDTH_MAX = 480;
+const TASK_PANEL_WIDTH_KEY = "today-planner-task-panel-width";
+
+function clampTaskPanelWidth(width) {
+  const value = Number(width);
+  if (!Number.isFinite(value)) return TASK_PANEL_WIDTH_DEFAULT;
+  return Math.min(TASK_PANEL_WIDTH_MAX, Math.max(TASK_PANEL_WIDTH_MIN, Math.round(value)));
+}
+
+function loadTaskPanelWidth() {
+  try {
+    return clampTaskPanelWidth(localStorage.getItem(TASK_PANEL_WIDTH_KEY));
+  } catch {
+    return TASK_PANEL_WIDTH_DEFAULT;
+  }
+}
+
+function saveTaskPanelWidth(width) {
+  const next = clampTaskPanelWidth(width);
+  state.taskPanelWidth = next;
+  try { localStorage.setItem(TASK_PANEL_WIDTH_KEY, String(next)); } catch {}
+  return next;
+}
+
+function applyTaskPanelWidth(width) {
+  const next = clampTaskPanelWidth(width);
+  state.taskPanelWidth = next;
+  document.documentElement.style.setProperty("--task-panel-width", `${next}px`);
+  return next;
+}
+
+function bindWorkspaceSplitResize() {
+  const handle = el.workspaceSplitHandle;
+  if (!handle || handle.dataset.bound === "1") return;
+  handle.dataset.bound = "1";
+  handle.addEventListener("pointerdown", event => {
+    if (event.button !== 0) return;
+    if (document.body.classList.contains("shell-focus")) return;
+    if (document.body.classList.contains("project-mode")) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = state.taskPanelWidth ?? loadTaskPanelWidth();
+    handle.classList.add("is-dragging");
+    document.body.classList.add("workspace-split-resizing");
+    handle.setPointerCapture(event.pointerId);
+    const onMove = moveEvent => {
+      applyTaskPanelWidth(startWidth + (moveEvent.clientX - startX));
+    };
+    const onUp = upEvent => {
+      handle.classList.remove("is-dragging");
+      document.body.classList.remove("workspace-split-resizing");
+      try { handle.releasePointerCapture(upEvent.pointerId); } catch {}
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      saveTaskPanelWidth(state.taskPanelWidth);
+      requestAnimationFrame(() => adaptTaskTabsOverflow());
     };
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onUp);
@@ -2072,9 +2678,12 @@ function createTaskCard(task) {
       : null);
   const card = document.createElement("article");
   card.className = `task-card ${visualStatus}`;
-  card.draggable = visualStatus === "unplanned" || TaskStatusPolicy.isSchedulableStatus(task.status);
   card.dataset.taskId = task.id;
-  card.title = task.title;
+  card.draggable = visualStatus === "unplanned"
+    || TaskStatusPolicy.isSchedulableStatus(task.status)
+    || isMemoReminderTask(task);
+  if (isMemoReminderTask(task)) card.title = `${task.title}（备忘：拖入日程将新建待办并开始投入）`;
+  else card.title = task.title;
   if (sideBadge) card.classList.add("has-priority");
   card.innerHTML = `
     <button class="task-check" type="button" title="标记完成" aria-label="标记完成"></button>
@@ -2169,30 +2778,34 @@ function materializeLinkedWorkLeaf(item) {
   return leaf;
 }
 
-function updateTaskStats(tasks) {
-  tasks = uniqueTasks(tasks).filter(isTodoListTask);
+function updateTaskStats(tasks, memoTasks = []) {
+  tasks = uniqueTasks(tasks).filter(isWorkLeafTask);
+  const memos = uniqueTasks(memoTasks).filter(isMemoReminderTask);
   const groups = {
     unplanned: tasks.filter(isUnplannedTask),
     planned: tasks.filter(task =>
-      (task.status === "planned" || (TaskStatusPolicy.isTrackingStatus(task) && !isOngoingTask(task)))
-      && !isUnplannedTask(task) && !isContainerOnlyTask(task)),
+      task.status === "planned" && !isUnplannedTask(task) && !isContainerOnlyTask(task)),
     inProgress: tasks.filter(task => task.status === "in_progress"),
-    ended: tasks.filter(task => task.status === "done" || task.status === "closed")
+    ended: tasks.filter(task => task.status === "done" || task.status === "closed"),
+    memo: memos
   };
   el.unplannedCount.textContent = groups.unplanned.length;
   el.openCount.textContent = groups.planned.length;
   el.doneCount.textContent = groups.inProgress.length;
   el.closedCount.textContent = groups.ended.length;
-  el.allCount.textContent = tasks.length;
-  el.taskCount.textContent = tasks.length;
-  const activeTotal = groups.planned.length + groups.inProgress.length + groups.ended.length;
-  const completed = tasks.filter(task => task.status === "done").length;
-  const progress = activeTotal ? Math.round(completed / activeTotal * 100) : 0;
+  if (el.memoCount) el.memoCount.textContent = groups.memo.length;
+  el.allCount.textContent = tasks.length + groups.memo.length;
+  el.taskCount.textContent = tasks.length + groups.memo.length;
+  // 当天计划 = 工作日可用时长；完成进度 = 当日已投入时长 / 工作日时长。
+  const workDayHours = Math.max(1, Number(state.workEndHour) - Number(state.workStartHour));
+  const invested = taskDatesForView().reduce((sum, key) => {
+    const day = getDay(key);
+    return sum + (day.entries || []).reduce((sub, entry) => sub + getEntryInvestedHours(key, entry), 0);
+  }, 0);
+  const progress = Math.max(0, Math.min(100, Math.round(invested / workDayHours * 100)));
   el.progressLabel.textContent = `${progress}%`;
   el.progressBar.style.width = `${progress}%`;
-  const planned = taskDatesForView().reduce((sum, key) =>
-    sum + getDay(key).entries.reduce((sub, entry) => sub + entry.end - entry.start, 0), 0);
-  el.plannedHours.textContent = formatHours(planned);
+  el.plannedHours.textContent = formatHours(workDayHours);
 }
 
 function tasksInMonth(date) {
@@ -2308,7 +2921,7 @@ function renderMonthCalendar() {
 function restoreTaskStatusOptions(task) {
   if (TaskStatusPolicy.isTrackingStatus(task)) {
     el.taskStatus.innerHTML = `
-      <option value="tracking" selected>待跟踪（闭环跟进中）</option>
+      <option value="tracking" selected>备忘提醒（关注提醒，不计入投入）</option>
       <option value="done">已完成 / 已关闭</option>`;
     return;
   }
@@ -2317,6 +2930,141 @@ function restoreTaskStatusOptions(task) {
     <option value="in_progress" disabled>进行中（已排入日程）</option>
     <option value="done">已完成 / 已关闭</option>`;
   el.taskStatus.value = task?.status || "planned";
+}
+
+function openNewTaskFromQuickAdd() {
+  const title = el.quickTaskInput?.value.trim() || "";
+  if (el.quickTaskInput) el.quickTaskInput.value = "";
+  openTaskDialog(null);
+  if (title && el.taskTitleInput) {
+    el.taskTitleInput.value = title;
+  }
+}
+
+function applyTaskFilter(filter) {
+  if (!filter) return;
+  state.filter = filter;
+  state.showContinueYesterdayOnly = false;
+  TodoListPolicy.saveFilter(state.filter);
+  el.taskTabs?.querySelectorAll("button[data-filter]").forEach(item => {
+    item.classList.toggle("active", item.dataset.filter === filter);
+  });
+  el.taskTabsMoreMenu?.querySelectorAll("button[data-filter]").forEach(item => {
+    item.classList.toggle("active", item.dataset.filter === filter);
+  });
+  renderTasks();
+  if (state.taskView !== "project") renderSchedule();
+  adaptTaskTabsOverflow();
+}
+
+function closeTaskTabsMoreMenu() {
+  if (!el.taskTabsMoreMenu || !el.taskTabsMoreButton) return;
+  el.taskTabsMoreMenu.hidden = true;
+  el.taskTabsMoreButton.setAttribute("aria-expanded", "false");
+  el.taskTabsMore?.classList.remove("is-open");
+}
+
+function openTaskTabsMoreMenu() {
+  if (!el.taskTabsMoreMenu || !el.taskTabsMoreButton) return;
+  el.taskTabsMoreMenu.hidden = false;
+  el.taskTabsMoreButton.setAttribute("aria-expanded", "true");
+  el.taskTabsMore?.classList.add("is-open");
+}
+
+function adaptTaskTabsOverflow() {
+  const wrap = el.taskTabsWrap;
+  const tabs = el.taskTabs;
+  const more = el.taskTabsMore;
+  const menu = el.taskTabsMoreMenu;
+  const moreBtn = el.taskTabsMoreButton;
+  if (!wrap || !tabs || !more || !menu || !moreBtn) return;
+
+  const buttons = [...tabs.querySelectorAll("button[data-filter]")];
+  if (!buttons.length) return;
+
+  const preferredCollapse = new Set(["ended", "memo"]);
+  buttons.forEach(btn => { btn.hidden = false; });
+  more.hidden = true;
+  closeTaskTabsMoreMenu();
+  menu.innerHTML = "";
+  moreBtn.textContent = "⋯";
+  moreBtn.setAttribute("aria-label", "更多");
+  moreBtn.classList.remove("has-active");
+
+  const available = wrap.clientWidth;
+  if (available <= 0) return;
+
+  const gap = 2;
+  const measureRow = (list) => list.reduce((sum, btn, i) => sum + btn.offsetWidth + (i ? gap : 0), 0);
+
+  // 1) Prefer showing every tab when they fit.
+  if (measureRow(buttons) <= available) return;
+
+  // 2) Default overflow: only tuck 已结束 + 待跟踪.
+  const primary = buttons.filter(btn => !preferredCollapse.has(btn.dataset.filter));
+  const secondary = buttons.filter(btn => preferredCollapse.has(btn.dataset.filter));
+  more.hidden = false;
+  const moreWidth = more.offsetWidth + gap;
+  const primaryWidth = measureRow(primary);
+
+  let hiddenButtons = [];
+  if (primaryWidth + moreWidth <= available) {
+    secondary.forEach(btn => { btn.hidden = true; });
+    hiddenButtons = secondary;
+  } else {
+    // 3) Still too tight: keep primary filters that fit, then more.
+    secondary.forEach(btn => { btn.hidden = true; });
+    hiddenButtons = [...secondary];
+    let used = 0;
+    let fit = 0;
+    for (let i = 0; i < primary.length; i += 1) {
+      const next = used + primary[i].offsetWidth + (i ? gap : 0);
+      if (next + moreWidth > available) break;
+      used = next;
+      fit = i + 1;
+    }
+    fit = Math.max(1, fit);
+    primary.forEach((btn, index) => {
+      if (index >= fit) {
+        btn.hidden = true;
+        hiddenButtons.push(btn);
+      }
+    });
+  }
+
+  // Keep the active filter visible in the primary row when possible.
+  const activeFilter = state.filter;
+  const activeBtn = buttons.find(btn => btn.dataset.filter === activeFilter);
+  if (activeBtn?.hidden) {
+    activeBtn.hidden = false;
+    hiddenButtons = hiddenButtons.filter(btn => btn !== activeBtn);
+    // If active was a preferred-collapse tab, hide another primary to make room.
+    if (preferredCollapse.has(activeFilter)) {
+      const victims = primary.filter(btn => !btn.hidden && btn !== activeBtn);
+      const victim = victims.at(-1);
+      if (victim && measureRow(buttons.filter(b => !b.hidden)) + moreWidth > available) {
+        victim.hidden = true;
+        if (!hiddenButtons.includes(victim)) hiddenButtons.push(victim);
+      }
+    }
+  }
+
+  hiddenButtons = buttons.filter(btn => btn.hidden);
+  if (!hiddenButtons.length) {
+    more.hidden = true;
+    return;
+  }
+
+  more.hidden = false;
+  menu.innerHTML = hiddenButtons.map(btn => {
+    const filter = btn.dataset.filter;
+    const active = filter === activeFilter ? " active" : "";
+    return `<button type="button" role="option" class="task-tabs-more-item${active}" data-filter="${filter}">${btn.innerHTML}</button>`;
+  }).join("");
+
+  if (hiddenButtons.some(btn => btn.dataset.filter === activeFilter)) {
+    moreBtn.classList.add("has-active");
+  }
 }
 
 function openTaskDialog(task = null, options = {}) {
@@ -2329,7 +3077,9 @@ function openTaskDialog(task = null, options = {}) {
   el.taskDueDateField?.classList.toggle("follow-up-focus", followUpDraft);
   el.businessBackgroundLabel?.classList.toggle("follow-up-focus", followUpDraft);
   el.taskDialogEyebrow.textContent = followUpDraft ? "FOLLOW-UP" : (task ? "EDIT TASK" : "NEW TASK");
-  el.taskDialogTitle.textContent = followUpDraft ? "完善跟踪任务" : (task ? "编辑待办" : "新建待办");
+  el.taskDialogTitle.textContent = followUpDraft ? "完善备忘提醒" : (task ? "编辑待办" : "新建待办");
+  el.taskAiDropzone?.classList.toggle("hidden", Boolean(task) || followUpDraft);
+  setTaskAiDropzoneStatus("");
   el.taskTitleInput.value = task?.title || "";
   setTaskDueDateTime(task?.dueDate || "", task?.dueTime || "");
   el.taskOwner.value = task?.owner || "我";
@@ -2376,6 +3126,9 @@ function openTaskDialog(task = null, options = {}) {
   updateRecurringOptions();
   renderTaskSubtasks(task);
   renderTaskDetailSummary(task);
+  // Keep create/edit focused on input fields: summary cards + subtasks are redundant here.
+  el.taskDetailSummary?.classList.add("hidden");
+  el.taskSubtasksSection?.classList.add("hidden");
   el.taskDialogScroll?.scrollTo?.(0, 0);
   el.taskDialog.showModal();
   setTimeout(() => {
@@ -2674,8 +3427,8 @@ function showTaskFieldError(field, message) {
 
 function openProgressReview() {
   const allTasks = getAllTasks().map(({ task }) => task);
-  const isActive = task => task.status === "in_progress" || TaskStatusPolicy.isTrackingStatus(task);
-  const hasInvestedWork = task => taskHasWorkHistory(task.id) || getTaskDuration(task.id) > 0;
+  const isActive = task => task.status === "in_progress";
+  const hasInvestedWork = task => !isMemoReminderTask(task) && (taskHasWorkHistory(task.id) || getTaskDuration(task.id) > 0);
   const activeTasks = TodoListPolicy.progressReviewCandidates({
     tasks: allTasks,
     hasChildTasks,
@@ -2799,6 +3552,7 @@ function renderSchedule() {
   if (state.taskView !== "project") {
     el.projectGanttScroll = null;
     el.projectGanttChartTrack = null;
+    el.projectGanttDaysTrack = null;
     clearProjectGanttChrome();
   }
   if (state.taskView === "project") return renderProjectSchedule();
@@ -2859,6 +3613,7 @@ function renderProjectSchedule() {
   if (!projects.length && !meetings.length) {
     el.projectGanttScroll = null;
     el.projectGanttChartTrack = null;
+    el.projectGanttDaysTrack = null;
     clearProjectGanttChrome();
     el.timeline.innerHTML = `<div class="empty-state">当前状态下还没有可展示的项目进度</div>`;
     el.loggedHours.textContent = "0h";
@@ -2908,20 +3663,52 @@ function renderProjectSchedule() {
 
   const ganttRoot = document.createElement("div");
   ganttRoot.className = "project-gantt-root";
+  const labelWidthCss = `${getGanttLabelWidth()}px`;
+
+  const headerSplit = document.createElement("div");
+  headerSplit.className = "project-gantt-header-split";
+  headerSplit.style.setProperty("--gantt-label-width", labelWidthCss);
+
+  const labelHeader = document.createElement("div");
+  labelHeader.className = "project-gantt-label-header";
+  labelHeader.textContent = "项目 / 任务";
+
+  const headerResize = document.createElement("div");
+  headerResize.className = "project-gantt-resize-handle";
+  headerResize.title = "拖动调整任务栏宽度";
+  headerResize.setAttribute("role", "separator");
+  headerResize.setAttribute("aria-orientation", "vertical");
+  headerResize.setAttribute("aria-label", "调整甘特任务栏宽度");
+
+  const daysViewport = document.createElement("div");
+  daysViewport.className = "project-gantt-days-viewport";
+  const daysTrack = document.createElement("div");
+  daysTrack.className = "project-gantt-days-track";
+  el.projectGanttDaysTrack = daysTrack;
+  const header = document.createElement("div");
+  header.className = "project-gantt-days";
+  const ganttBucketWidth = state.projectScale === "day" ? 44 : 72;
+  header.style.gridTemplateColumns = `repeat(${buckets.length}, ${ganttBucketWidth}px)`;
+  const todayBucketKey = projectBucketKey(toDateKey(new Date()), state.projectScale);
+  const todayOffset = taskTimelineOffset(toDateKey(new Date()), buckets, state.projectScale);
+  header.innerHTML = `${todayOffset === null ? "" : `<u class="gantt-today-line" style="left:${todayOffset}%" title="今天"></u>`}${buckets.map(bucket => `<span${bucket.key === todayBucketKey ? " class=\"is-today\"" : ""}>${bucket.label}</span>`).join("")}`;
+  const ganttContentWidth = buckets.length * ganttBucketWidth;
+  header.style.width = `${ganttContentWidth}px`;
+  daysTrack.style.width = `${ganttContentWidth}px`;
+  daysTrack.appendChild(header);
+  daysViewport.appendChild(daysTrack);
+  headerSplit.append(labelHeader, headerResize, daysViewport);
 
   const rowsWrap = document.createElement("div");
   rowsWrap.className = "project-gantt-rows-wrap";
 
   const split = document.createElement("div");
   split.className = "project-gantt-split";
-  split.style.setProperty("--gantt-label-width", `${getGanttLabelWidth()}px`);
+  split.style.setProperty("--gantt-label-width", labelWidthCss);
+  bindGanttLabelResize(headerResize, [headerSplit, split]);
 
   const labelPane = document.createElement("div");
   labelPane.className = "project-gantt-label-pane";
-  const labelHeader = document.createElement("div");
-  labelHeader.className = "project-gantt-label-header";
-  labelHeader.textContent = "项目 / 任务";
-  labelPane.appendChild(labelHeader);
   const labelBody = document.createElement("div");
   labelBody.className = "project-gantt-label-body";
   labelPane.appendChild(labelBody);
@@ -2932,7 +3719,7 @@ function renderProjectSchedule() {
   resizeHandle.setAttribute("role", "separator");
   resizeHandle.setAttribute("aria-orientation", "vertical");
   resizeHandle.setAttribute("aria-label", "调整甘特任务栏宽度");
-  bindGanttLabelResize(resizeHandle, split);
+  bindGanttLabelResize(resizeHandle, [headerSplit, split]);
 
   const chartPane = document.createElement("div");
   chartPane.className = "project-gantt-chart-pane";
@@ -2940,22 +3727,11 @@ function renderProjectSchedule() {
   const chartTrack = document.createElement("div");
   chartTrack.className = "project-gantt-chart-track";
   el.projectGanttChartTrack = chartTrack;
-
-  const header = document.createElement("div");
-  header.className = "project-gantt-days";
-  const ganttBucketWidth = state.projectScale === "day" ? 44 : 72;
-  header.style.gridTemplateColumns = `repeat(${buckets.length}, ${ganttBucketWidth}px)`;
-  const todayBucketKey = projectBucketKey(toDateKey(new Date()), state.projectScale);
-  const todayOffset = taskTimelineOffset(toDateKey(new Date()), buckets, state.projectScale);
-  header.innerHTML = `${todayOffset === null ? "" : `<u class="gantt-today-line" style="left:${todayOffset}%" title="今天"></u>`}${buckets.map(bucket => `<span${bucket.key === todayBucketKey ? " class=\"is-today\"" : ""}>${bucket.label}</span>`).join("")}`;
+  chartTrack.style.width = `${ganttContentWidth}px`;
 
   const body = document.createElement("div");
   body.className = "project-gantt-body";
-  const ganttContentWidth = buckets.length * ganttBucketWidth;
-  header.style.width = `${ganttContentWidth}px`;
   body.style.width = `${ganttContentWidth}px`;
-  chartTrack.style.width = `${ganttContentWidth}px`;
-  chartTrack.appendChild(header);
 
   projectStatusGroups(projects).forEach(group => {
     if (!group.projects.length) return;
@@ -3033,6 +3809,7 @@ function renderProjectSchedule() {
   hscrollInner.style.width = `${ganttContentWidth}px`;
   hscroll.appendChild(hscrollInner);
 
+  ganttRoot.appendChild(headerSplit);
   ganttRoot.appendChild(rowsWrap);
   ganttRoot.appendChild(hscroll);
   el.timeline.appendChild(ganttRoot);
@@ -3134,7 +3911,7 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   bindGanttLabelReparent(labelRow, task);
   const chartRow = document.createElement("div");
   chartRow.className = `project-gantt-row-chart ${task.status}${options.isParent ? " is-parent" : ""}`;
-  chartRow.draggable = !["done", "closed"].includes(task.status);
+  chartRow.draggable = TaskStatusPolicy.isSchedulableStatus(task.status);
   chartRow.addEventListener("dragstart", event => {
     event.dataTransfer.setData("text/task-id", task.id);
     event.dataTransfer.effectAllowed = "copy";
@@ -3319,7 +4096,7 @@ function requestTaskCompletion(task) {
   pendingCloseTaskId = task.id;
   if (el.taskCloseConfirmTitle) el.taskCloseConfirmTitle.textContent = "关闭任务";
   if (el.taskCloseConfirmMessage) {
-    el.taskCloseConfirmMessage.textContent = `「${task.title}」关闭后可选择是否创建后续跟踪。选择「关闭并跟踪」会先关闭本任务，再打开新建跟踪待办供你填写目标完成时间。`;
+    el.taskCloseConfirmMessage.textContent = `「${task.title}」关闭后可选择是否留下备忘提醒。选择「关闭并跟踪」会先关闭本任务，再新建一条备忘提醒（不计入投入）。`;
   }
   el.taskCloseConfirmDialog?.showModal();
 }
@@ -3371,7 +4148,7 @@ function toggleTaskCompletion(task, options = {}) {
   saveData();
   render();
   if (closing && followUpTask) {
-    showToast("任务已关闭，请填写跟踪任务的目标完成时间");
+    showToast("任务已关闭，请完善备忘提醒的关注时间");
     requestAnimationFrame(() => openTaskDialog(followUpTask, { mode: "followUp" }));
   } else {
     showToast(closing ? "任务已关闭" : "任务已恢复");
@@ -3651,12 +4428,17 @@ function renderMonthSchedule() {
   const start = getMonday(first);
   el.timeline.innerHTML = "";
   el.timeline.className = "schedule-month-calendar";
+  const weekdays = document.createElement("div");
+  weekdays.className = "schedule-month-weekdays";
   MONTH_WEEKDAY_NAMES.forEach(name => {
     const head = document.createElement("div");
     head.className = "schedule-month-weekday";
     head.textContent = name;
-    el.timeline.appendChild(head);
+    weekdays.appendChild(head);
   });
+  const grid = document.createElement("div");
+  grid.className = "schedule-month-grid";
+  el.timeline.append(weekdays, grid);
   let logged = 0;
   let monthClickTimer = 0;
   for (let i = 0; i < 42; i++) {
@@ -3711,7 +4493,7 @@ function renderMonthSchedule() {
       openTaskDialogForDate(key);
     });
     bindDayOverviewList(cell);
-    el.timeline.appendChild(cell);
+    grid.appendChild(cell);
   }
   el.loggedHours.textContent = `${trimNumber(logged)}h`;
   el.freeHours.textContent = "—";
@@ -4041,13 +4823,38 @@ function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
     showToast("该时间点不能放置新的投入记录");
     return false;
   }
+  const fromMemo = isMemoReminderTask(task);
+  const workTask = fromMemo ? materializeWorkTodoFromMemo(task, dateKey) : task;
   getDay(dateKey).entries.push({
-    id: crypto.randomUUID(), entryType: "task_work", taskId: task.id, title: task.title,
+    id: crypto.randomUUID(), entryType: "task_work", taskId: workTask.id, title: workTask.title,
     ...placement, note: "", color: "sage"
   });
-  refreshTaskStatusForId(task.id);
-  saveData(); render(); showToast(`已安排到 ${dateKey.slice(5)} ${formatTime(hour)}`);
+  refreshTaskStatusForId(workTask.id);
+  saveData();
+  render();
+  showToast(fromMemo
+    ? `备忘已派生新待办「${workTask.title}」，并安排到 ${dateKey.slice(5)} ${formatTime(hour)}`
+    : `已安排到 ${dateKey.slice(5)} ${formatTime(hour)}`);
   return true;
+}
+
+function materializeWorkTodoFromMemo(memo, dateKey = state.selectedDate) {
+  const now = new Date();
+  const payload = TaskStatusPolicy.buildWorkTodoFromMemo(memo, {
+    dueDate: dateKey || "",
+    dueTime: defaultWorkEndTime()
+  });
+  const workTodo = {
+    id: crypto.randomUUID(),
+    ...payload,
+    createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+  };
+  getDay(dateKey || state.selectedDate).tasks.push(workTodo);
+  updateTaskRecords(memo.id, task => {
+    task.updatedAt = now.toISOString();
+    task.description = `${task.description || ""}${task.description ? "\n" : ""}已派生待办并开始投入：${workTodo.title}`;
+  });
+  return workTodo;
 }
 
 function openEntryDialog(hour, entry = null, dateKey = null) {
@@ -4152,10 +4959,15 @@ function resolveEntryTaskLinkWithGuard(entryPayload, existingEntry = null) {
       showToast("工时只能记在叶子待办上；请选已有叶子，或选父级以在其下新建子待办");
       return Promise.resolve(null);
     }
+    if (isMemoReminderTask(linked)) {
+      const workTodo = materializeWorkTodoFromMemo(linked, state.editingEntryDateKey || state.selectedDate);
+      showToast(`备忘「${linked.title}」已派生新待办并关联投入`);
+      return Promise.resolve(workTodo.id);
+    }
     return Promise.resolve(selected);
   }
   if (existingEntry?.taskId) return Promise.resolve(existingEntry.taskId);
-  const leafTasks = uniqueTasks(getAllTasks().map(({ task }) => task)).filter(isTodoListTask);
+  const leafTasks = uniqueTasks(getAllTasks().map(({ task }) => task)).filter(isWorkLeafTask);
   const similar = TodoListPolicy.findSimilarTasks({
     title: entryPayload.title,
     tasks: leafTasks,
@@ -4291,7 +5103,7 @@ function fillEntryTaskOptions(entry = null) {
 
 function getLeafTasksForEntryLink(entry = null) {
   return getAllTasks().map(({ task }) => task).filter(task =>
-    TodoListPolicy.canLinkEntryToTask(task, hasChildTasks) &&
+    isWorkLeafTask(task) &&
     TaskOptionPolicy.shouldIncludeEntryTaskOption({
       task,
       isHiddenFutureRecurringInstance: isHiddenRecurringCatalogInstance(task, {
@@ -4631,12 +5443,11 @@ function createQuickUnplannedTask(title) {
     createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
   };
   getDay(state.selectedDate).tasks.unshift(task);
-  el.quickTaskInput.value = "";
+  if (el.quickTaskInput) el.quickTaskInput.value = "";
   state.filter = "unplanned";
   saveData();
   render();
   showToast("未计划待办已记录");
-  setTimeout(() => el.quickTaskInput.focus(), 40);
 }
 
 function renderDayNote() {
@@ -4722,6 +5533,8 @@ function dayHasScheduleActivity(dateKey) {
 }
 
 function getTaskDuration(taskId) {
+  const task = findTask(taskId)?.task;
+  if (TaskStatusPolicy.isTrackingStatus(task)) return 0;
   return Object.entries(state.data).reduce((sum, [dateKey, day]) =>
     sum + (day.entries || [])
       .filter(entry => entry.taskId === taskId)
@@ -4729,6 +5542,8 @@ function getTaskDuration(taskId) {
 }
 
 function getTaskScheduledHours(taskId) {
+  const task = findTask(taskId)?.task;
+  if (TaskStatusPolicy.isTrackingStatus(task)) return 0;
   return Object.values(state.data).reduce((sum, day) =>
     sum + (day.entries || [])
       .filter(entry => entry.taskId === taskId)
@@ -4772,8 +5587,8 @@ function hasScheduledEntry(taskId) {
 
 function isOngoingTask(task) {
   if (!task || TaskStatusPolicy.isEndedStatus(task.status)) return false;
+  if (isMemoReminderTask(task)) return false;
   if (task.status === "in_progress") return true;
-  if (TaskStatusPolicy.isTrackingStatus(task) && getTaskScheduleInfo(task.id)?.hasStarted) return true;
   return Boolean(getTaskScheduleInfo(task.id)?.hasStarted);
 }
 
@@ -4816,6 +5631,8 @@ function getAutomaticTaskStatusForPayload(taskId, payload, now = new Date()) {
 
 function applyAutomaticTaskStatus(task, now = new Date()) {
   if (!task || ["done", "closed"].includes(task.status)) return false;
+  // Memo reminders stay outside the work-status machine.
+  if (TaskStatusPolicy.isTrackingStatus(task)) return false;
   if (task.completedAt) {
     const changed = task.status !== "done" || task.progress !== 100;
     task.status = "done";
@@ -4898,6 +5715,14 @@ function isTodoListTask(task) {
   return !!task && !hasChildTasks(task.id);
 }
 
+function isMemoReminderTask(task) {
+  return TaskStatusPolicy.isMemoReminder(task);
+}
+
+function isWorkLeafTask(task) {
+  return isTodoListTask(task) && !isMemoReminderTask(task);
+}
+
 function hasChildTasks(taskId) {
   return getChildTasks(taskId).length > 0;
 }
@@ -4955,12 +5780,13 @@ function retargetChildrenToMonthlyParentInstance(newParent, groupId) {
 
 function matchesFilter(task, filter) {
   if (!isTodoListTask(task)) return false;
+  if (filter === "memo") return isMemoReminderTask(task);
+  if (isMemoReminderTask(task)) return false;
   if (filter === "all") return true;
   if (filter === "unplanned") return isUnplannedTask(task);
   if (filter === "ended") return task.status === "done" || task.status === "closed";
   if (filter === "planned") {
-    return (task.status === "planned" || (TaskStatusPolicy.isTrackingStatus(task) && !isOngoingTask(task)))
-      && !isUnplannedTask(task) && !isContainerOnlyTask(task);
+    return task.status === "planned" && !isUnplannedTask(task) && !isContainerOnlyTask(task);
   }
   return task.status === filter;
 }

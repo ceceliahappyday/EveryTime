@@ -60,7 +60,7 @@ assert.ok(app.includes("shell-focus"));
 assert.ok(app.includes("bindTaskPanelToggle"));
 assert.ok(app.includes("window.innerWidth < 1180") || app.includes("width < 1180"));
 assert.ok(app.includes("width < 960"));
-assert.ok(app.includes("SHELL_FOCUS_MAX_WIDTH") || app.includes("width < 560"));
+assert.ok(app.includes("SHELL_FOCUS_MAX_WIDTH") || app.includes("width < 560") || app.includes("width < 680"));
 assert.ok(html.includes('id="maximizeWindow"'));
 assert.ok(html.includes('id="focusViewButton"'));
 assert.ok(app.includes("expandWindowForView"));

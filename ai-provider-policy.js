@@ -204,12 +204,45 @@
     };
   }
 
-  function buildChatRequest({ provider, apiKey, model, question = "", rangeLabel = "", context = {} } = {}) {
+  function buildChatRequest({
+    provider,
+    apiKey,
+    model,
+    question = "",
+    rangeLabel = "",
+    context = {},
+    mode = "query",
+    images = [],
+    systemPrompt = "",
+    userText = ""
+  } = {}) {
     const key = normalizeKey(apiKey);
-    const userText = `用户问题：${String(question || "").slice(0, 4000)}\n\n数据范围：${String(rangeLabel || "未指定")}\n\n应用数据：${JSON.stringify(context || {}).slice(0, 120000)}`;
     const chosenModel = String(model || provider.defaultModel || "").trim() || provider.defaultModel;
+    const isExtract = mode === "extract_task";
+    const system = String(systemPrompt || "").trim()
+      || (isExtract && typeof globalThis !== "undefined" && globalThis.AiTaskDraftPolicy?.EXTRACT_SYSTEM_PROMPT)
+      || (isExtract ? "Extract one todo as JSON only." : SYSTEM_PROMPT);
+    const text = String(userText || "").trim() || (
+      isExtract
+        ? String(question || "").slice(0, 4000)
+        : `用户问题：${String(question || "").slice(0, 4000)}\n\n数据范围：${String(rangeLabel || "未指定")}\n\n应用数据：${JSON.stringify(context || {}).slice(0, 120000)}`
+    );
+    const imageList = (images || [])
+      .map(item => {
+        const mimeType = String(item?.mimeType || "image/png").trim() || "image/png";
+        const base64 = String(item?.base64 || "").replace(/\s+/g, "");
+        return base64 ? { mimeType, base64 } : null;
+      })
+      .filter(Boolean);
 
     if (provider.protocol === "anthropic-messages") {
+      const content = [{ type: "text", text }];
+      imageList.forEach(image => {
+        content.push({
+          type: "image",
+          source: { type: "base64", media_type: image.mimeType, data: image.base64 }
+        });
+      });
       return {
         url: `${provider.baseUrl}/messages`,
         headers: {
@@ -220,22 +253,41 @@
         body: {
           model: chosenModel,
           max_tokens: 2048,
-          system: SYSTEM_PROMPT,
-          messages: [{ role: "user", content: userText }]
+          system,
+          messages: [{ role: "user", content }]
         }
       };
     }
 
     if (provider.protocol === "gemini") {
+      const parts = [{ text }];
+      imageList.forEach(image => {
+        parts.push({
+          inline_data: {
+            mime_type: image.mimeType,
+            data: image.base64
+          }
+        });
+      });
       return {
         url: `${provider.baseUrl}/models/${encodeURIComponent(chosenModel)}:generateContent?key=${encodeURIComponent(key)}`,
         headers: { "content-type": "application/json" },
         body: {
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: [{ role: "user", parts: [{ text: userText }] }]
+          system_instruction: { parts: [{ text: system }] },
+          contents: [{ role: "user", parts }]
         }
       };
     }
+
+    const userContent = imageList.length
+      ? [
+          { type: "text", text },
+          ...imageList.map(image => ({
+            type: "image_url",
+            image_url: { url: `data:${image.mimeType};base64,${image.base64}` }
+          }))
+        ]
+      : text;
 
     return {
       url: `${provider.baseUrl.replace(/\/$/, "")}/chat/completions`,
@@ -245,10 +297,10 @@
       },
       body: {
         model: chosenModel,
-        temperature: 0.2,
+        temperature: isExtract ? 0.1 : 0.2,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userText }
+          { role: "system", content: system },
+          { role: "user", content: userContent }
         ]
       }
     };

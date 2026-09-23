@@ -43,7 +43,7 @@ EveryTime 是桌面浮窗式的任务、日程投入和项目进度工具。任�
 - 不删除既有 localStorage、planner-data.json、历史任务、日程和工时。
 - 数据升级只迁移和补字段，不重置 STORAGE_KEY。
 - 发布版本使用 `ceceliahappyday/EveryTime`，GitHub Releases 负责安装包和自动更新；用户数据不上传 GitHub。
-- API Key 由用户在设置中填写，主进程处理并尽量使用 Windows safeStorage 加密；AI 只回答任务未完成、任务定位和指定期间总结。
+- API Key 由用户在设置中填写，主进程处理并尽量使用 Windows safeStorage 加密；AI 默认可查询未完成任务、任务定位和指定期间总结。仅当用户主动投放/附加截图时，可通过 `ai:extract-task` 创建 1 条本地待办；图片只随当次请求发往用户自配厂商，不落盘、不进 Git。
 
 ## 明确禁止
 

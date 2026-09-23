@@ -67,6 +67,16 @@ assert.strictEqual(parentLinked[0].entryId, "entry-1");
 
 assert.strictEqual(policy.DEFAULT_FILTER, "in_progress");
 assert.ok(policy.VALID_FILTERS.has("in_progress"));
+assert.ok(policy.VALID_FILTERS.has("memo"));
+
+assert.strictEqual(policy.isAwaitingSchedule({
+  task: { id: "memo", status: "tracking" },
+  selectedDate: "2026-08-27",
+  entriesByDate,
+  isUnplannedTask: () => false,
+  isOngoingTask: () => false,
+  hasChildTasks: () => false
+}), false);
 
 const reviewPool = [
   { id: "root", title: "资产管理", status: "in_progress" },

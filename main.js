@@ -6,6 +6,7 @@ const { autoUpdater } = require("electron-updater");
 const ExcelJS = require("exceljs");
 const StartupPolicy = require("./startup-policy.js");
 const AiProviderPolicy = require("./ai-provider-policy.js");
+const AiTaskDraftPolicy = require("./ai-task-draft-policy.js");
 const WindowBoundsPolicy = require("./window-bounds-policy.js");
 
 let mainWindow;
@@ -110,6 +111,7 @@ function createWindow() {
     }
   });
   mainWindow.loadFile("index.html");
+  bindDevReloadShortcuts(mainWindow);
   mainWindow.once("ready-to-show", () => {
     // Open under the cursor so a launch from the primary desktop is never stranded
     // on a secondary monitor the user is not looking at.
@@ -133,6 +135,23 @@ function createWindow() {
     notifyMaximizeChanged(false);
   });
   mainWindow.on("close", saveWindowState);
+}
+
+function bindDevReloadShortcuts(win) {
+  if (!isDevRuntime || !win || win.isDestroyed()) return;
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    const key = String(input.key || "").toLowerCase();
+    const ctrlOrMeta = input.control || input.meta;
+    if (key === "f5" || (ctrlOrMeta && key === "r" && !input.alt)) {
+      event.preventDefault();
+      if (input.shift || key === "f5" && input.control) {
+        win.webContents.reloadIgnoringCache();
+      } else {
+        win.webContents.reload();
+      }
+    }
+  });
 }
 
 function ensureWindowBoundsOnScreen() {
@@ -204,6 +223,7 @@ if (singleInstanceLock) app.whenReady().then(() => {
     return { ...publicSettings(), pinned: mainWindow?.isAlwaysOnTop() || false, startAtLogin: app.getLoginItemSettings().openAtLogin };
   });
   ipcMain.handle("ai:ask", async (_event, payload) => askAi(payload || {}));
+  ipcMain.handle("ai:extract-task", async (_event, payload) => extractAiTask(payload || {}));
   ipcMain.handle("ai:detect-provider", (_event, payload) => detectAiProvider(payload || {}));
   ipcMain.handle("ai:list-models", async (_event, payload) => listAiModels(payload || {}));
   ipcMain.handle("app:get-version", () => app.getVersion());
@@ -575,6 +595,49 @@ async function askAi(payload) {
   return AiProviderPolicy.extractChatText(body, provider)
     || extractResponseText(body)
     || "AI 没有返回可显示的结果。";
+}
+
+async function extractAiTask(payload = {}) {
+  const settings = loadSettings();
+  if (settings.aiEnabled === false) throw new Error("请先在设置中启用 AI 任务助手");
+  const apiKey = decryptAiKey(settings);
+  if (!apiKey) throw new Error("请先在设置中填写 API Key");
+  const parts = AiTaskDraftPolicy.buildVisionUserParts({
+    note: payload.note || "",
+    imageBase64: payload.imageBase64 || payload.dataUrl || "",
+    mimeType: payload.mimeType || "",
+    today: payload.today || ""
+  });
+  if (!parts.base64) throw new Error("请先提供一张截图");
+  const provider = AiProviderPolicy.resolveProvider({
+    apiKey,
+    providerId: settings.aiProvider || ""
+  });
+  const request = AiProviderPolicy.buildChatRequest({
+    provider,
+    apiKey,
+    model: settings.aiModel || provider.defaultModel,
+    mode: "extract_task",
+    systemPrompt: AiTaskDraftPolicy.EXTRACT_SYSTEM_PROMPT,
+    userText: parts.text,
+    images: [{ mimeType: parts.mimeType, base64: parts.base64 }]
+  });
+  const response = await fetch(request.url, {
+    method: "POST",
+    headers: request.headers,
+    body: JSON.stringify(request.body)
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = body?.error?.message || body?.message || `AI 请求失败（${response.status}）`;
+    if (/image|vision|multimodal|does not support|不支持/i.test(message)) {
+      throw new Error("当前模型可能不支持识图。请在设置中换成 gpt-4o / gpt-4.1 / Claude / Gemini 等视觉模型后再试。");
+    }
+    throw new Error(message);
+  }
+  const text = AiProviderPolicy.extractChatText(body, provider) || extractResponseText(body) || "";
+  const drafts = AiTaskDraftPolicy.parseDraftListResponse(text);
+  return { drafts, draft: drafts[0] || null };
 }
 
 function saveSettings(nextSettings) {

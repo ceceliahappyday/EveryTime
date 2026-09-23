@@ -77,34 +77,55 @@
     <main class="workspace">
       <aside class="task-panel">
         <div class="panel-heading">
-          <div>
+          <div class="panel-heading-main">
             <span class="eyebrow">TASKS</span>
-            <h2 id="taskViewTitle">当天待办</h2>
+            <div class="panel-heading-row">
+              <h2 id="taskViewTitle">待办清单</h2>
+              <span class="task-count-inline" id="taskCount" aria-label="待办数量">0</span>
+              <div class="panel-heading-actions">
+                <div class="task-search" id="taskSearchWrap">
+                  <span class="task-search-icon-wrap" aria-hidden="true">
+                    <svg class="task-search-icon" viewBox="0 0 16 16" width="14" height="14" focusable="false">
+                      <circle cx="6.5" cy="6.5" r="4.25" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                      <path d="M9.6 9.6 L13.2 13.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                    </svg>
+                  </span>
+                  <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索待办名称、父级路径或状态…" aria-label="搜索待办清单" />
+                </div>
+              </div>
+            </div>
           </div>
-          <span class="count-badge" id="taskCount">0</span>
         </div>
 
-        <form class="quick-add quick-task-form" id="quickTaskForm">
-          <input id="quickTaskInput" maxlength="80" placeholder="写下新的待办，未填日期即未计划…" autocomplete="off" />
-          <button type="submit" id="taskAddTrigger" title="快速新增">＋</button>
-        </form>
-
         <div class="task-list-toolbar">
-          <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索待办名称、父级路径或状态…" aria-label="搜索待办清单" />
+          <form class="quick-add quick-task-form" id="quickTaskForm">
+            <button type="button" id="taskAddTrigger" class="quick-add-new-btn" title="新建待办" aria-label="新建待办">
+              <span class="quick-add-new-plus" aria-hidden="true">+</span>
+            </button>
+            <input id="quickTaskInput" maxlength="80" placeholder="新增待办事项" autocomplete="off" aria-label="新增待办事项" />
+          </form>
           <button type="button" class="soft-button task-continue-yesterday" id="continueYesterdayButton" title="查看昨天有投入、今天可继续的任务">↺ 继续昨天</button>
         </div>
 
-        <div class="task-tabs" id="taskTabs" role="tablist">
-          <button data-filter="all">全部任务<span id="allCount">0</span></button>
-          <button data-filter="unplanned">未计划 <span id="unplannedCount">0</span></button>
-          <button data-filter="planned">计划中 <span id="openCount">0</span></button>
-          <button class="active" data-filter="in_progress">进行中 <span id="doneCount">0</span></button>
-          <button data-filter="ended">已结束 <span id="closedCount">0</span></button>
+        <div class="task-tabs-wrap" id="taskTabsWrap">
+          <div class="task-tabs" id="taskTabs" role="tablist">
+            <button data-filter="all">全部任务<span id="allCount">0</span></button>
+            <button data-filter="unplanned">未计划 <span id="unplannedCount">0</span></button>
+            <button data-filter="planned">计划中 <span id="openCount">0</span></button>
+            <button class="active" data-filter="in_progress">进行中 <span id="doneCount">0</span></button>
+            <button data-filter="ended">已结束 <span id="closedCount">0</span></button>
+            <button data-filter="memo">待跟踪 <span id="memoCount">0</span></button>
+          </div>
+          <div class="task-tabs-more" id="taskTabsMore" hidden>
+            <button type="button" class="task-tabs-more-trigger" id="taskTabsMoreButton" aria-haspopup="listbox" aria-expanded="false" aria-label="更多" title="更多">⋯</button>
+            <div class="task-tabs-more-menu" id="taskTabsMoreMenu" role="listbox" hidden></div>
+          </div>
         </div>
 
         <div class="task-list" id="taskList"></div>
+        <div class="workspace-split-handle" id="workspaceSplitHandle" title="拖动调整待办与日历宽度" aria-hidden="true"></div>
 
-        <div class="task-panel-footer">
+        <div class="task-panel-footer" title="当天计划=工作日可用时长；完成进度=当日已投入时长÷工作日时长">
           <div>
             <span>当天计划</span>
             <strong id="plannedHours">0 小时</strong>
@@ -166,6 +187,26 @@
       <button type="button" class="soft-button" id="entryLinkConfirmCancel">返回修改</button>
       <button type="button" class="primary-button" id="entryLinkConfirmCreate">确认新建待办</button>
     </div>
+  </dialog>
+
+  <dialog class="modal ai-batch-modal" id="aiBatchDraftDialog">
+    <form method="dialog" id="aiBatchDraftForm">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">FROM SCREENSHOT</span>
+          <h3 id="aiBatchDraftTitle">确认待办</h3>
+        </div>
+        <button type="button" class="close-button" data-close-dialog="aiBatchDraftDialog" aria-label="关闭">×</button>
+      </div>
+      <p class="form-hint" id="aiBatchDraftHint">可勾选、改标题与日期后再创建。创建后会打开第一条供继续编辑。</p>
+      <div class="modal-scroll" id="aiBatchDraftList"></div>
+      <div class="modal-actions">
+        <button type="button" class="soft-button" id="aiBatchSelectAllButton">全选</button>
+        <span></span>
+        <button type="button" class="soft-button" data-close-dialog="aiBatchDraftDialog">取消</button>
+        <button type="submit" class="primary-button" id="aiBatchCreateButton">创建所选</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog class="modal small-modal" id="taskCloseConfirmDialog">
@@ -291,6 +332,14 @@
         </div>
         <div class="task-detail-summary hidden" id="taskDetailSummary"></div>
         <p class="follow-up-draft-hint hidden" id="followUpDraftHint">请确认待办名称与目标完成日期，并补充背景说明。上级任务已与关闭任务保持一致。</p>
+        <div class="task-ai-dropzone" id="taskAiDropzone">
+          <input type="file" id="taskAiImageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+          <div class="task-ai-dropzone-body" id="taskAiDropzoneBody" tabindex="0" role="button" aria-label="投放截图由 AI 创建待办">
+            <strong>截图生成待办</strong>
+            <span>拖入 / 粘贴截图，或 <button type="button" class="linkish-button" id="taskAiPickImageButton">选择图片</button>。识别到多条时可勾选修改后再批量创建。</span>
+          </div>
+          <div class="task-ai-dropzone-status hidden" id="taskAiDropzoneStatus" aria-live="polite"></div>
+        </div>
         <label id="taskTitleField"><span>待办名称</span><input id="taskTitleInput" maxlength="80" placeholder="需要完成什么？" /></label>
         <label id="taskDueDateField">
           <span>目标日期时间</span>
@@ -457,7 +506,7 @@
         <div class="settings-list">
           <label class="checkbox-setting">
             <input type="checkbox" id="settingAiEnabled" />
-            <span>启用 AI 任务助手（只读取本应用数据）</span>
+            <span>启用 AI 任务助手（查询本应用数据；投放截图时可创建 1 条待办）</span>
           </label>
           <label><span>API Key（仅本机加密保存）</span><input id="settingAiApiKey" type="password" autocomplete="off" placeholder="粘贴 OpenAI / OpenRouter / DeepSeek / Anthropic / Gemini 等 Key" /></label>
           <label><span>AI 服务商</span><select id="settingAiProvider"></select></label>
@@ -465,7 +514,7 @@
           <div class="settings-ai-actions">
             <button type="button" class="soft-button" id="aiDetectModelsButton">识别服务商并加载模型</button>
           </div>
-          <p class="form-hint" id="aiKeyStatus">API Key 未配置。填写 Key 后可自动识别厂商并拉取可用模型。</p>
+          <p class="form-hint" id="aiKeyStatus">API Key 未配置。截图解析需 vision 模型（如 gpt-4o、gpt-4.1、Claude、Gemini 2.5 Flash）。</p>
           <label class="checkbox-setting">
             <input type="checkbox" id="settingGlass" />
             <span>使用玻璃背景（保存后立即生效，可随时开关）</span>
@@ -508,7 +557,7 @@
           </div>
           <div><span>数据保存位置</span><strong id="settingsDataPath">读取中…</strong></div>
           <div><span>默认导出位置</span><strong id="settingsExportPath">读取中…</strong></div>
-          <p>玻璃背景、置顶、低干扰与紧凑显示在本页切换；左侧输入框用于新建待办。日历可用键盘 ← → 切换日期/周/月，按 T 回到今天。</p>
+          <p>玻璃背景、置顶、低干扰与紧凑显示在本页切换；左侧「新增待办」用于快速创建。窗口拉窄时进入精简待办条。日历可用键盘 ← → 切换日期/周/月，按 T 回到今天。</p>
         </div>
       </div>
       <div class="modal-actions">
@@ -523,18 +572,38 @@
     <form method="dialog" id="aiForm">
       <div class="modal-header">
         <div><span class="eyebrow">AI ASSISTANT</span><h3>AI 任务助手</h3></div>
-        <button type="button" class="close-button" data-close-dialog="aiDialog">×</button>
+        <button type="button" class="close-button" data-close-dialog="aiDialog" aria-label="关闭">×</button>
       </div>
-      <div class="ai-quick-actions" id="aiQuickActions">
-        <button type="button" class="soft-button" data-ai-prompt="请列出当前所有未完成的任务，并按状态和截止时间整理。">哪些任务未完成</button>
-        <button type="button" class="soft-button" data-ai-prompt="请总结本周的工作完成情况、实际投入工时和未完成事项。">本周工作总结</button>
-        <button type="button" class="soft-button" data-ai-prompt="请根据下面的日期范围生成工作总结。">生成指定期间总结</button>
+      <div class="modal-scroll" id="aiDialogScroll">
+        <div class="ai-quick-actions" id="aiQuickActions">
+          <button type="button" class="soft-button" data-ai-prompt="请列出当前所有未完成的任务，并按状态和截止时间整理。">哪些任务未完成</button>
+          <button type="button" class="soft-button" data-ai-prompt="请总结本周的工作完成情况、实际投入工时和未完成事项。">本周工作总结</button>
+          <button type="button" class="soft-button" data-ai-prompt="请根据下面的日期范围生成工作总结。">生成指定期间总结</button>
+          <button type="button" class="soft-button" id="aiScreenshotHintButton" data-ai-mode="screenshot">从截图创建待办</button>
+        </div>
+        <div class="ai-range"><label><span>开始日期</span><input type="date" id="aiPeriodStart" /></label><label><span>结束日期</span><input type="date" id="aiPeriodEnd" /></label></div>
+        <div class="ai-chat-log" id="aiChatLog" aria-live="polite"></div>
+        <div class="ai-status" id="aiStatus"></div>
+        <div class="ai-result hidden" id="aiResult" aria-hidden="true">AI 结果会显示在这里。</div>
+        <div class="ai-compose">
+          <div class="ai-attachment hidden" id="aiAttachment">
+            <img id="aiAttachmentPreview" alt="待发送截图预览" />
+            <button type="button" class="soft-button" id="aiAttachmentClear">移除截图</button>
+          </div>
+          <label><span>消息</span><textarea id="aiPrompt" rows="3" placeholder="提问查询，或粘贴/拖入截图后发送以创建待办"></textarea></label>
+          <div class="ai-compose-tools">
+            <input type="file" id="aiImageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+            <button type="button" class="soft-button" id="aiAttachImageButton">附加截图</button>
+            <span class="form-hint">有截图时发送 = 识别待办（可多条）；无截图 = 查询本应用数据</span>
+          </div>
+        </div>
       </div>
-      <div class="ai-range"><label><span>开始日期</span><input type="date" id="aiPeriodStart" /></label><label><span>结束日期</span><input type="date" id="aiPeriodEnd" /></label></div>
-      <label><span>你想查询什么</span><textarea id="aiPrompt" rows="3" placeholder="例如：找出本月还没有关闭、但已经投入过时间的任务"></textarea></label>
-      <div class="ai-status" id="aiStatus"></div>
-      <div class="ai-result" id="aiResult">AI 结果会显示在这里。</div>
-      <div class="modal-actions"><button type="button" class="soft-button" id="aiCopyButton">复制结果</button><span></span><button type="button" class="soft-button" data-close-dialog="aiDialog">取消</button><button type="submit" class="primary-button">提交查询</button></div>
+      <div class="modal-actions">
+        <button type="button" class="soft-button" id="aiCopyButton">复制结果</button>
+        <span></span>
+        <button type="button" class="soft-button" data-close-dialog="aiDialog">取消</button>
+        <button type="submit" class="primary-button" id="aiSubmitButton">发送</button>
+      </div>
     </form>
   </dialog>
 
@@ -556,6 +625,7 @@
   <script src="week-entry-policy.js"></script>
   <script src="project-view-policy.js"></script>
   <script src="task-status-policy.js"></script>
+  <script src="ai-task-draft-policy.js"></script>
   <script src="navigation-policy.js"></script>
   <script src="ui-scale-policy.js"></script>
   <script src="app.js"></script>

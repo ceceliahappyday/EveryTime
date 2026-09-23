@@ -6,15 +6,22 @@ assert.strictEqual(policy.followUpTaskTitle("合同审批 · 跟踪"), "合同�
 assert.strictEqual(policy.followUpTaskTitle(""), "后续事项");
 assert.strictEqual(policy.scheduleOverviewKind({ taskStatus: "tracking", investedHours: 0 }), "tracking");
 assert.strictEqual(policy.scheduleOverviewKind({ taskStatus: "planned", investedHours: 0 }), "planned");
-assert.strictEqual(policy.scheduleOverviewKind({ taskStatus: "tracking", investedHours: 1 }), "actual");
-assert.strictEqual(policy.scheduleOverviewBadge({ kind: "tracking" }), "跟踪");
+assert.strictEqual(policy.scheduleOverviewKind({ taskStatus: "tracking", investedHours: 1 }), "tracking");
+assert.strictEqual(policy.scheduleOverviewBadge({ kind: "tracking" }), "备忘");
 assert.strictEqual(policy.scheduleOverviewBadge({ kind: "planned" }), "计划");
 assert.strictEqual(policy.scheduleOverviewBadge({ kind: "actual" }), "进行");
-assert.strictEqual(policy.statusLabel("tracking"), "待跟踪");
+assert.strictEqual(policy.statusLabel("tracking"), "备忘提醒");
 assert.strictEqual(policy.statusLabel("done"), "已关闭");
 assert.strictEqual(policy.listSideBadge({ status: "done", priority: "follow_up" }).text, "关闭");
-assert.strictEqual(policy.listSideBadge({ status: "tracking", priority: "follow_up" }).text, "跟踪");
+assert.strictEqual(policy.listSideBadge({ status: "tracking", priority: "follow_up" }).text, "备忘");
 assert.equal(policy.listSideBadge({ status: "planned", priority: "follow_up" }), null);
+
+assert.equal(policy.isMemoReminder({ status: "tracking" }), true);
+assert.equal(policy.isMemoReminder({ status: "planned" }), false);
+assert.equal(policy.isSchedulableStatus("tracking"), false);
+assert.equal(policy.isSchedulableStatus("planned"), true);
+assert.equal(policy.isSchedulableStatus("in_progress"), true);
+assert.equal(policy.countsTowardWorkHours({ status: "tracking" }), false);
 
 const closedAt = "2026-09-04T10:00:00.000Z";
 const followUp = policy.buildFollowUpTask({
@@ -38,5 +45,23 @@ assert.strictEqual(followUp.description, "完成验收清单");
 assert.strictEqual(followUp.problemReason, "验收材料不全");
 assert.strictEqual(followUp.businessBackground, "上线验收\n保障版本按期上线");
 assert.strictEqual(followUp.priority, "follow_up");
+
+const workFromMemo = policy.buildWorkTodoFromMemo({
+  id: "memo-1",
+  title: "上线验收",
+  parentId: "parent-1",
+  priority: "follow_up",
+  description: "关注材料齐备",
+  businessBackground: "上线验收\n保障版本按期上线",
+  owner: "我"
+}, { dueDate: "2026-09-23", dueTime: "18:00" });
+assert.strictEqual(workFromMemo.status, "planned");
+assert.strictEqual(workFromMemo.memoFromTaskId, "memo-1");
+assert.strictEqual(workFromMemo.parentId, "parent-1");
+assert.strictEqual(workFromMemo.title, "上线验收");
+assert.strictEqual(workFromMemo.dueDate, "2026-09-23");
+assert.strictEqual(workFromMemo.dueTime, "18:00");
+assert.strictEqual(workFromMemo.priority, "general_daily");
+assert.strictEqual(workFromMemo.progress, 0);
 
 console.log("task status policy tests passed");

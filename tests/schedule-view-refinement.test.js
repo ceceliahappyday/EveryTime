@@ -86,10 +86,13 @@ assert.match(
 );
 assert.ok(styles.includes("grid-template-columns: repeat(5, minmax(0, 1fr))"));
 assert.ok(app.includes("ScheduleHoursPolicy.shouldShowWeekColumn"));
-assert.ok(styles.includes("grid-template-rows: auto repeat(6, 136px)"));
+assert.ok(styles.includes("grid-template-rows: repeat(6, 136px)"));
 assert.ok(styles.includes("border-radius: 8px"));
 assert.ok(styles.includes(".schedule-month-cell.weekend"));
 assert.ok(styles.includes(".schedule-month-cell.selected .month-task-list"));
+assert.ok(styles.includes(".schedule-month-weekdays"), "month weekday labels must sit in a sticky header row");
+assert.ok(app.includes("schedule-month-weekdays"), "month render must create a sticky weekday header row");
+assert.ok(app.includes("schedule-month-grid"), "month date cells must render in a separate scrolling grid");
 assert.ok(app.includes("goToTodayDayView"));
 assert.ok(app.includes('class="month-add-task"'), "empty month days should offer a create affordance");
 assert.ok(app.includes("is-empty"), "empty month cells should be marked for hover plus styling");
