@@ -5,6 +5,7 @@ const { execFileSync } = require("child_process");
 const { autoUpdater } = require("electron-updater");
 const ExcelJS = require("exceljs");
 const StartupPolicy = require("./startup-policy.js");
+const ImportPolicy = require("./import-policy.js");
 
 let mainWindow;
 let locked = false;
@@ -161,6 +162,40 @@ if (singleInstanceLock) app.whenReady().then(() => {
     await buildExcel(result.filePath, data);
     return true;
   });
+  ipcMain.handle("data:import", async () => {
+    const exportDir = defaultExportDir();
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "导入日程备份",
+      defaultPath: exportDir,
+      filters: [{ name: "JSON 备份文件", extensions: ["json"] }],
+      properties: ["openFile"]
+    });
+    if (result.canceled || !result.filePaths?.[0]) return { ok: false, canceled: true };
+    let raw;
+    try {
+      raw = fs.readFileSync(result.filePaths[0], "utf8");
+    } catch {
+      return { ok: false, error: "无法读取所选文件" };
+    }
+    const parsed = ImportPolicy.parseImportPayload(raw);
+    if (!parsed.ok) return { ok: false, error: parsed.error || "备份文件无效" };
+    const file = plannerDataPath();
+    if (fs.existsSync(file)) {
+      writePlannerBackup(fs.readFileSync(file, "utf8"));
+    }
+    const content = JSON.stringify(parsed.data || {}, null, 2);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content, "utf8");
+    writePlannerBackup(content, true);
+    return {
+      ok: true,
+      data: parsed.data,
+      recordCount: parsed.recordCount,
+      source: parsed.source,
+      exportedAt: parsed.exportedAt || "",
+      filePath: result.filePaths[0]
+    };
+  });
   createWindow();
   if (settings.pinned) mainWindow.setAlwaysOnTop(true, "floating");
   if (locked) mainWindow.webContents.once("did-finish-load", () => mainWindow.webContents.send("window:lock-changed", locked));
@@ -277,7 +312,17 @@ function decryptAiKey(settings) {
 
 function publicSettings() {
   const settings = loadSettings();
-  const { aiApiKeyEncrypted, ...safeSettings } = settings;
+  const {
+    aiApiKeyEncrypted,
+    cloudAccessTokenEncrypted,
+    cloudRefreshTokenEncrypted,
+    cloudTokenExpiresAt,
+    cloudAccountEmail,
+    cloudAccountName,
+    cloudLastUploadedAt,
+    cloudLastRecordCount,
+    ...safeSettings
+  } = settings;
   return { ...safeSettings, aiConfigured: Boolean(aiApiKeyEncrypted) };
 }
 

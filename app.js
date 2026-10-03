@@ -83,10 +83,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast", "pinWindow", "desktopLock", "glassMode",
     "updateProgress", "updateProgressText", "updateProgressBar",
-    "exportDialog", "exportForm", "exportFormat", "minimizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
+    "exportDialog", "exportForm", "exportFormat", "importButton", "minimizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "settingsButton", "settingsDialog", "settingsForm", "settingGlass", "settingPinned", "settingLocked",
-    "settingCompact", "settingStartAtLogin", "settingAiEnabled", "settingAiApiKey", "settingAiModel", "aiKeyStatus", "settingsAppVersion", "settingsDataPath", "settingsExportPath"
+    "settingCompact", "settingStartAtLogin", "settingAiEnabled", "settingAiApiKey", "settingAiModel", "aiKeyStatus",
+    "settingsAppVersion", "settingsDataPath", "settingsExportPath"
   ].forEach(id => el[id] = document.getElementById(id));
 
   if (!el.closeTaskButton) {
@@ -221,6 +222,7 @@ function bindEvents() {
     button.addEventListener("click", () => document.getElementById(button.dataset.closeDialog).close("cancel"));
   });
   el.exportButton.addEventListener("click", () => el.exportDialog.showModal());
+  el.importButton?.addEventListener("click", () => importAllData());
   el.progressReviewButton.addEventListener("click", openProgressReview);
   el.progressReviewForm.addEventListener("submit", event => {
     event.preventDefault();
@@ -2750,7 +2752,7 @@ function scheduledDateTimeIso(dateKey, decimalHour) {
   return date.toISOString();
 }
 
-async function exportAllData(format = "xlsx") {
+async function exportAllData(format = "json") {
   const tasks = getAllTasks().map(({ task, dateKey }) => ({
     id: task.id, title: task.title, planDate: dateKey, dueDate: task.dueDate, dueTime: task.dueTime,
     owner: task.owner, parentId: task.parentId || null, priority: task.priority, status: task.status,
@@ -2769,10 +2771,25 @@ async function exportAllData(format = "xlsx") {
     }))
   );
   const notes = Object.entries(state.data).filter(([, day]) => day.note).map(([date, day]) => ({ date, note: day.note }));
-  const data = {
-    format: "today-planner-export", version: 1, exportedAt: new Date().toISOString(),
-    tasks, schedules, notes
-  };
+  const data = format === "json"
+    ? {
+      format: "today-planner-backup",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      recordCount: countPlannerRecords(state.data),
+      data: state.data,
+      tasks,
+      schedules,
+      notes
+    }
+    : {
+      format: "today-planner-export",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      tasks,
+      schedules,
+      notes
+    };
   const extension = format === "xlsx" ? "xlsx" : "json";
   const filename = `今日日程-全部数据-${toDateKey(new Date())}.${extension}`;
   if (window.desktopAPI?.exportData) {
@@ -2793,6 +2810,59 @@ async function exportAllData(format = "xlsx") {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast("全部数据已导出");
+}
+
+async function applyImportedPlannerData(data, recordCount) {
+  state.data = data || {};
+  migrateData();
+  ensureEntryTaskLinks();
+  ensureRecurringTasksForVisibleRange();
+  saveData();
+  render();
+  showToast(`已导入恢复（${recordCount || countPlannerRecords(state.data)} 条记录）`);
+}
+
+async function importAllData() {
+  const localCount = countPlannerRecords(state.data);
+  if (!confirm(`导入会用备份文件覆盖当前本机数据。\n当前约 ${localCount} 条记录。\n桌面版导入前会自动做本地备份。\n确定继续？`)) return;
+
+  if (window.desktopAPI?.importData) {
+    try {
+      const result = await window.desktopAPI.importData();
+      if (result?.canceled) {
+        showToast("已取消导入");
+        return;
+      }
+      if (!result?.ok) {
+        showToast(result?.error || "导入失败");
+        return;
+      }
+      await applyImportedPlannerData(result.data, result.recordCount);
+    } catch (error) {
+      showToast(error.message || "导入失败");
+    }
+    return;
+  }
+
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "application/json,.json";
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = (window.ImportPolicy || globalThis.ImportPolicy).parseImportPayload(text);
+      if (!parsed.ok) {
+        showToast(parsed.error || "备份文件无效");
+        return;
+      }
+      await applyImportedPlannerData(parsed.data, parsed.recordCount);
+    } catch (error) {
+      showToast(error.message || "导入失败");
+    }
+  });
+  input.click();
 }
 
 function formatDue(task) {

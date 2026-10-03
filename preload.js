@@ -20,5 +20,6 @@ contextBridge.exposeInMainWorld("desktopAPI", {
   quit: () => ipcRenderer.invoke("app:quit"),
   loadPlannerData: () => ipcRenderer.invoke("data:load-store"),
   savePlannerData: data => ipcRenderer.invoke("data:save-store", data),
-  exportData: (filename, format, data) => ipcRenderer.invoke("data:export", filename, format, data)
+  exportData: (filename, format, data) => ipcRenderer.invoke("data:export", filename, format, data),
+  importData: () => ipcRenderer.invoke("data:import")
 });

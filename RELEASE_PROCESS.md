@@ -10,7 +10,7 @@
 4. 用户数据：
    - 本地仍保存在 `%APPDATA%\today-daily-planner\planner-data.json`
    - 每次保存前自动备份到 `%APPDATA%\today-daily-planner\backups`
-   - 后续增加 OneDrive / Microsoft Graph 云同步，解决换电脑历史记录不丢
+   - 换电脑通过 JSON「导出 / 导入」手工迁移历史记录
 
 ## 为什么不再使用 D 盘本地更新
 
@@ -43,8 +43,15 @@
 - [x] 把当前本地更新器替换为 GitHub Releases 自动更新器。
 - [x] 配置 `package.json` 的 `publish` 字段。
 - [x] 配置 GitHub Actions 自动构建 Release。
-- [ ] 增加 OneDrive / Microsoft Graph 数据同步。
+- [x] 增加 JSON 导出 / 导入，支持换电脑手工恢复历史记录。
 - [ ] 后续准备正式图标、隐私说明、代码签名证书。
+
+## 换电脑恢复数据
+
+1. 旧电脑打开 EveryTime → 点「导出」→ 选择 **JSON 备份** → 保存文件（可拷到 U 盘 / 网盘 / 邮件）。
+2. 新电脑安装 EveryTime → 点「导入」→ 选择该 JSON 文件。
+3. 导入会覆盖新电脑当前数据；桌面版会先自动做本地备份。
+4. Excel 导出仅供查看，不能用于导入还原。
 
 ## 发布新版本
 
@@ -72,5 +79,4 @@ APP 安装版启动后会通过 GitHub Releases 检查新版本，并询问用�
 - 不提交用户数据。
 - 不提交 `%APPDATA%` 中的数据文件。
 - 不提交 GitHub Token。
-- 不提交 Microsoft OAuth Secret。
 - 公开仓库内只保留程序代码、文档、构建配置。

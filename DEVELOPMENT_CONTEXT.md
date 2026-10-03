@@ -43,6 +43,7 @@ EveryTime 是桌面浮窗式的任务、日程投入和项目进度工具。任�
 - 不删除既有 localStorage、planner-data.json、历史任务、日程和工时。
 - 数据升级只迁移和补字段，不重置 STORAGE_KEY。
 - 发布版本使用 `ceceliahappyday/EveryTime`，GitHub Releases 负责安装包和自动更新；用户数据不上传 GitHub。
+- 换电脑通过 JSON「导出 / 导入」恢复历史；导入覆盖本机数据前会先本地备份。Excel 导出仅供查看。
 - API Key 由用户在设置中填写，主进程处理并尽量使用 Windows safeStorage 加密；AI 只回答任务未完成、任务定位和指定期间总结。
 
 ## 明确禁止
@@ -60,6 +61,7 @@ EveryTime 是桌面浮窗式的任务、日程投入和项目进度工具。任�
 - Cleanup is user-scope only (`HKCU` Run / StartupApproved), and only removes an exact known alias after verifying an EveryTime executable path. Never modify `HKLM`, require admin rights, or delete unrelated entries.
 - Startup registration uses the current executable path, disables verified EveryTime aliases when switched off, and the main process holds a single-instance lock.
 - `startup-policy.js` is a CommonJS main-process module and must not be loaded by `index.html`.
+- `import-policy.js` parses JSON backups (`today-planner-backup`, legacy `today-planner-export`, raw planner-data) for restore; Excel exports are view-only and not importable.
 - Entry task linking uses a lightweight accessible combobox backed by the hidden `entryTaskLink` select. It supports title/path/status/date search, multi-keyword matching, numeric hierarchy labels, parent breadcrumbs, leaf-first stable sorting, keyboard navigation, Escape/Tab close, and current-link restoration. Calendar entries disable the control; task work enables it. No third-party dependency or data migration is allowed.
 - Week view is an actual work-entry detail surface: each `task_work`/linked entry is shown separately by start time with leaf title, duration, note, and parent breadcrumb. Parent tasks must not replace a leaf entry or reappear as an actual-work card when a descendant has that day's entry; due-only items remain under an explicit plan/deadline label.
 - Project Gantt always builds a complete data domain from recursive task trees and all linked entries, retaining history and distant future dates; today+30 days is only initial visual context, never a data cutoff. The current day/week/month is anchored with a small historical context, and a dedicated top horizontal scrollbar stays synchronized with the timeline. Actual bars convert dates through the selected bucket scale.
