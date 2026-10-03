@@ -16,5 +16,27 @@ const statusText = task => ({ planned: "计划中", in_progress: "进行中", cl
 assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "进行中", statusText })[0].task.id, "child");
 assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "已关闭", selectedId: "ended", statusText })[0].task.id, "ended");
 assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "已关闭", statusText }).length, 0);
+assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "已关闭", includeEnded: true, statusText })[0].task.id, "ended");
+assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "资产", leafOnly: true, hasChildTasks: id => id === "root" || id === "child" })[0].task.id, "leaf");
+assert.strictEqual(policy.searchTaskCandidates({ tasks, query: "准备", leafOnly: true, hasChildTasks: id => id === "root" || id === "child" })[0].task.id, "leaf");
+const parents = policy.matchingParentContainers({ tasks, query: "资产", hasChildTasks: id => id === "root" || id === "child" });
+assert.strictEqual(parents[0].task.id, "root", "searching a parent name should surface the container for entry-link hints");
+assert.ok(parents.every(item => item.meta.hasChildren), "only parent containers belong in matchingParentContainers");
+const partial = policy.matchingParentContainers({
+  tasks: [
+    { id: "roic", title: "完成ROIC指标计算及年度激励方案调整", status: "planned", dueDate: "2026-09-01" },
+    { id: "leaf", title: "测算明细", parentId: "roic", status: "in_progress", dueDate: "2026-09-01" }
+  ],
+  query: "年度激励方案调整",
+  hasChildTasks: id => id === "roic"
+});
+assert.strictEqual(partial[0].task.id, "roic", "partial parent-title query must still match the ROIC parent container");
+assert.ok(partial[0].rank > 0, "substring parent matches should not require exact title equality");
 assert.strictEqual(policy.normalizeSearchText("资产管理 › 员工培训"), "资产管理 员工培训");
+const browsed = policy.parentPickerBrowseCandidates({ tasks, selectedId: "child" });
+assert.ok(browsed.some(item => item.task.id === "root"), "browse mode should keep top-level plans");
+assert.ok(browsed.some(item => item.task.id === "child"), "browse mode should keep selected parent");
+assert.ok(!browsed.some(item => item.task.id === "leaf"), "browse mode should hide deep leaves until searched");
+const searched = policy.parentPickerSearchCandidates({ tasks, query: "准备" });
+assert.strictEqual(searched[0].task.id, "leaf");
 console.log("task option search policy tests passed");

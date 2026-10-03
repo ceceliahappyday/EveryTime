@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage, safeStorage } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage, safeStorage, screen } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { execFileSync } = require("child_process");
@@ -6,45 +6,97 @@ const { autoUpdater } = require("electron-updater");
 const ExcelJS = require("exceljs");
 const StartupPolicy = require("./startup-policy.js");
 const ImportPolicy = require("./import-policy.js");
+const AiProviderPolicy = require("./ai-provider-policy.js");
+const AiTaskDraftPolicy = require("./ai-task-draft-policy.js");
+const WindowBoundsPolicy = require("./window-bounds-policy.js");
 
 let mainWindow;
 let locked = false;
-let glass = true;
+let glass = false;
 let tray;
 let manualUpdateCheck = false;
-const singleInstanceLock = app.requestSingleInstanceLock();
+let restoredWindowBounds = null;
 const dataFileName = "planner-data.json";
 const windowStateFileName = "window-state.json";
 const settingsFileName = "settings.json";
 const appIconPath = path.join(__dirname, "assets", "icons", "app-icon.ico");
 const trayIconPath = path.join(__dirname, "assets", "icons", "app-icon.png");
+const skipStartupRegistration = process.argv.includes("--skip-startup-registration");
+const isDevRuntime = !app.isPackaged;
 
 if (process.platform === "win32") {
-  app.setAppUserModelId("com.local.todayDailyPlanner");
+  app.setAppUserModelId(isDevRuntime ? "com.local.todayDailyPlanner.dev" : "com.local.todayDailyPlanner");
 }
+
+if (isDevRuntime) {
+  // Keep the unpackaged preview from colliding with an installed EveryTime release.
+  app.setPath("userData", path.join(app.getPath("appData"), "today-daily-planner-dev"));
+}
+
+const singleInstanceLock = isDevRuntime ? true : app.requestSingleInstanceLock();
 
 if (!singleInstanceLock) {
   app.quit();
-} else {
+} else if (!isDevRuntime) {
   app.on("second-instance", (_event, _commandLine, _workingDirectory) => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+    // User clicked the app again — they likely cannot see the window (other monitor / off-screen).
+    showMainWindow({ relocateToCursor: true });
   });
 }
 
+function isWindowMaximized() {
+  if (!mainWindow) return false;
+  if (mainWindow.isMaximized()) return true;
+  if (!restoredWindowBounds) return false;
+  const bounds = mainWindow.getBounds();
+  const workArea = screen.getDisplayMatching(bounds).workArea;
+  return Math.abs(bounds.x - workArea.x) <= 4
+    && Math.abs(bounds.y - workArea.y) <= 4
+    && Math.abs(bounds.width - workArea.width) <= 8
+    && Math.abs(bounds.height - workArea.height) <= 8;
+}
+
+function notifyMaximizeChanged(maximized = isWindowMaximized()) {
+  if (!mainWindow || mainWindow.isDestroyed()) return maximized;
+  mainWindow.webContents.send("window:maximize-changed", !!maximized);
+  return !!maximized;
+}
+
+function notifyShellLayoutWidth() {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+  const content = typeof mainWindow.getContentBounds === "function"
+    ? mainWindow.getContentBounds()
+    : mainWindow.getBounds();
+  mainWindow.webContents.send("window:shell-width", Math.round(content?.width || 0));
+}
+
 function createWindow() {
+  const displays = screen.getAllDisplays().map((display) => ({
+    ...display,
+    primary: display.id === screen.getPrimaryDisplay().id
+  }));
   const savedBounds = loadWindowState();
+  const safeBounds = WindowBoundsPolicy.sanitizeWindowBounds(
+    savedBounds,
+    displays,
+    {
+      minWidth: 380,
+      minHeight: 520,
+      defaultWidth: 1380,
+      defaultHeight: 900,
+      preferredDisplay: screen.getPrimaryDisplay()
+    }
+  );
   mainWindow = new BrowserWindow({
-    width: savedBounds?.width || 1380,
-    height: savedBounds?.height || 900,
-    x: savedBounds?.x,
-    y: savedBounds?.y,
-    minWidth: 360,
+    width: safeBounds.width,
+    height: safeBounds.height,
+    x: safeBounds.x,
+    y: safeBounds.y,
+    minWidth: 380,
     minHeight: 520,
     icon: appIconPath,
-    title: "今日日程",
+    title: isDevRuntime ? `今日日程 · 开发预览 v${app.getVersion()}` : "今日日程",
+    show: false,
     transparent: true,
     frame: false,
     skipTaskbar: false,
@@ -60,18 +112,81 @@ function createWindow() {
     }
   });
   mainWindow.loadFile("index.html");
+  bindDevReloadShortcuts(mainWindow);
+  mainWindow.once("ready-to-show", () => {
+    // Open under the cursor so a launch from the primary desktop is never stranded
+    // on a secondary monitor the user is not looking at.
+    showMainWindow({ relocateToCursor: true });
+  });
   mainWindow.on("move", saveWindowState);
   mainWindow.on("moved", saveWindowState);
-  mainWindow.on("resize", saveWindowState);
-  mainWindow.on("resized", saveWindowState);
+  mainWindow.on("resize", () => {
+    saveWindowState();
+    notifyMaximizeChanged();
+    notifyShellLayoutWidth();
+  });
+  mainWindow.on("resized", () => {
+    saveWindowState();
+    notifyMaximizeChanged();
+    notifyShellLayoutWidth();
+  });
+  mainWindow.on("maximize", () => notifyMaximizeChanged(true));
+  mainWindow.on("unmaximize", () => {
+    restoredWindowBounds = null;
+    notifyMaximizeChanged(false);
+  });
   mainWindow.on("close", saveWindowState);
+}
+
+function bindDevReloadShortcuts(win) {
+  if (!isDevRuntime || !win || win.isDestroyed()) return;
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    const key = String(input.key || "").toLowerCase();
+    const ctrlOrMeta = input.control || input.meta;
+    if (key === "f5" || (ctrlOrMeta && key === "r" && !input.alt)) {
+      event.preventDefault();
+      if (input.shift || key === "f5" && input.control) {
+        win.webContents.reloadIgnoringCache();
+      } else {
+        win.webContents.reload();
+      }
+    }
+  });
+}
+
+function ensureWindowBoundsOnScreen() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const displays = screen.getAllDisplays();
+  const bounds = mainWindow.getBounds();
+  if (WindowBoundsPolicy.isBoundsOnAnyDisplay(bounds, displays)) return;
+  mainWindow.setBounds(
+    WindowBoundsPolicy.relocateBoundsToDisplay(bounds, screen.getPrimaryDisplay())
+  );
+}
+
+function showMainWindow({ relocateToCursor = false } = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (relocateToCursor) {
+    const point = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(point);
+    mainWindow.setBounds(WindowBoundsPolicy.relocateBoundsToDisplay(mainWindow.getBounds(), display));
+  } else {
+    ensureWindowBoundsOnScreen();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+  if (typeof mainWindow.moveTop === "function") {
+    try { mainWindow.moveTop(); } catch {}
+  }
 }
 
 if (singleInstanceLock) app.whenReady().then(() => {
   const settings = loadSettings();
-  glass = settings.glass !== false;
+  glass = !!settings.glass;
   locked = !!settings.locked;
-  configureLoginItem(settings.startAtLogin);
+  if (!skipStartupRegistration) configureLoginItem(settings.startAtLogin);
   ipcMain.handle("window:get-pinned", () => mainWindow.isAlwaysOnTop());
   ipcMain.handle("window:toggle-pinned", () => {
     const next = !mainWindow.isAlwaysOnTop();
@@ -96,18 +211,70 @@ if (singleInstanceLock) app.whenReady().then(() => {
       const key = String(incoming.aiApiKey || "").trim();
       delete incoming.aiApiKey;
       incoming.aiApiKeyEncrypted = key ? encryptAiKey(key) : null;
+      if (key) {
+        const resolved = AiProviderPolicy.resolveProvider({
+          apiKey: key,
+          providerId: incoming.aiProvider || loadSettings().aiProvider || ""
+        });
+        incoming.aiProvider = resolved.id;
+        if (!incoming.aiModel) incoming.aiModel = resolved.defaultModel;
+      }
     }
     saveSettings(incoming);
     return { ...publicSettings(), pinned: mainWindow?.isAlwaysOnTop() || false, startAtLogin: app.getLoginItemSettings().openAtLogin };
   });
-  ipcMain.handle("ai:ask", async (_event, payload) => askOpenAI(payload || {}));
+  ipcMain.handle("ai:ask", async (_event, payload) => askAi(payload || {}));
+  ipcMain.handle("ai:extract-task", async (_event, payload) => extractAiTask(payload || {}));
+  ipcMain.handle("ai:detect-provider", (_event, payload) => detectAiProvider(payload || {}));
+  ipcMain.handle("ai:list-models", async (_event, payload) => listAiModels(payload || {}));
   ipcMain.handle("app:get-version", () => app.getVersion());
+  ipcMain.handle("app:check-for-updates", () => {
+    checkForUpdates(true);
+    return { ok: true, packaged: app.isPackaged, version: app.getVersion() };
+  });
   ipcMain.handle("app:get-paths", () => ({
     dataFile: plannerDataPath(),
     exportDir: defaultExportDir(),
     installSuggestion: "D:\\今日日程APP"
   }));
   ipcMain.handle("window:minimize", () => mainWindow.minimize());
+  ipcMain.handle("window:is-maximized", () => isWindowMaximized());
+  ipcMain.handle("window:toggle-maximize", () => {
+    if (!mainWindow || locked) return isWindowMaximized();
+    if (isWindowMaximized()) {
+      const fallback = restoredWindowBounds || {
+        width: 1380,
+        height: 900,
+        x: undefined,
+        y: undefined
+      };
+      restoredWindowBounds = null;
+      if (mainWindow.isMaximized()) mainWindow.unmaximize();
+      mainWindow.setBounds({
+        x: fallback.x ?? mainWindow.getBounds().x,
+        y: fallback.y ?? mainWindow.getBounds().y,
+        width: Math.max(380, fallback.width || 1380),
+        height: Math.max(520, fallback.height || 900)
+      });
+      notifyMaximizeChanged(false);
+      return false;
+    }
+    restoredWindowBounds = { ...mainWindow.getBounds() };
+    const workArea = screen.getDisplayMatching(restoredWindowBounds).workArea;
+    if (typeof mainWindow.maximize === "function") {
+      try { mainWindow.maximize(); } catch {}
+    }
+    if (!mainWindow.isMaximized()) {
+      mainWindow.setBounds({
+        x: workArea.x,
+        y: workArea.y,
+        width: workArea.width,
+        height: workArea.height
+      });
+    }
+    notifyMaximizeChanged(true);
+    return true;
+  });
   ipcMain.handle("app:quit", () => {
     app.isQuitting = true;
     app.quit();
@@ -140,9 +307,24 @@ if (singleInstanceLock) app.whenReady().then(() => {
     mainWindow.setBounds({
       x: bounds.x,
       y: bounds.y,
-      width: Math.max(420, Math.round(width)),
+      width: Math.max(380, Math.round(width)),
       height: Math.max(520, Math.round(height))
     });
+  });
+  ipcMain.on("window:set-bounds", (_event, next = {}) => {
+    if (!mainWindow || locked) return;
+    const bounds = mainWindow.getBounds();
+    const width = Math.max(380, Math.round(next.width ?? bounds.width));
+    const height = Math.max(520, Math.round(next.height ?? bounds.height));
+    mainWindow.setBounds({
+      x: Math.round(next.x ?? bounds.x),
+      y: Math.round(next.y ?? bounds.y),
+      width,
+      height
+    });
+    if (!isWindowMaximized()) restoredWindowBounds = null;
+    notifyMaximizeChanged();
+    notifyShellLayoutWidth();
   });
   ipcMain.handle("data:export", async (_event, filename, format, data) => {
     const exportDir = defaultExportDir();
@@ -203,6 +385,8 @@ if (singleInstanceLock) app.whenReady().then(() => {
   configureAutoUpdater();
   mainWindow.webContents.once("did-finish-load", () => setTimeout(() => checkForUpdates(false), 1800));
   globalShortcut.register("CommandOrControl+Shift+Space", () => setLocked(!locked));
+  screen.on("display-removed", () => ensureWindowBoundsOnScreen());
+  screen.on("display-metrics-changed", () => ensureWindowBoundsOnScreen());
   app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());
 });
 
@@ -210,8 +394,7 @@ function setLocked(next) {
   locked = next;
   persistPartialSettings({ locked });
   mainWindow.webContents.send("window:lock-changed", locked);
-  mainWindow.show();
-  mainWindow.focus();
+  showMainWindow();
   return locked;
 }
 
@@ -285,9 +468,31 @@ function defaultExportDir() {
   return fs.existsSync("D:\\") ? "D:\\今日日程APP\\导出" : path.join(app.getPath("documents"), "今日日程APP", "导出");
 }
 
+function loadInstalledSettingsHint() {
+  try {
+    const installedFile = path.join(app.getPath("appData"), "today-daily-planner", settingsFileName);
+    if (!fs.existsSync(installedFile)) return {};
+    return JSON.parse(fs.readFileSync(installedFile, "utf8")) || {};
+  } catch {
+    return {};
+  }
+}
+
 function loadSettings() {
   const file = settingsPath();
-  const defaults = { glass: true, pinned: false, locked: false, compact: false, startAtLogin: false, aiEnabled: false, aiModel: "gpt-5.6-sol" };
+  const installedHint = isDevRuntime ? loadInstalledSettingsHint() : {};
+  const defaults = {
+    glass: installedHint.glass !== undefined ? !!installedHint.glass : false,
+    pinned: false,
+    locked: false,
+    compact: installedHint.compact !== undefined ? !!installedHint.compact : false,
+    startAtLogin: false,
+    workStartHour: 9,
+    workEndHour: 18,
+    aiEnabled: false,
+    aiModel: "gpt-4.1-mini",
+    aiProvider: "openai"
+  };
   if (!fs.existsSync(file)) return defaults;
   try {
     return { ...defaults, ...JSON.parse(fs.readFileSync(file, "utf8")) };
@@ -332,32 +537,166 @@ function extractResponseText(payload) {
     .map(item => item.text || item.value || "").filter(Boolean).join("\n").trim();
 }
 
-async function askOpenAI(payload) {
+function detectAiProvider(payload = {}) {
+  const settings = loadSettings();
+  const apiKey = AiProviderPolicy.normalizeKey(payload.apiKey) || decryptAiKey(settings);
+  if (!apiKey) {
+    return {
+      configured: false,
+      providerId: settings.aiProvider || "",
+      providerName: "",
+      ambiguous: false,
+      providers: [],
+      message: "请先填写 API Key"
+    };
+  }
+  const resolved = AiProviderPolicy.resolveProvider({
+    apiKey,
+    providerId: payload.providerId || settings.aiProvider || ""
+  });
+  return {
+    configured: true,
+    providerId: resolved.id,
+    providerName: resolved.name,
+    detectedId: resolved.detectedId,
+    ambiguous: resolved.ambiguous,
+    providers: AiProviderPolicy.providerOptionsForKey(apiKey),
+    defaultModel: resolved.defaultModel,
+    message: resolved.ambiguous
+      ? `已识别为 OpenAI 兼容密钥，当前服务商：${resolved.name}（可切换）`
+      : `已识别服务商：${resolved.name}`
+  };
+}
+
+async function listAiModels(payload = {}) {
+  const settings = loadSettings();
+  const apiKey = AiProviderPolicy.normalizeKey(payload.apiKey) || decryptAiKey(settings);
+  if (!apiKey) throw new Error("请先填写 API Key");
+  const provider = AiProviderPolicy.resolveProvider({
+    apiKey,
+    providerId: payload.providerId || settings.aiProvider || ""
+  });
+  const request = AiProviderPolicy.buildModelsRequest(provider, apiKey);
+  let models = [];
+  let source = "fallback";
+  try {
+    const response = await fetch(request.url, { method: "GET", headers: request.headers });
+    const body = await response.json().catch(() => ({}));
+    if (response.ok) {
+      const raw = request.parser === "gemini"
+        ? AiProviderPolicy.parseGeminiModelList(body)
+        : AiProviderPolicy.parseOpenAiModelList(body);
+      models = AiProviderPolicy.normalizeModelEntries(raw, provider);
+      if (models.length) source = "remote";
+    }
+  } catch {
+    models = [];
+  }
+  if (!models.length) {
+    models = AiProviderPolicy.normalizeModelEntries(provider.fallbackModels || [], provider);
+    source = "fallback";
+  }
+  const selectedModel = models.includes(settings.aiModel) ? settings.aiModel : (provider.defaultModel || models[0] || "");
+  return {
+    providerId: provider.id,
+    providerName: provider.name,
+    ambiguous: provider.ambiguous,
+    providers: AiProviderPolicy.providerOptionsForKey(apiKey),
+    models,
+    selectedModel,
+    source,
+    message: source === "remote"
+      ? `已从 ${provider.name} 加载 ${models.length} 个可用模型`
+      : `无法在线拉取模型列表，已提供 ${provider.name} 常用模型`
+  };
+}
+
+async function askAi(payload) {
   const settings = loadSettings();
   if (settings.aiEnabled === false) throw new Error("请先在设置中启用 AI 任务助手");
   const apiKey = decryptAiKey(settings);
-  if (!apiKey) throw new Error("请先在设置中填写 OpenAI API Key");
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  if (!apiKey) throw new Error("请先在设置中填写 API Key");
+  const provider = AiProviderPolicy.resolveProvider({
+    apiKey,
+    providerId: settings.aiProvider || ""
+  });
+  const request = AiProviderPolicy.buildChatRequest({
+    provider,
+    apiKey,
+    model: settings.aiModel || provider.defaultModel,
+    question: payload?.question,
+    rangeLabel: payload?.rangeLabel,
+    context: payload?.context
+  });
+  const response = await fetch(request.url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: settings.aiModel || "gpt-5.6-sol", store: false,
-      input: [
-        { role: "system", content: [{ type: "input_text", text: "你是 EveryTime 的任务数据助手。只根据用户提供的任务、日程和工时数据回答。不要编造数据；找不到时明确说没有找到。用简洁清晰的中文回答，优先列出任务名称、状态、日期和工时。你只能做任务查询、定位未完成任务和指定期间工作总结。" }] },
-        { role: "user", content: [{ type: "input_text", text: `用户问题：${String(payload?.question || "").slice(0, 4000)}\n\n数据范围：${String(payload?.rangeLabel || "未指定")}\n\n应用数据：${JSON.stringify(payload?.context || {}).slice(0, 120000)}` }] }
-      ]
-    })
+    headers: request.headers,
+    body: JSON.stringify(request.body)
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body?.error?.message || `AI 请求失败（${response.status}）`);
-  return extractResponseText(body) || "AI 没有返回可显示的结果。";
+  if (!response.ok) {
+    throw new Error(body?.error?.message || body?.message || `AI 请求失败（${response.status}）`);
+  }
+  return AiProviderPolicy.extractChatText(body, provider)
+    || extractResponseText(body)
+    || "AI 没有返回可显示的结果。";
+}
+
+async function extractAiTask(payload = {}) {
+  const settings = loadSettings();
+  if (settings.aiEnabled === false) throw new Error("请先在设置中启用 AI 任务助手");
+  const apiKey = decryptAiKey(settings);
+  if (!apiKey) throw new Error("请先在设置中填写 API Key");
+  const parts = AiTaskDraftPolicy.buildVisionUserParts({
+    note: payload.note || "",
+    imageBase64: payload.imageBase64 || payload.dataUrl || "",
+    mimeType: payload.mimeType || "",
+    today: payload.today || ""
+  });
+  if (!parts.base64) throw new Error("请先提供一张截图");
+  const provider = AiProviderPolicy.resolveProvider({
+    apiKey,
+    providerId: settings.aiProvider || ""
+  });
+  const request = AiProviderPolicy.buildChatRequest({
+    provider,
+    apiKey,
+    model: settings.aiModel || provider.defaultModel,
+    mode: "extract_task",
+    systemPrompt: AiTaskDraftPolicy.EXTRACT_SYSTEM_PROMPT,
+    userText: parts.text,
+    images: [{ mimeType: parts.mimeType, base64: parts.base64 }]
+  });
+  const response = await fetch(request.url, {
+    method: "POST",
+    headers: request.headers,
+    body: JSON.stringify(request.body)
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = body?.error?.message || body?.message || `AI 请求失败（${response.status}）`;
+    if (/image|vision|multimodal|does not support|不支持/i.test(message)) {
+      throw new Error("当前模型可能不支持识图。请在设置中换成 gpt-4o / gpt-4.1 / Claude / Gemini 等视觉模型后再试。");
+    }
+    throw new Error(message);
+  }
+  const text = AiProviderPolicy.extractChatText(body, provider) || extractResponseText(body) || "";
+  const drafts = AiTaskDraftPolicy.parseDraftListResponse(text);
+  return { drafts, draft: drafts[0] || null };
 }
 
 function saveSettings(nextSettings) {
   const settings = { ...loadSettings(), ...nextSettings };
-  glass = settings.glass !== false;
+  if (nextSettings.workStartHour !== undefined || nextSettings.workEndHour !== undefined) {
+    const start = Math.max(0, Math.min(23, Math.floor(Number(settings.workStartHour) || 9)));
+    let end = Math.max(1, Math.min(24, Math.floor(Number(settings.workEndHour) || 18)));
+    if (end <= start) end = Math.min(24, start + 1);
+    settings.workStartHour = start;
+    settings.workEndHour = end;
+  }
+  glass = !!settings.glass;
   locked = !!settings.locked;
-  configureLoginItem(settings.startAtLogin);
+  if (!skipStartupRegistration) configureLoginItem(settings.startAtLogin);
   if (mainWindow) {
     mainWindow.setAlwaysOnTop(!!settings.pinned, settings.pinned ? "floating" : "normal");
     mainWindow.webContents.send("window:glass-changed", glass);
@@ -379,10 +718,16 @@ function persistPartialSettings(partial) {
 }
 
 function configureAutoUpdater() {
+  clearStaleUpdaterCache();
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("checking-for-update", () => {
+    // 自动检查保持静默；仅手动检查时显示进度条，避免「最新版本」也误显下载中。
+    if (manualUpdateCheck) {
+      sendUpdateProgress({ state: "checking", percent: 0, message: "正在检查更新…" });
+    }
+  });
   autoUpdater.on("update-available", async info => {
-    manualUpdateCheck = false;
     const result = await dialog.showMessageBox(mainWindow, {
       type: "question",
       title: "发现新版本",
@@ -390,14 +735,22 @@ function configureAutoUpdater() {
       detail: "是否现在下载更新？下载完成后会再次询问是否重启并安装。",
       buttons: ["下载更新", "稍后"],
       defaultId: 0,
-      cancelId: 1
+      cancelId: 1,
+      noLink: true
     });
+    manualUpdateCheck = false;
     if (result.response === 0) {
       sendUpdateProgress({ state: "downloading", percent: 0, message: `正在下载 EveryTime ${info.version}…` });
-      autoUpdater.downloadUpdate();
+      autoUpdater.downloadUpdate().catch(error => {
+        sendUpdateProgress({ state: "error", percent: 0, message: `下载更新失败：${error?.message || String(error)}` });
+        dialog.showErrorBox("下载更新失败", error?.message || String(error));
+      });
+    } else {
+      sendUpdateProgress({ state: "idle", percent: 0, message: "" });
     }
   });
   autoUpdater.on("update-not-available", () => {
+    sendUpdateProgress({ state: "idle", percent: 0, message: "" });
     if (manualUpdateCheck) {
       manualUpdateCheck = false;
       dialog.showMessageBox(mainWindow, { type: "info", title: "检查更新", message: "当前已经是最新版本。" });
@@ -422,7 +775,8 @@ function configureAutoUpdater() {
       detail: "是否现在重启并安装？",
       buttons: ["立即安装", "退出时安装"],
       defaultId: 0,
-      cancelId: 1
+      cancelId: 1,
+      noLink: true
     });
     if (result.response === 0) {
       app.isQuitting = true;
@@ -436,18 +790,44 @@ function configureAutoUpdater() {
     if (manualUpdateCheck) {
       manualUpdateCheck = false;
       dialog.showErrorBox("检查更新失败", message);
-    } else if (mainWindow && !mainWindow.isDestroyed()) {
-      dialog.showMessageBox(mainWindow, {
-        type: "warning",
-        title: "自动更新暂不可用",
-        message,
-        detail: "请确认 GitHub Releases 中存在最新版本的安装包、latest.yml 和 blockmap 文件。"
-      });
     }
   });
 }
 
+function clearStaleUpdaterCache() {
+  try {
+    const localAppData = process.env.LOCALAPPDATA || path.join(app.getPath("home"), "AppData", "Local");
+    const pendingDir = path.join(localAppData, "today-daily-planner-updater", "pending");
+    const infoFile = path.join(pendingDir, "update-info.json");
+    if (!fs.existsSync(infoFile)) return;
+    const info = JSON.parse(fs.readFileSync(infoFile, "utf8"));
+    const pendingName = String(info.fileName || "");
+    const match = pendingName.match(/(\d+\.\d+\.\d+)/);
+    if (!match) return;
+    if (compareVersions(match[1], app.getVersion()) <= 0) {
+      fs.rmSync(pendingDir, { recursive: true, force: true });
+    }
+  } catch {}
+}
+
+function compareVersions(a, b) {
+  const pa = String(a).split(".").map(n => Number(n) || 0);
+  const pb = String(b).split(".").map(n => Number(n) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const left = pa[i] || 0;
+    const right = pb[i] || 0;
+    if (left > right) return 1;
+    if (left < right) return -1;
+  }
+  return 0;
+}
+
 function sendUpdateProgress(payload) {
+  if (!payload?.message && payload?.state === "idle") {
+    mainWindow?.webContents.send("app:update-progress", { state: "idle", percent: 0, message: "" });
+    return;
+  }
   mainWindow?.webContents.send("app:update-progress", payload);
 }
 
@@ -461,8 +841,14 @@ function checkForUpdates(manual = false) {
     });
     return;
   }
+  clearStaleUpdaterCache();
+  if (manual) sendUpdateProgress({ state: "checking", percent: 0, message: "正在检查更新…" });
   autoUpdater.checkForUpdates().catch(error => {
-    if (manual) dialog.showErrorBox("检查更新失败", error?.message || String(error));
+    sendUpdateProgress({ state: "error", percent: 0, message: `更新失败：${error?.message || String(error)}` });
+    if (manual) {
+      manualUpdateCheck = false;
+      dialog.showErrorBox("检查更新失败", error?.message || String(error));
+    }
   });
 }
 
@@ -470,7 +856,8 @@ function loadWindowState() {
   const file = windowStatePath();
   if (!fs.existsSync(file)) return null;
   try {
-    const bounds = JSON.parse(fs.readFileSync(file, "utf8"));
+    const raw = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
+    const bounds = JSON.parse(raw);
     if (!bounds || bounds.width < 420 || bounds.height < 520) return null;
     return bounds;
   } catch {
@@ -502,17 +889,20 @@ function createTray() {
   tray = new Tray(nativeImage.createFromPath(trayIconPath).resize({ width: 20, height: 20, quality: "best" }));
   tray.setToolTip("今日日程");
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "显示并解锁", click: () => { if (locked) setLocked(false); mainWindow.show(); mainWindow.focus(); } },
+    { label: "显示并解锁", click: () => { if (locked) setLocked(false); showMainWindow({ relocateToCursor: true }); } },
     { label: "切换玻璃模式", click: () => setGlass(!glass) },
     { label: "切换窗口置顶", click: () => mainWindow.setAlwaysOnTop(!mainWindow.isAlwaysOnTop()) },
     { label: "检查更新", click: () => checkForUpdates(true) },
     { type: "separator" },
     { label: "退出今日日程", click: () => app.quit() }
   ]));
+  tray.on("click", () => {
+    if (locked) setLocked(false);
+    showMainWindow({ relocateToCursor: true });
+  });
   tray.on("double-click", () => {
     if (locked) setLocked(false);
-    mainWindow.show();
-    mainWindow.focus();
+    showMainWindow({ relocateToCursor: true });
   });
 }
 
@@ -632,7 +1022,14 @@ function displayLength(value) {
 }
 
 function statusLabel(status) {
-  return { planned: "计划中", in_progress: "进行中", done: "已完成", closed: "已关闭" }[status] || "计划中";
+  return TaskStatusPolicy?.statusLabel?.(status) || {
+    unplanned: "未计划",
+    planned: "计划中",
+    in_progress: "进行中",
+    tracking: "待跟踪",
+    done: "已完成",
+    closed: "已关闭"
+  }[status] || "计划中";
 }
 
 function priorityLabel(priority) {
@@ -641,7 +1038,8 @@ function priorityLabel(priority) {
     kpi: "KPI",
     follow_up: "跟踪关注",
     important_urgent: "重要紧急",
-    paused: "中止暂停"
+    paused: "中止暂停",
+    monthly_fixed: "每月例行"
   }[priority] || "一般日常";
 }
 

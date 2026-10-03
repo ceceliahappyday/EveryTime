@@ -87,7 +87,7 @@ EveryTime 同时包含三种能力，但三者必须分开：
 - 数据结构升级只能迁移和补字段，不能重置数据或更换 STORAGE_KEY。
 - 每次更新都要保留版本号、测试、安装包和 GitHub Release。
 - 当前发布仓库：`ceceliahappyday/EveryTime`。
-- 当前版本：2.0.47；换电脑通过 JSON 导出 / 导入恢复历史记录。
+- 当前版本：2.0.76；换电脑通过 JSON 导出 / 导入恢复历史记录。
 
 ## 十、左侧待办清单唯一规则
 
@@ -117,15 +117,17 @@ EveryTime 同时包含三种能力，但三者必须分开：
 - Outlook 日历双向同步尚未完成，当前仅保留本地日程分类能力。
 - 国家节假日目前是应用内置数据，不等同于实时联网更新。
 - 会议参与人、地点、提醒、会议链接等字段还可以继续扩展。
+- 会议参与人、地点、提醒、会议链接等字段还可以继续扩展。
 
-## 数据备份与恢复（v2.0.47）
+## 数据备份与恢复（v2.0.76）
 
 - 换电脑请先「导出」JSON 备份，再在新电脑「导入」同一文件恢复；导入前桌面版会自动做本地备份。
 - JSON 备份可完整还原；Excel 仅供查看，不可导入。
-- 不依赖 Microsoft Entra / OneDrive OAuth；GitHub Releases 只负责软件发布。
-## AI assistant policy (v2.0.37)
-- AI is an optional, focused assistant for EveryTime data only: unfinished-task answers, task search/location, and date-range work summaries.
-- The user enters their own OpenAI API Key in Settings. The key is handled by Electron main process, encrypted with Windows safeStorage when available, and never returned to the renderer.
-- Requests use the OpenAI Responses API with `store: false`; only a reduced task/calendar/work-log context is sent, not the full local database.
-- AI cannot create, edit, close, delete, or sync tasks, and is not a general-purpose chatbot.
-- If AI is disabled or no key is configured, the rest of the planner remains fully usable offline.
+- GitHub Releases 只负责软件发布，不负责用户数据同步。
+## AI assistant policy (v2.0.75+)
+- AI is an optional assistant. Default mode is read-only over EveryTime task/calendar/work-log context: unfinished-task answers, task search/location, and date-range work summaries.
+- The user enters their own API Key in Settings. The key is handled by Electron main process, encrypted with Windows safeStorage when available, and never returned to the renderer.
+- Chat requests use the provider’s chat/completions, Anthropic messages, or Gemini generateContent protocols (not a single OpenAI-only Responses API).
+- When the user **actively** drops/pastes/attaches a screenshot (new-task dialog or AI assistant) and sends it, AI may extract **one or more** todos (up to 12). A single match is created immediately; multiple matches open a review panel to edit/select before batch create. Images are sent only for that request to the user-configured provider; they are not persisted by the app.
+- Aside from that explicit screenshot-create path, AI cannot edit, close, delete, or sync tasks, and is not a general-purpose chatbot.
+- Screenshot parsing needs a vision-capable model (for example gpt-4o / gpt-4.1 / Claude / Gemini). If AI is disabled or no key is configured, the rest of the planner remains fully usable offline.

@@ -18,6 +18,7 @@ assert.deepStrictEqual(plan.map(item => item.name), ["\u4eca\u65e5\u65e5\u7a0b"]
 const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 assert.ok(mainSource.includes("app.requestSingleInstanceLock()"));
 assert.ok(mainSource.includes("StartupPolicy.canonicalName"));
+assert.ok(mainSource.includes("--skip-startup-registration"));
 assert.ok(mainSource.includes("openAtLogin: !!openAtLogin"));
 assert.ok(!fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8").includes("startup-policy.js"));
 console.log("startup policy tests passed");

@@ -3,7 +3,8 @@ const {
   shouldIncludeEntryTaskOption,
   entryTaskOptionLabel,
   parentTaskOptionCandidates,
-  taskHierarchyPath
+  taskHierarchyPath,
+  isValidParentTarget
 } = require("../task-option-policy");
 
 const parentTask = {
@@ -79,5 +80,10 @@ assert.equal(
   "Root / Phase / Leaf",
   "hierarchy path should show the full nested chain"
 );
+
+assert.equal(isValidParentTarget({ sourceId: "leaf", parentId: "root", tasks: hierarchyTasks }), true);
+assert.equal(isValidParentTarget({ sourceId: "leaf", parentId: "leaf", tasks: hierarchyTasks }), false);
+assert.equal(isValidParentTarget({ sourceId: "root", parentId: "leaf", tasks: hierarchyTasks }), false, "cannot hang ancestor under its descendant");
+assert.equal(isValidParentTarget({ sourceId: "other", parentId: "phase", tasks: hierarchyTasks }), true);
 
 console.log("task option policy tests passed");

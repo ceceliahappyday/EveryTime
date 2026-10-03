@@ -43,7 +43,7 @@ const projects = [
 assert.deepEqual(
   filterProjectsForStatus(projects, "in_progress").map(project => project.id),
   ["p2"],
-  "project gantt should use the selected status filter"
+  "status helper can still narrow projects when a filter is provided"
 );
 
 assert.deepEqual(

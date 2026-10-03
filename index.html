@@ -19,38 +19,55 @@
         </div>
       </div>
 
-      <div class="date-controls">
-        <button class="icon-button" id="previousWeek" aria-label="上一周">←</button>
-        <button class="date-picker-button" id="monthPickerButton">
-          <strong id="monthLabel"></strong>
-          <span>选择日期</span>
-        </button>
-        <input type="date" id="datePicker" aria-label="选择日期" />
-        <button class="soft-button" id="todayButton">回到今天</button>
-        <button class="icon-button" id="nextWeek" aria-label="下一周">→</button>
+      <div class="topbar-main" id="topbarMain">
+        <div class="date-controls" id="dateControls">
+          <button class="icon-button date-nav-button" id="dateNavPrev" type="button" aria-label="上一页">←</button>
+          <button class="date-picker-button" id="monthPickerButton" type="button" aria-label="选择日期" title="选择日期">
+            <strong id="monthLabel"></strong>
+          </button>
+          <input type="date" id="datePicker" aria-label="选择日期" />
+          <button class="soft-button" id="todayButton" type="button">回到今天</button>
+          <button class="icon-button date-nav-button" id="dateNavNext" type="button" aria-label="下一页">→</button>
+        </div>
       </div>
 
-      <div class="header-actions">
-        <div class="header-view-switcher" id="viewSwitcher">
-          <button class="active" data-view="day">日</button>
-          <button data-view="week">周</button>
-          <button data-view="month">月</button>
-          <button data-view="project">项目</button>
+      <div class="header-view-switcher" id="viewSwitcher" role="tablist" aria-label="视图切换">
+        <button class="active" data-view="day" type="button" title="日视图">日</button>
+        <button data-view="week" type="button" title="周历总览">周</button>
+        <button data-view="month" type="button" title="月历总览">月</button>
+        <button data-view="project" type="button" title="项目甘特">项目</button>
+      </div>
+
+      <div class="header-actions" id="headerActions">
+        <div class="focus-view-chrome desktop-only" id="focusViewChrome">
+          <button class="soft-button" id="focusViewButton" type="button" title="选择视图并放大窗口" aria-label="选择视图" aria-haspopup="menu" aria-expanded="false">视图</button>
+          <div class="focus-view-menu" id="focusViewMenu" role="menu" hidden>
+            <button type="button" role="menuitem" data-view="day">日视图</button>
+            <button type="button" role="menuitem" data-view="week">周历</button>
+            <button type="button" role="menuitem" data-view="month">月历</button>
+            <button type="button" role="menuitem" data-view="project">项目甘特</button>
+          </div>
         </div>
-        <button class="soft-button" id="exportButton" title="导出全部任务和日程">⇩ 导出</button>
-        <button class="soft-button" id="importButton" title="从 JSON 备份文件导入恢复">⇧ 导入</button>
-        <button class="soft-button" id="progressReviewButton" title="集中更新进行中任务">↻ 更新进度</button>
-        <button class="soft-button" id="aiAssistantButton" title="查询任务和生成工作总结">✦ AI助手</button>
-        <button class="soft-button desktop-only" id="glassMode" title="切换磨砂玻璃桌面组件外观">◫ 玻璃模式</button>
-        <button class="soft-button desktop-only" id="desktopLock" title="降低界面存在感，但保持可编辑">◌ 低干扰</button>
-        <button class="soft-button desktop-only" id="pinWindow" title="让窗口保持在最前">📌 置顶</button>
-        <button class="soft-button desktop-only" id="settingsButton" title="打开桌面组件设置">⚙ 设置</button>
-        <button class="icon-button" id="toggleCompact" title="切换紧凑模式">↕</button>
-        <button class="primary-button" id="quickAddButton"><span>＋</span> 新建待办</button>
-        <div class="window-controls desktop-only">
-          <button id="minimizeWindow" title="最小化">—</button>
-          <button id="closeWindow" class="window-close" title="彻底退出">×</button>
+        <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false" hidden><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
+        <div class="header-tools-slot" id="headerToolsSlot">
+          <div class="header-tools" id="headerTools">
+            <button class="soft-button" id="progressReviewButton" type="button" title="集中更新有投入的明细待办"><i class="btn-icon" aria-hidden="true">↻</i><span class="btn-label">更新进度</span></button>
+            <button class="soft-button" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon" aria-hidden="true">✦</i><span class="btn-label">AI助手</span></button>
+            <button class="soft-button" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon" aria-hidden="true">⇩</i><span class="btn-label">导出</span></button>
+            <button class="soft-button" id="importButton" type="button" title="从 JSON 备份文件导入恢复"><i class="btn-icon" aria-hidden="true">⇧</i><span class="btn-label">导入</span></button>
+          </div>
         </div>
+        <div class="header-overflow desktop-only" id="headerOverflow">
+          <button class="soft-button header-more-button" id="headerMoreButton" type="button" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" hidden>⋯</button>
+          <div class="header-more-menu" id="headerMoreMenu" role="menu" hidden></div>
+        </div>
+        <button class="soft-button desktop-only header-pinned" id="settingsButton" type="button" title="设置、置顶、玻璃背景、紧凑显示等"><i class="btn-icon" aria-hidden="true">⚙</i><span class="btn-label">设置</span></button>
+      </div>
+
+      <div class="window-controls desktop-only">
+        <button id="minimizeWindow" type="button" title="最小化">—</button>
+        <button id="maximizeWindow" type="button" title="最大化" aria-label="最大化">□</button>
+        <button id="closeWindow" class="window-close" type="button" title="彻底退出">×</button>
       </div>
     </header>
 
@@ -61,29 +78,55 @@
     <main class="workspace">
       <aside class="task-panel">
         <div class="panel-heading">
-          <div>
+          <div class="panel-heading-main">
             <span class="eyebrow">TASKS</span>
-            <h2 id="taskViewTitle">当天待办</h2>
+            <div class="panel-heading-row">
+              <h2 id="taskViewTitle">待办清单</h2>
+              <span class="task-count-inline" id="taskCount" aria-label="待办数量">0</span>
+              <div class="panel-heading-actions">
+                <div class="task-search" id="taskSearchWrap">
+                  <span class="task-search-icon-wrap" aria-hidden="true">
+                    <svg class="task-search-icon" viewBox="0 0 16 16" width="14" height="14" focusable="false">
+                      <circle cx="6.5" cy="6.5" r="4.25" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                      <path d="M9.6 9.6 L13.2 13.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                    </svg>
+                  </span>
+                  <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索待办名称、父级路径或状态…" aria-label="搜索待办清单" />
+                </div>
+              </div>
+            </div>
           </div>
-          <span class="count-badge" id="taskCount">0</span>
         </div>
 
-        <form class="quick-add quick-task-form" id="quickTaskForm">
-          <input id="quickTaskInput" maxlength="80" placeholder="写下新的待办，未填日期即未计划…" autocomplete="off" />
-          <button type="submit" id="taskAddTrigger" title="快速新增">＋</button>
-        </form>
+        <div class="task-list-toolbar">
+          <form class="quick-add quick-task-form" id="quickTaskForm">
+            <button type="button" id="taskAddTrigger" class="quick-add-new-btn" title="新建待办" aria-label="新建待办">
+              <span class="quick-add-new-plus" aria-hidden="true">+</span>
+            </button>
+            <input id="quickTaskInput" maxlength="80" placeholder="新增待办事项" autocomplete="off" aria-label="新增待办事项" />
+          </form>
+          <button type="button" class="soft-button task-continue-yesterday" id="continueYesterdayButton" title="查看昨天有投入、今天可继续的任务">↺ 继续昨天</button>
+        </div>
 
-        <div class="task-tabs" id="taskTabs" role="tablist">
-          <button data-filter="all">全部任务<span id="allCount">0</span></button>
-          <button data-filter="unplanned">未计划 <span id="unplannedCount">0</span></button>
-          <button class="active" data-filter="planned">计划中 <span id="openCount">0</span></button>
-          <button data-filter="in_progress">进行中 <span id="doneCount">0</span></button>
-          <button data-filter="ended">已结束 <span id="closedCount">0</span></button>
+        <div class="task-tabs-wrap" id="taskTabsWrap">
+          <div class="task-tabs" id="taskTabs" role="tablist">
+            <button data-filter="all">全部任务<span id="allCount">0</span></button>
+            <button data-filter="unplanned">未计划 <span id="unplannedCount">0</span></button>
+            <button data-filter="planned">计划中 <span id="openCount">0</span></button>
+            <button class="active" data-filter="in_progress">进行中 <span id="doneCount">0</span></button>
+            <button data-filter="ended">已结束 <span id="closedCount">0</span></button>
+            <button data-filter="memo">待跟踪 <span id="memoCount">0</span></button>
+          </div>
+          <div class="task-tabs-more" id="taskTabsMore" hidden>
+            <button type="button" class="task-tabs-more-trigger" id="taskTabsMoreButton" aria-haspopup="listbox" aria-expanded="false" aria-label="更多" title="更多">⋯</button>
+            <div class="task-tabs-more-menu" id="taskTabsMoreMenu" role="listbox" hidden></div>
+          </div>
         </div>
 
         <div class="task-list" id="taskList"></div>
+        <div class="workspace-split-handle" id="workspaceSplitHandle" title="拖动调整待办与日历宽度" aria-hidden="true"></div>
 
-        <div class="task-panel-footer">
+        <div class="task-panel-footer" title="当天计划=工作日可用时长；完成进度=当日已投入时长÷工作日时长">
           <div>
             <span>当天计划</span>
             <strong id="plannedHours">0 小时</strong>
@@ -114,13 +157,100 @@
           <p id="dayNoteText"></p>
         </div>
 
-        <div class="project-horizontal-scrollbar hidden" id="projectHorizontalScrollbar" aria-label="项目时间轴横向滚动"><div class="project-horizontal-scrollbar-inner" id="projectHorizontalScrollbarInner"></div></div>
+        <div class="project-gantt-chrome hidden" id="projectGanttChrome"></div>
         <div class="timeline-wrap" id="timelineWrap">
           <div class="timeline" id="timeline"></div>
         </div>
       </section>
     </main>
+    <div class="resize-edge resize-edge-left desktop-only" data-resize-edge="left" title="拖动调整宽度"></div>
+    <div class="resize-edge resize-edge-right desktop-only" data-resize-edge="right" title="拖动调整宽度"></div>
+    <div class="resize-edge resize-edge-top desktop-only" data-resize-edge="top" title="拖动调整高度"></div>
+    <div class="resize-edge resize-edge-bottom desktop-only" data-resize-edge="bottom" title="拖动调整高度"></div>
+    <div class="resize-handle resize-handle-nw desktop-only" data-resize-edge="nw" title="拖动调整窗口大小"></div>
+    <div class="resize-handle resize-handle-ne desktop-only" data-resize-edge="ne" title="拖动调整窗口大小"></div>
+    <div class="resize-handle resize-handle-sw desktop-only" data-resize-edge="sw" title="拖动调整窗口大小"></div>
+    <div class="resize-handle resize-handle-se desktop-only" data-resize-edge="se" title="拖动调整窗口大小"></div>
   </div>
+
+  <dialog class="modal small-modal" id="entryLinkConfirmDialog">
+    <div class="modal-header">
+      <div>
+        <span class="eyebrow">LINK TASK</span>
+        <h3 id="entryLinkConfirmTitle">发现相似待办</h3>
+      </div>
+      <button type="button" class="close-button" data-close-dialog="entryLinkConfirmDialog" aria-label="关闭">×</button>
+    </div>
+    <p class="entry-link-confirm-message" id="entryLinkConfirmMessage"></p>
+    <div class="entry-link-confirm-options" id="entryLinkConfirmOptions"></div>
+    <div class="modal-actions">
+      <span></span>
+      <button type="button" class="soft-button" id="entryLinkConfirmCancel">返回修改</button>
+      <button type="button" class="primary-button" id="entryLinkConfirmCreate">确认新建待办</button>
+    </div>
+  </dialog>
+
+  <dialog class="modal ai-batch-modal" id="aiBatchDraftDialog">
+    <form method="dialog" id="aiBatchDraftForm">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">FROM SCREENSHOT</span>
+          <h3 id="aiBatchDraftTitle">确认待办</h3>
+        </div>
+        <button type="button" class="close-button" data-close-dialog="aiBatchDraftDialog" aria-label="关闭">×</button>
+      </div>
+      <p class="form-hint" id="aiBatchDraftHint">可勾选、改标题与日期后再创建。创建后会打开第一条供继续编辑。</p>
+      <div class="modal-scroll" id="aiBatchDraftList"></div>
+      <div class="modal-actions">
+        <button type="button" class="soft-button" id="aiBatchSelectAllButton">全选</button>
+        <span></span>
+        <button type="button" class="soft-button" data-close-dialog="aiBatchDraftDialog">取消</button>
+        <button type="submit" class="primary-button" id="aiBatchCreateButton">创建所选</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal small-modal" id="taskCloseConfirmDialog">
+    <div class="modal-header">
+      <div>
+        <span class="eyebrow">CLOSE TASK</span>
+        <h3 id="taskCloseConfirmTitle">关闭任务</h3>
+      </div>
+      <button type="button" class="close-button" data-close-dialog="taskCloseConfirmDialog" aria-label="关闭">×</button>
+    </div>
+    <p class="entry-link-confirm-message" id="taskCloseConfirmMessage">本环节结束后，是否需要后续跟踪闭环？</p>
+    <div class="modal-actions task-close-confirm-actions">
+      <button type="button" class="soft-button" data-close-dialog="taskCloseConfirmDialog">取消</button>
+      <button type="button" class="soft-button" id="taskCloseOnlyButton">仅关闭</button>
+      <button type="button" class="primary-button" id="taskCloseFollowUpButton">关闭并跟踪</button>
+    </div>
+  </dialog>
+
+  <dialog class="modal small-modal" id="taskMergeDialog">
+    <form method="dialog" id="taskMergeForm">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">MERGE TASK</span>
+          <h3>合并重复待办</h3>
+        </div>
+        <button type="button" class="close-button" data-close-dialog="taskMergeDialog" aria-label="关闭">×</button>
+      </div>
+      <p class="task-merge-message" id="taskMergeMessage"></p>
+      <label class="task-merge-target-field">
+        <span>合并到</span>
+        <select id="taskMergeTarget" class="visually-hidden-select" tabindex="-1" aria-hidden="true"></select>
+        <div class="task-merge-picker">
+          <input id="taskMergeSearch" type="search" autocomplete="off" placeholder="搜索目标待办名称或上级路径…" aria-label="搜索合并目标" aria-controls="taskMergeOptions" />
+          <div id="taskMergeOptions" class="entry-task-options task-merge-options" role="listbox"></div>
+        </div>
+      </label>
+      <div class="modal-actions">
+        <span></span>
+        <button type="button" class="soft-button" data-close-dialog="taskMergeDialog">取消</button>
+        <button type="submit" class="primary-button">确认合并</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog class="modal" id="entryDialog">
     <form method="dialog" id="entryForm">
@@ -149,7 +279,7 @@
         <span>关联待办</span>
         <select id="entryTaskLink" class="visually-hidden-select" tabindex="-1" aria-hidden="true"></select>
         <div class="entry-task-combobox" id="entryTaskCombobox">
-          <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">新建待办并关联</button>
+          <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">搜索并关联待办…</button>
           <div class="entry-task-popup hidden" id="entryTaskPopup">
             <input id="entryTaskSearch" type="search" autocomplete="off" placeholder="搜索任务名称、父级路径或状态…" aria-label="搜索关联待办" aria-controls="entryTaskOptions" />
             <div id="entryTaskOptions" class="entry-task-options" role="listbox"></div>
@@ -192,34 +322,54 @@
   </dialog>
 
   <dialog class="modal" id="taskDialog">
-    <form method="dialog" id="taskEditForm">
-      <div class="modal-header">
-        <div>
-          <span class="eyebrow" id="taskDialogEyebrow">NEW TASK</span>
-          <h3 id="taskDialogTitle">新建待办</h3>
+    <form id="taskEditForm">
+      <div class="modal-scroll" id="taskDialogScroll">
+        <div class="modal-header">
+          <div>
+            <span class="eyebrow" id="taskDialogEyebrow">NEW TASK</span>
+            <h3 id="taskDialogTitle">新建待办</h3>
+          </div>
+          <button type="button" class="close-button" id="taskDialogCloseButton" data-close-dialog="taskDialog" aria-label="关闭">×</button>
         </div>
-        <button type="button" class="close-button" data-close-dialog="taskDialog" aria-label="关闭">×</button>
-      </div>
-      <div class="task-detail-summary hidden" id="taskDetailSummary"></div>
-      <label><span>待办名称</span><input id="taskTitleInput" maxlength="80" placeholder="需要完成什么？" /></label>
-      <div class="form-row">
-        <label><span>目标日期（可选）</span><input type="date" id="taskDueDate" /></label>
-        <label><span>目标时间（可选）</span><input type="time" id="taskDueTime" value="18:00" step="60" /></label>
-      </div>
-      <div class="form-row">
-        <label><span>责任人</span><input id="taskOwner" maxlength="30" placeholder="例如：我、王芳" /></label>
-        <label><span>归属上级任务</span><select id="taskParent"><option value="">不选择，作为顶层任务</option></select></label>
-      </div>
-      <div class="form-row">
-        <label>
-          <span>优先级</span>
-          <select id="taskPriority">
-            <option value="general_daily" selected>一般日常</option>
-            <option value="kpi">KPI</option>
-            <option value="follow_up">跟踪关注</option>
-            <option value="important_urgent">重要紧急</option>
-            <option value="paused">中止暂停</option>
-          </select>
+        <div class="task-detail-summary hidden" id="taskDetailSummary"></div>
+        <p class="follow-up-draft-hint hidden" id="followUpDraftHint">请确认待办名称与目标完成日期，并补充背景说明。上级任务已与关闭任务保持一致。</p>
+        <div class="task-ai-dropzone" id="taskAiDropzone">
+          <input type="file" id="taskAiImageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+          <div class="task-ai-dropzone-body" id="taskAiDropzoneBody" tabindex="0" role="button" aria-label="投放截图由 AI 创建待办">
+            <strong>截图生成待办</strong>
+            <span>拖入 / 粘贴截图，或 <button type="button" class="linkish-button" id="taskAiPickImageButton">选择图片</button>。识别到多条时可勾选修改后再批量创建。</span>
+          </div>
+          <div class="task-ai-dropzone-status hidden" id="taskAiDropzoneStatus" aria-live="polite"></div>
+        </div>
+        <label id="taskTitleField"><span>待办名称</span><input id="taskTitleInput" maxlength="80" placeholder="需要完成什么？" /></label>
+        <label id="taskDueDateField">
+          <span>目标日期时间</span>
+          <input type="datetime-local" id="taskDueDateTime" step="60" aria-label="目标日期时间，默认工作日结束" title="日期与时间一起选择；时间默认工作日结束" />
+        </label>
+        <div class="form-row">
+          <label><span>责任人</span><input id="taskOwner" maxlength="30" placeholder="例如：我、王芳" /></label>
+          <label>
+            <span>优先级</span>
+            <select id="taskPriority">
+              <option value="general_daily" selected>一般日常</option>
+              <option value="kpi">KPI</option>
+              <option value="follow_up">跟踪关注</option>
+              <option value="important_urgent">重要紧急</option>
+              <option value="paused">中止暂停</option>
+              <option value="monthly_fixed">每月例行</option>
+            </select>
+          </label>
+        </div>
+        <label id="taskParentField" class="task-parent-field">
+          <span>归属上级任务</span>
+          <select id="taskParent" class="visually-hidden-select" tabindex="-1" aria-hidden="true"><option value="">不选择，作为顶层任务</option></select>
+          <div class="entry-task-combobox" id="taskParentCombobox">
+            <button type="button" id="taskParentTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="taskParentOptions">搜索并选择上级任务…</button>
+            <div class="entry-task-popup hidden" id="taskParentPopup">
+              <input id="taskParentSearch" type="search" autocomplete="off" placeholder="搜索任务名称或上级路径…" aria-label="搜索上级任务" aria-controls="taskParentOptions" />
+              <div id="taskParentOptions" class="entry-task-options" role="listbox"></div>
+            </div>
+          </div>
         </label>
         <label class="hidden">
           <span>任务进度</span>
@@ -228,47 +378,61 @@
             <strong id="taskProgressValue">0%</strong>
           </div>
         </label>
-      </div>
-      <label class="checkbox-setting">
-        <input type="checkbox" id="taskMonthlyRecurring" />
-        <span>这是每月固定时间的任务</span>
-      </label>
-      <div class="recurring-options hidden" id="recurringOptions">
-        <label>
-          <span>规则有效至</span>
-          <input type="month" id="taskRecurringUntil" />
+        <div class="recurring-options hidden" id="recurringOptions">
+          <label>
+            <span>规则有效至</span>
+            <input type="month" id="taskRecurringUntil" />
+          </label>
+          <p class="form-hint">到了每个自然月才会生成并显示当月实例；清单、搜索与挂接默认只保留这一条逻辑任务，不会把往月实例平铺成多个可选项。</p>
+        </div>
+        <label class="hidden" aria-hidden="true">
+          <input type="checkbox" id="taskMonthlyRecurring" tabindex="-1" />
+          <span>这是每月例行任务</span>
         </label>
-        <p class="form-hint">不会一次性生成所有未来任务；每个自然月打开/进入该月时，自动生成当月实例。若该月没有对应日期，将使用该月最后一天。</p>
+        <label>
+          <span>任务状态</span>
+          <select id="taskStatus">
+            <option value="planned" disabled>计划中（尚未排入日程）</option>
+            <option value="in_progress" disabled>进行中（已排入日程）</option>
+            <option value="done">已完成 / 已关闭</option>
+          </select>
+        </label>
+        <div class="form-row">
+          <label><span>实际开始时间</span><input type="datetime-local" id="taskActualStart" step="60" /></label>
+          <label><span>实际完成/关闭时间</span><input type="datetime-local" id="taskActualEnd" step="60" /></label>
+        </div>
+        <label id="businessBackgroundLabel" class="task-context-field">
+          <span>背景与说明</span>
+          <textarea id="taskBusinessBackground" rows="3" maxlength="800" placeholder="为什么做这件事？要解决什么问题？补充必要上下文即可。"></textarea>
+        </label>
+        <label id="problemReasonLabel" class="hidden" aria-hidden="true">
+          <span>问题原因（可选）</span>
+          <textarea id="taskProblemReason" rows="2" maxlength="500" tabindex="-1"></textarea>
+        </label>
+        <label id="taskDeliveryField" class="hidden" aria-hidden="true">
+          <span>详细计划 / 交付件（可选）</span>
+          <textarea id="taskDeliveryNote" rows="2" maxlength="500" tabindex="-1"></textarea>
+        </label>
+        <label class="hidden" aria-hidden="true"><span>任务说明（可选）</span><textarea id="taskDescription" rows="2" maxlength="240" tabindex="-1"></textarea></label>
+        <section class="task-subtasks" id="taskSubtasksSection" aria-label="下级任务">
+          <div class="task-subtasks-heading">
+            <span>下级任务 / 交付拆解</span>
+            <small>仅展示下一级；用子任务承接交付件</small>
+          </div>
+          <ol class="task-subtask-list" id="taskSubtaskList"></ol>
+          <input id="taskSubtaskDraftInput" class="task-subtask-draft" type="text" maxlength="80" placeholder="输入下级任务，回车添加" autocomplete="off" />
+        </section>
+        <label class="checkbox-setting task-follow-up-option hidden" id="taskFollowUpOption">
+          <input type="checkbox" id="taskFollowUpTracking" />
+          <span>本环节已结束，但需后续跟踪闭环（关闭本任务后，将新建关联的「待跟踪」任务并请你填写目标完成时间）</span>
+        </label>
       </div>
-      <label>
-        <span>任务状态</span>
-        <select id="taskStatus">
-          <option value="planned" disabled>计划中（尚未排入日程）</option>
-          <option value="in_progress" disabled>进行中（已排入日程）</option>
-          <option value="done">已完成 / 已关闭</option>
-        </select>
-      </label>
-      <div class="form-row">
-        <label><span>实际开始时间</span><input type="datetime-local" id="taskActualStart" step="60" /></label>
-        <label><span>实际完成/关闭时间</span><input type="datetime-local" id="taskActualEnd" step="60" /></label>
-      </div>
-      <label id="businessBackgroundLabel">
-        <span>业务背景（可选）</span>
-        <textarea id="taskBusinessBackground" rows="2" maxlength="500" placeholder="为什么要做这件事？它服务于什么业务目标？"></textarea>
-      </label>
-      <label id="problemReasonLabel">
-        <span>问题原因（可选）</span>
-        <textarea id="taskProblemReason" rows="2" maxlength="500" placeholder="当前问题、触发原因或需要解决的根因"></textarea>
-      </label>
-      <label>
-        <span>详细计划 / 交付件（可选）</span>
-        <textarea id="taskDeliveryNote" rows="2" maxlength="500" placeholder="写清楚目标、交付件、检查标准或计划拆解；实际推进由日程记录承接"></textarea>
-      </label>
-      <label><span>任务说明（可选）</span><textarea id="taskDescription" rows="3" maxlength="240" placeholder="补充交付标准、背景或注意事项"></textarea></label>
-      <div class="modal-actions">
+      <div class="modal-actions task-edit-actions">
         <button type="button" class="danger-button hidden" id="deleteTaskButton">删除待办</button>
-        <span></span>
-        <button type="button" class="soft-button" data-close-dialog="taskDialog">取消</button>
+        <button type="button" class="soft-button hidden" id="closeTaskButton">关闭任务</button>
+        <button type="button" class="soft-button hidden" id="mergeTaskButton">合并到…</button>
+        <span class="modal-actions-spacer"></span>
+        <button type="button" class="soft-button" id="taskDialogCancelButton" data-close-dialog="taskDialog">取消</button>
         <button type="submit" class="primary-button">保存待办</button>
       </div>
     </form>
@@ -297,11 +461,11 @@
       <div class="modal-header">
         <div>
           <span class="eyebrow">PROGRESS REVIEW</span>
-          <h3>更新进行中任务</h3>
+          <h3>更新明细任务进度</h3>
         </div>
         <button type="button" class="close-button" data-close-dialog="progressReviewDialog">×</button>
       </div>
-      <p class="form-hint progress-review-intro">逐项回顾当前进行中的任务，填写交付进展并调整完成百分比。</p>
+      <p class="form-hint progress-review-intro">只列出已有日程投入的明细待办（叶子任务），不含顶层计划节点。逐项填写交付进展并调整完成百分比。</p>
       <div class="progress-review-list" id="progressReviewList"></div>
       <div class="modal-actions">
         <span></span><span></span>
@@ -339,40 +503,63 @@
         <div><span class="eyebrow">SETTINGS</span><h3>桌面组件设置</h3></div>
         <button type="button" class="close-button" data-close-dialog="settingsDialog">×</button>
       </div>
-      <div class="settings-list">
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingAiEnabled" />
-          <span>启用 AI 任务助手（只读取本应用数据）</span>
-        </label>
-        <label><span>OpenAI API Key（仅本机保存）</span><input id="settingAiApiKey" type="password" autocomplete="off" placeholder="sk-…" /></label>
-        <label><span>AI 模型</span><input id="settingAiModel" value="gpt-5.6-sol" /></label>
-        <p class="form-hint" id="aiKeyStatus">API Key 未配置</p>
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingGlass" />
-          <span>启动时使用玻璃背景</span>
-        </label>
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingPinned" />
-          <span>窗口保持置顶</span>
-        </label>
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingLocked" />
-          <span>默认进入低干扰模式</span>
-        </label>
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingCompact" />
-          <span>使用紧凑显示</span>
-        </label>
-        <label class="checkbox-setting">
-          <input type="checkbox" id="settingStartAtLogin" />
-          <span>开机自动启动</span>
-        </label>
-      </div>
-      <div class="settings-info">
-        <div><span>当前版本</span><strong id="settingsAppVersion">读取中…</strong></div>
-        <div><span>数据保存位置</span><strong id="settingsDataPath">读取中…</strong></div>
-        <div><span>默认导出位置</span><strong id="settingsExportPath">读取中…</strong></div>
-        <p>应用更新不会删除已有数据；每次保存前会自动备份一份旧数据。换电脑请先「导出」JSON，再在新电脑「导入」恢复。</p>
+      <div class="modal-scroll" id="settingsDialogScroll">
+        <div class="settings-list">
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingAiEnabled" />
+            <span>启用 AI 任务助手（查询本应用数据；投放截图时可创建 1 条待办）</span>
+          </label>
+          <label><span>API Key（仅本机加密保存）</span><input id="settingAiApiKey" type="password" autocomplete="off" placeholder="粘贴 OpenAI / OpenRouter / DeepSeek / Anthropic / Gemini 等 Key" /></label>
+          <label><span>AI 服务商</span><select id="settingAiProvider"></select></label>
+          <label><span>AI 模型</span><select id="settingAiModel"></select></label>
+          <div class="settings-ai-actions">
+            <button type="button" class="soft-button" id="aiDetectModelsButton">识别服务商并加载模型</button>
+          </div>
+          <p class="form-hint" id="aiKeyStatus">API Key 未配置。截图解析需 vision 模型（如 gpt-4o、gpt-4.1、Claude、Gemini 2.5 Flash）。</p>
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingGlass" />
+            <span>使用玻璃背景（保存后立即生效，可随时开关）</span>
+          </label>
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingPinned" />
+            <span>窗口保持置顶</span>
+          </label>
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingLocked" />
+            <span>默认进入低干扰模式</span>
+          </label>
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingCompact" />
+            <span>使用紧凑显示</span>
+          </label>
+          <div class="settings-work-hours">
+            <span class="settings-work-hours-label">日视图工作时段</span>
+            <div class="settings-work-hours-row">
+              <label>
+                <span>开始</span>
+                <select id="settingWorkStartHour"></select>
+              </label>
+              <label>
+                <span>结束</span>
+                <select id="settingWorkEndHour"></select>
+              </label>
+            </div>
+            <p class="form-hint">默认只展开该时段；若某小时已有日程投入，会自动向两侧扩展显示。可选范围覆盖 0:00–24:00。</p>
+          </div>
+          <label class="checkbox-setting">
+            <input type="checkbox" id="settingStartAtLogin" />
+            <span>开机自动启动</span>
+          </label>
+        </div>
+        <div class="settings-info">
+          <div class="settings-version-row">
+            <div><span>当前版本</span><strong id="settingsAppVersion">读取中…</strong></div>
+            <button type="button" class="soft-button" id="checkUpdateButton">检查更新</button>
+          </div>
+          <div><span>数据保存位置</span><strong id="settingsDataPath">读取中…</strong></div>
+          <div><span>默认导出位置</span><strong id="settingsExportPath">读取中…</strong></div>
+          <p>玻璃背景、置顶、低干扰与紧凑显示在本页切换；左侧「新增待办」用于快速创建。窗口拉窄时进入精简待办条。日历可用键盘 ← → 切换日期/周/月，按 T 回到今天。换电脑请先「导出」JSON，再在新电脑「导入」恢复。</p>
+        </div>
       </div>
       <div class="modal-actions">
         <span></span><span></span>
@@ -386,18 +573,38 @@
     <form method="dialog" id="aiForm">
       <div class="modal-header">
         <div><span class="eyebrow">AI ASSISTANT</span><h3>AI 任务助手</h3></div>
-        <button type="button" class="close-button" data-close-dialog="aiDialog">×</button>
+        <button type="button" class="close-button" data-close-dialog="aiDialog" aria-label="关闭">×</button>
       </div>
-      <div class="ai-quick-actions" id="aiQuickActions">
-        <button type="button" class="soft-button" data-ai-prompt="请列出当前所有未完成的任务，并按状态和截止时间整理。">哪些任务未完成</button>
-        <button type="button" class="soft-button" data-ai-prompt="请总结本周的工作完成情况、实际投入工时和未完成事项。">本周工作总结</button>
-        <button type="button" class="soft-button" data-ai-prompt="请根据下面的日期范围生成工作总结。">生成指定期间总结</button>
+      <div class="modal-scroll" id="aiDialogScroll">
+        <div class="ai-quick-actions" id="aiQuickActions">
+          <button type="button" class="soft-button" data-ai-prompt="请列出当前所有未完成的任务，并按状态和截止时间整理。">哪些任务未完成</button>
+          <button type="button" class="soft-button" data-ai-prompt="请总结本周的工作完成情况、实际投入工时和未完成事项。">本周工作总结</button>
+          <button type="button" class="soft-button" data-ai-prompt="请根据下面的日期范围生成工作总结。">生成指定期间总结</button>
+          <button type="button" class="soft-button" id="aiScreenshotHintButton" data-ai-mode="screenshot">从截图创建待办</button>
+        </div>
+        <div class="ai-range"><label><span>开始日期</span><input type="date" id="aiPeriodStart" /></label><label><span>结束日期</span><input type="date" id="aiPeriodEnd" /></label></div>
+        <div class="ai-chat-log" id="aiChatLog" aria-live="polite"></div>
+        <div class="ai-status" id="aiStatus"></div>
+        <div class="ai-result hidden" id="aiResult" aria-hidden="true">AI 结果会显示在这里。</div>
+        <div class="ai-compose">
+          <div class="ai-attachment hidden" id="aiAttachment">
+            <img id="aiAttachmentPreview" alt="待发送截图预览" />
+            <button type="button" class="soft-button" id="aiAttachmentClear">移除截图</button>
+          </div>
+          <label><span>消息</span><textarea id="aiPrompt" rows="3" placeholder="提问查询，或粘贴/拖入截图后发送以创建待办"></textarea></label>
+          <div class="ai-compose-tools">
+            <input type="file" id="aiImageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+            <button type="button" class="soft-button" id="aiAttachImageButton">附加截图</button>
+            <span class="form-hint">有截图时发送 = 识别待办（可多条）；无截图 = 查询本应用数据</span>
+          </div>
+        </div>
       </div>
-      <div class="ai-range"><label><span>开始日期</span><input type="date" id="aiPeriodStart" /></label><label><span>结束日期</span><input type="date" id="aiPeriodEnd" /></label></div>
-      <label><span>你想查询什么</span><textarea id="aiPrompt" rows="3" placeholder="例如：找出本月还没有关闭、但已经投入过时间的任务"></textarea></label>
-      <div class="ai-status" id="aiStatus"></div>
-      <div class="ai-result" id="aiResult">AI 结果会显示在这里。</div>
-      <div class="modal-actions"><button type="button" class="soft-button" id="aiCopyButton">复制结果</button><span></span><button type="button" class="soft-button" data-close-dialog="aiDialog">取消</button><button type="submit" class="primary-button">提交查询</button></div>
+      <div class="modal-actions">
+        <button type="button" class="soft-button" id="aiCopyButton">复制结果</button>
+        <span></span>
+        <button type="button" class="soft-button" data-close-dialog="aiDialog">取消</button>
+        <button type="submit" class="primary-button" id="aiSubmitButton">发送</button>
+      </div>
     </form>
   </dialog>
 
@@ -406,15 +613,22 @@
     <span id="updateProgressText">正在下载更新… 0%</span>
     <i id="updateProgressBar"></i>
   </div>
-  <div class="resize-handle desktop-only" title="拖动调整窗口大小"></div>
 
+  <script src="schedule-hours-policy.js"></script>
   <script src="recurrence-policy.js"></script>
   <script src="task-option-policy.js"></script>
+  <script src="todo-list-policy.js"></script>
   <script src="project-summary-policy.js"></script>
   <script src="project-collapse-policy.js"></script>
   <script src="task-work-policy.js"></script>
+  <script src="schedule-hierarchy-repair-policy.js"></script>
+  <script src="schedule-meeting-demote-policy.js"></script>
   <script src="week-entry-policy.js"></script>
   <script src="project-view-policy.js"></script>
+  <script src="task-status-policy.js"></script>
+  <script src="ai-task-draft-policy.js"></script>
+  <script src="navigation-policy.js"></script>
+  <script src="ui-scale-policy.js"></script>
   <script src="import-policy.js"></script>
   <script src="app.js"></script>
 </body>
