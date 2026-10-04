@@ -1852,7 +1852,7 @@ function renderWeek() {
     if (day && (day.tasks?.length || day.entries?.length || day.note)) button.classList.add("has-data");
     button.innerHTML = `<span class="day-number">${date.getDate()}</span><span class="day-name">
       <strong>${WEEKDAY_NAMES[date.getDay()]}</strong>
-      <span>${date.getMonth() + 1}月${date.getDate()}日</span></span><i class="day-dot"></i>`;
+      <span>${date.getMonth() + 1}月</span></span><i class="day-dot"></i>`;
     button.addEventListener("click", () => selectDate(date));
     el.weekDays.appendChild(button);
   }

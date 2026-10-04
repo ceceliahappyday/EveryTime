@@ -819,8 +819,45 @@ body:not(.week-mode):not(.month-mode):not(.project-mode) .week-days {
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 6px;
 }
+/* Day view shares width with the todo panel — use vertical chips so labels never crush. */
 body:not(.week-mode):not(.month-mode):not(.project-mode) .day-button {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  justify-items: center;
+  align-content: center;
+  gap: 2px;
   min-width: 0;
+  padding: 6px 2px;
+  text-align: center;
+}
+body:not(.week-mode):not(.month-mode):not(.project-mode) .day-number {
+  width: 34px;
+  height: 34px;
+  font-size: 16px;
+}
+body:not(.week-mode):not(.month-mode):not(.project-mode) .day-name {
+  display: grid;
+  justify-items: center;
+  min-width: 0;
+  width: 100%;
+}
+body:not(.week-mode):not(.month-mode):not(.project-mode) .day-name strong,
+body:not(.week-mode):not(.month-mode):not(.project-mode) .day-name span {
+  max-width: 100%;
+  margin-top: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+body:not(.week-mode):not(.month-mode):not(.project-mode) .day-name strong {
+  font-size: 11px;
+}
+body:not(.week-mode):not(.month-mode):not(.project-mode) .day-name span {
+  font-size: 10px;
+}
+body:not(.week-mode):not(.month-mode):not(.project-mode) .day-dot {
+  display: none;
 }
 body.in-desktop.shell-compact-topbar:not(.week-mode):not(.month-mode):not(.project-mode):not(.shell-focus) .app-shell {
   grid-template-rows: auto minmax(0, 1fr);
@@ -4960,8 +4997,9 @@ body.in-desktop.glass-mode .focus-view-menu button:hover {
   body:not(.in-desktop) .header-actions > .soft-button::first-letter { font-size: 13px; }
   body:not(.in-desktop) .workspace { grid-template-columns: var(--task-panel-width) minmax(0, 1fr); }
   body:not(.in-desktop).project-mode .workspace { grid-template-columns: minmax(0, 1fr); }
-  .day-button { grid-template-columns: 38px 1fr; }
-  .day-dot { display: none; }
+  /* Keep web/horizontal strip layout; day-view desktop chips stay vertical above. */
+  body:not(.in-desktop) .day-button { grid-template-columns: 38px 1fr; }
+  body:not(.in-desktop) .day-dot { display: none; }
 }
 
 /* Desktop keeps date controls; progressive shell-* classes own the densify/hide rules.
