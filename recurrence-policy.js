@@ -30,6 +30,34 @@
     return task?.recurrence?.frequency === "monthly" && !!task.dueDate;
   }
 
+  const MONTHLY_TITLE_PREFIX = /^(\d{4})年(\d{1,2})月/;
+
+  function stripMonthlyInstancePrefix(title = "") {
+    const text = String(title || "").trim();
+    if (!text) return "";
+    const stripped = text.replace(MONTHLY_TITLE_PREFIX, "").trim();
+    return stripped || text;
+  }
+
+  function monthlyInstanceTitle(baseTitle, monthKey) {
+    const base = stripMonthlyInstancePrefix(baseTitle);
+    if (!base) return "";
+    const key = String(monthKey || "").trim();
+    if (!/^\d{4}-\d{2}$/.test(key)) return base;
+    const [year, month] = key.split("-");
+    return `${Number(year)}年${Number(month)}月${base}`;
+  }
+
+  function shouldSyncMonthlyInstanceTitle(currentTitle, baseTitle, monthKey) {
+    const expected = monthlyInstanceTitle(baseTitle, monthKey);
+    if (!expected) return false;
+    const current = String(currentTitle || "").trim();
+    if (current === expected) return false;
+    const base = stripMonthlyInstancePrefix(baseTitle);
+    const currentBase = stripMonthlyInstancePrefix(current);
+    return current === base || currentBase === base;
+  }
+
   function pickCanonicalRecurringTask(instances = [], currentMonth = "") {
     if (!instances.length) return null;
     const ranked = [...instances].sort((a, b) => {
@@ -141,6 +169,9 @@
     canonicalRecurringKeepIds,
     isNonCanonicalRecurringInstance,
     isMonthlyRecurringTask,
+    monthlyInstanceTitle,
+    stripMonthlyInstancePrefix,
+    shouldSyncMonthlyInstanceTitle,
     recurringGroupKey,
     relatedRecurringParentIds,
     childBelongsToParentInstance,

@@ -1,4 +1,6 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
   shouldGenerateRecurringMonth,
   dedupeRecurringTasksForDisplay,
@@ -6,8 +8,25 @@ const {
   filterCanonicalRecurringTasks,
   canonicalRecurringKeepIds,
   isNonCanonicalRecurringInstance,
-  pickCanonicalRecurringTask
+  pickCanonicalRecurringTask,
+  monthlyInstanceTitle,
+  stripMonthlyInstancePrefix,
+  shouldSyncMonthlyInstanceTitle
 } = require("../recurrence-policy");
+
+assert.equal(stripMonthlyInstancePrefix("2026年8月月度结账"), "月度结账");
+assert.equal(stripMonthlyInstancePrefix("月度结账"), "月度结账");
+assert.equal(monthlyInstanceTitle("月度结账", "2026-08"), "2026年8月月度结账");
+assert.equal(monthlyInstanceTitle("2026年8月月度结账", "2026-09"), "2026年9月月度结账");
+assert.equal(monthlyInstanceTitle("月度结账", "2026-12"), "2026年12月月度结账");
+assert.equal(shouldSyncMonthlyInstanceTitle("月度结账", "月度结账", "2026-08"), true);
+assert.equal(shouldSyncMonthlyInstanceTitle("2026年7月月度结账", "月度结账", "2026-08"), true);
+assert.equal(shouldSyncMonthlyInstanceTitle("2026年8月月度结账", "月度结账", "2026-08"), false);
+assert.equal(shouldSyncMonthlyInstanceTitle("特殊结账", "月度结账", "2026-08"), false);
+
+const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+assert.match(app, /monthlyInstanceTitle/, "monthly clones must stamp year-month into the task title");
+assert.match(app, /syncMonthlyInstanceTitle/, "existing monthly instances should pick up year-month titles when still generic");
 
 assert.equal(
   shouldGenerateRecurringMonth({

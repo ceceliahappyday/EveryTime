@@ -6853,6 +6853,7 @@ function ensureRecurringTasksForMonth(targetMonth) {
       task.dueDate?.slice(0, 7) === targetMonth
     )?.task || (template.dueDate.slice(0, 7) === targetMonth ? template : null);
     if (existing) {
+      if (syncMonthlyInstanceTitle(existing, template, targetMonth)) changed = true;
       if (retargetChildrenToMonthlyParentInstance(existing, groupId)) changed = true;
       return;
     }
@@ -6863,6 +6864,17 @@ function ensureRecurringTasksForMonth(targetMonth) {
     changed = true;
   });
   if (changed) saveData();
+}
+
+function syncMonthlyInstanceTitle(task, template, targetMonth) {
+  if (!task || !template) return false;
+  const baseTitle = RecurringPolicy.stripMonthlyInstancePrefix?.(template.title) || template.title;
+  if (!RecurringPolicy.shouldSyncMonthlyInstanceTitle?.(task.title, baseTitle, targetMonth)) return false;
+  const nextTitle = RecurringPolicy.monthlyInstanceTitle?.(baseTitle, targetMonth);
+  if (!nextTitle || task.title === nextTitle) return false;
+  task.title = nextTitle;
+  task.updatedAt = new Date().toISOString();
+  return true;
 }
 
 function getRecurringTemplates() {
@@ -6889,9 +6901,13 @@ function recurringDateForMonth(firstDateKey, targetMonth) {
 function cloneRecurringTaskForMonth(template, dueDate, groupId) {
   const now = new Date();
   const createdAtIso = now.toISOString();
+  const monthKey = dueDate?.slice(0, 7) || "";
+  const baseTitle = RecurringPolicy.stripMonthlyInstancePrefix?.(template.title) || template.title;
+  const titled = RecurringPolicy.monthlyInstanceTitle?.(baseTitle, monthKey) || baseTitle;
   return {
     ...template,
     id: crypto.randomUUID(),
+    title: titled,
     dueDate,
     parentId: resolveRecurringParentId(template.parentId, dueDate),
     status: "planned",
@@ -6932,10 +6948,15 @@ function buildRecurringTasks(payload) {
   };
   if (!payload.recurrence) return [{ id: crypto.randomUUID(), ...base, ...payload }];
   const groupId = crypto.randomUUID();
+  const monthKey = payload.dueDate?.slice(0, 7) || "";
+  const titled = payload.recurrence?.frequency === "monthly"
+    ? (RecurringPolicy.monthlyInstanceTitle?.(payload.title, monthKey) || payload.title)
+    : payload.title;
   return [{
     id: crypto.randomUUID(),
     ...base,
     ...payload,
+    title: titled,
     parentId: resolveRecurringParentId(payload.parentId, payload.dueDate),
     recurrenceGroupId: groupId,
     recurrence: { ...payload.recurrence, dayOfMonth: payload.dueDate ? Number(payload.dueDate.slice(-2)) : null },
