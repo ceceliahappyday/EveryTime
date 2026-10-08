@@ -41,9 +41,13 @@ const CN_HOLIDAYS = {
   "2026-10-10": { name: "调休上班", type: "workday" }
 };
 
+const initialTaskFilter = typeof TodoListPolicy !== "undefined" ? TodoListPolicy.loadSavedFilter() : "in_progress";
 const state = {
   selectedDate: toDateKey(new Date()),
-  filter: typeof TodoListPolicy !== "undefined" ? TodoListPolicy.loadSavedFilter() : "in_progress",
+  listKind: initialTaskFilter === "meeting" ? "meeting" : "todo",
+  filter: initialTaskFilter === "meeting" ? "in_progress" : initialTaskFilter,
+  lastTodoFilter: initialTaskFilter === "meeting" ? "in_progress" : initialTaskFilter,
+  meetingFilter: "all",
   taskListSearch: "",
   showContinueYesterdayOnly: false,
   taskView: "day",
@@ -87,10 +91,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   [
     "todaySummary", "monthLabel", "monthPickerButton", "datePicker", "dateControls", "dateNavPrev", "dateNavNext",
     "appVersionBadge",
-    "todayButton", "weekDays", "taskCount", "taskList", "taskListSearch", "taskSearchWrap", "continueYesterdayButton", "unplannedCount", "openCount", "doneCount", "closedCount", "memoCount", "meetingCount", "exportButton",
+    "taskPanel", "todayButton", "weekDays", "taskCount", "taskList", "taskListSearch", "taskSearchWrap", "continueYesterdayButton", "unplannedCount", "openCount", "doneCount", "closedCount", "memoCount", "meetingCount", "exportButton",
     "plannedHours", "progressLabel", "progressBar", "scheduleTitle", "loggedHours", "freeHours",
     "timeline", "timelineWrap", "projectGanttChrome", "quickAddButton", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "workspaceSplitHandle", "viewSwitcher",
-    "taskTabs", "allCount", "taskViewTitle", "taskDialog", "taskEditForm", "taskDialogEyebrow", "taskDialogTitle",
+    "taskTabs", "meetingTabs", "allCount", "meetingAllCount", "meetingPlannedCount", "meetingDoingCount", "meetingEndedCount",
+    "taskViewTitle", "listKindTodo", "listKindMeeting", "listKindMenu", "listKindMenuButton", "listKindMenuLabel", "listKindMenuPanel", "taskDialog", "taskEditForm", "taskDialogEyebrow", "taskDialogTitle",
     "taskDetailSummary", "followUpDraftHint", "taskDialogScroll", "taskDialogCloseButton", "taskDialogCancelButton",
     "taskTabsWrap", "taskTabsMore", "taskTabsMoreButton", "taskTabsMoreMenu",
     "taskTitleInput", "taskDueDateTime", "taskOwner", "taskParentField", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
@@ -305,6 +310,11 @@ function bindEvents() {
     if (!button) return;
     applyTaskFilter(button.dataset.filter);
   });
+  el.meetingTabs?.addEventListener("click", event => {
+    const button = event.target.closest("button[data-meeting-filter]");
+    if (!button) return;
+    applyMeetingFilter(button.dataset.meetingFilter);
+  });
   el.taskTabsMoreMenu?.addEventListener("click", event => {
     const button = event.target.closest("button[data-filter]");
     if (!button) return;
@@ -323,10 +333,18 @@ function bindEvents() {
     closeTaskTabsMoreMenu();
   });
   window.addEventListener("resize", () => {
+    syncTaskPanelDensity();
     adaptTaskTabsOverflow();
   }, { passive: true });
-  if (el.taskTabsWrap && typeof ResizeObserver === "function") {
-    new ResizeObserver(() => adaptTaskTabsOverflow()).observe(el.taskTabsWrap);
+  if (typeof ResizeObserver === "function") {
+    if (el.taskPanel) {
+      new ResizeObserver(() => {
+        syncTaskPanelDensity();
+        adaptTaskTabsOverflow();
+      }).observe(el.taskPanel);
+    } else if (el.taskTabsWrap) {
+      new ResizeObserver(() => adaptTaskTabsOverflow()).observe(el.taskTabsWrap);
+    }
   }
 
   el.taskListSearch?.addEventListener("input", () => {
@@ -354,16 +372,43 @@ function bindEvents() {
   });
 
   el.continueYesterdayButton?.addEventListener("click", () => {
+    state.listKind = "todo";
     state.showContinueYesterdayOnly = !state.showContinueYesterdayOnly;
     el.continueYesterdayButton.classList.toggle("active", state.showContinueYesterdayOnly);
     if (state.showContinueYesterdayOnly) {
       state.filter = "all";
+      state.lastTodoFilter = "all";
       TodoListPolicy.saveFilter(state.filter);
       el.taskTabs.querySelectorAll("button").forEach(item => item.classList.toggle("active", item.dataset.filter === "all"));
     }
     renderTasks();
     if (state.taskView !== "project") renderSchedule();
   });
+
+  el.listKindTodo?.addEventListener("click", () => applyListKind("todo"));
+  el.listKindMeeting?.addEventListener("click", () => applyListKind("meeting"));
+  el.listKindMenuButton?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (el.listKindMenuPanel?.hidden) openListKindMenu();
+    else closeListKindMenu();
+  });
+  el.listKindMenuPanel?.addEventListener("click", event => {
+    const button = event.target.closest("button[data-list-kind]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    applyListKind(button.dataset.listKind === "meeting" ? "meeting" : "todo");
+    closeListKindMenu();
+  });
+  document.addEventListener("pointerdown", event => {
+    if (el.listKindMenu?.contains(event.target)) return;
+    if (el.listKindMenuPanel?.contains(event.target)) return;
+    closeListKindMenu();
+  });
+  window.addEventListener("resize", () => {
+    if (!el.listKindMenuPanel?.hidden) positionListKindMenuPanel();
+  }, { passive: true });
 
   el.mergeTaskButton?.addEventListener("click", () => openTaskMergeDialog());
   bindTaskMergePicker();
@@ -611,10 +656,14 @@ function syncShellLayoutClasses(widthHint) {
   syncFocusSurfaceVisibility(focus, compact);
   if (wasFocus !== focus) {
     updateDateNavigationChrome();
-    if (el.taskViewTitle) {
-      el.taskViewTitle.textContent = state.filter === "memo" ? "待跟踪" : "待办清单";
-    }
+    syncListKindSwitch();
   }
+  // Focus toggle changes task-panel width from full-window ↔ split column;
+  // density/tabs must resync or search/继续昨天 get clipped under the schedule.
+  requestAnimationFrame(() => {
+    syncTaskPanelDensity();
+    adaptTaskTabsOverflow();
+  });
   syncHeaderOverflow();
 }
 
@@ -2222,14 +2271,16 @@ function renderUnifiedTodoList() {
   const workLeafTasks = allLeafTasks.filter(isWorkLeafTask);
   const memoLeafTasks = allLeafTasks.filter(belongsInMemoList);
   const meetingItems = getMeetingListItems();
+  const meetingMode = state.listKind === "meeting";
 
   updateTaskStats(workLeafTasks, memoLeafTasks, meetingItems);
+  updateMeetingFilterCounts(meetingItems);
 
   const query = (state.taskListSearch || el.taskListSearch?.value || "").trim();
-  let visibleTasks = state.filter === "meeting"
+  let visibleTasks = meetingMode
     ? []
     : allLeafTasks.filter(task => matchesUnifiedTaskFilter(task, state.filter));
-  if (query && state.filter !== "meeting") {
+  if (query && !meetingMode) {
     const searchPool = state.filter === "memo" ? memoLeafTasks
       : state.filter === "all" ? allLeafTasks
         : workLeafTasks;
@@ -2244,19 +2295,26 @@ function renderUnifiedTodoList() {
     }).map(item => item.task);
   }
 
-  el.taskViewTitle.textContent = state.filter === "memo"
-    ? "待跟踪"
-    : state.filter === "meeting"
-      ? "会议清单"
-      : "待办清单";
+  syncListKindSwitch();
+  syncTaskPanelDensity();
   el.taskList.className = "task-list unified-view";
   el.taskList.innerHTML = "";
-  el.taskTabs.classList.remove("hidden");
-  el.taskTabs.querySelectorAll("button").forEach(item =>
+  el.taskPanel?.classList.toggle("is-meeting-list", meetingMode);
+  if (el.taskTabs) el.taskTabs.hidden = meetingMode;
+  if (el.meetingTabs) el.meetingTabs.hidden = !meetingMode;
+  el.taskTabs?.querySelectorAll("button").forEach(item =>
     item.classList.toggle("active", item.dataset.filter === state.filter)
   );
+  el.meetingTabs?.querySelectorAll("button[data-meeting-filter]").forEach(item =>
+    item.classList.toggle("active", item.dataset.meetingFilter === state.meetingFilter)
+  );
   el.continueYesterdayButton?.classList.toggle("active", state.showContinueYesterdayOnly);
-  requestAnimationFrame(() => adaptTaskTabsOverflow());
+  if (meetingMode) {
+    closeTaskTabsMoreMenu();
+    if (el.taskTabsMore) el.taskTabsMore.hidden = true;
+  } else {
+    requestAnimationFrame(() => adaptTaskTabsOverflow());
+  }
 
   const entriesByDate = getWorkEntriesByDate();
   const yesterdayKey = shiftDateKey(state.selectedDate, -1);
@@ -2279,13 +2337,21 @@ function renderUnifiedTodoList() {
   }
 
   let sections;
-  if (state.filter === "meeting") {
-    const meetings = getMeetingListItems({ query });
+  if (meetingMode) {
+    const meetings = getMeetingListItems({ query }).filter(item =>
+      state.meetingFilter === "all" || getMeetingPhase(item) === state.meetingFilter
+    );
     const totalInvested = meetings.reduce((sum, item) => sum + item.investedHours, 0);
+    const phaseLabel = {
+      all: "全部会议",
+      planned: "计划中的会议",
+      in_progress: "进行中的会议",
+      ended: "已结束的会议"
+    }[state.meetingFilter] || "会议";
     sections = meetings.length
       ? [{
         key: "meeting",
-        label: `会议投入（合计 ${trimNumber(totalInvested)}h）`,
+        label: `${phaseLabel}（合计 ${trimNumber(totalInvested)}h）`,
         tasks: meetings
       }]
       : [];
@@ -2327,15 +2393,6 @@ function renderUnifiedTodoList() {
           });
         }
       }
-      const allMeetings = getMeetingListItems({ query, recentDays: 30, futureDays: 14 });
-      if (allMeetings.length) {
-        const totalInvested = allMeetings.reduce((sum, item) => sum + item.investedHours, 0);
-        sections.push({
-          key: "meeting",
-          label: `会议（近月合计 ${trimNumber(totalInvested)}h）`,
-          tasks: allMeetings
-        });
-      }
     }
     if (linkedWorkItems.length) {
       if (query) {
@@ -2367,11 +2424,11 @@ function renderUnifiedTodoList() {
     el.taskList.innerHTML = `<div class="empty-state">${state.showContinueYesterdayOnly
       ? "昨天没有可继续的任务投入"
       : query
-        ? (state.filter === "meeting" ? "没有匹配的会议" : "没有匹配的待办任务")
-        : state.filter === "memo"
+        ? (meetingMode ? "没有匹配的会议" : "没有匹配的待办任务")
+        : state.filter === "memo" && !meetingMode
           ? "暂无待跟踪事项<br>可将优先级设为「跟踪关注」，或关闭任务时选择「关闭并跟踪」"
-          : state.filter === "meeting"
-            ? "暂无会议记录<br>在右侧日程新建「会议 / 日程」后，会在这里统计投入工时"
+          : meetingMode
+            ? "当前分类没有会议<br>在右侧日程新建「会议 / 日程」后，会在这里统计投入工时"
             : "当前分类没有待办任务"}</div>`;
     return;
   }
@@ -2413,6 +2470,14 @@ function getWorkEntriesByDate() {
   return map;
 }
 
+function getMeetingPhase(item, now = new Date()) {
+  const start = scheduledDateTime(item.dateKey, item.start);
+  const end = scheduledDateTime(item.dateKey, item.end);
+  if (now < start) return "planned";
+  if (now < end) return "in_progress";
+  return "ended";
+}
+
 function getMeetingListItems({ query = "", recentDays = 90, futureDays = 30 } = {}) {
   const selected = fromDateKey(state.selectedDate);
   const minKey = toDateKey(addDays(selected, -recentDays));
@@ -2430,22 +2495,39 @@ function getMeetingListItems({ query = "", recentDays = 90, futureDays = 30 } = 
       );
       return keywords.every(keyword => searchable.includes(keyword));
     })
-    .map(({ dateKey, entry }) => ({
-      kind: "meeting",
-      entryId: entry.id,
-      dateKey,
-      title: String(entry.title || "").trim(),
-      note: entry.note || "",
-      start: entry.start,
-      end: entry.end,
-      investedHours: getEntryInvestedHours(dateKey, entry),
-      plannedHours: Math.max(0, Number(entry.end) - Number(entry.start))
-    }))
+    .map(({ dateKey, entry }) => {
+      const item = {
+        kind: "meeting",
+        entryId: entry.id,
+        dateKey,
+        title: String(entry.title || "").trim(),
+        note: entry.note || "",
+        start: entry.start,
+        end: entry.end,
+        investedHours: getEntryInvestedHours(dateKey, entry),
+        plannedHours: Math.max(0, Number(entry.end) - Number(entry.start))
+      };
+      item.phase = getMeetingPhase(item);
+      return item;
+    })
     .sort((a, b) =>
       b.dateKey.localeCompare(a.dateKey) ||
       Number(a.start) - Number(b.start) ||
       a.title.localeCompare(b.title, "zh-CN")
     );
+}
+
+function updateMeetingFilterCounts(meetingItems = []) {
+  const groups = { all: meetingItems.length, planned: 0, in_progress: 0, ended: 0 };
+  meetingItems.forEach(item => {
+    const phase = item.phase || getMeetingPhase(item);
+    if (groups[phase] != null) groups[phase] += 1;
+  });
+  if (el.meetingAllCount) el.meetingAllCount.textContent = groups.all;
+  if (el.meetingPlannedCount) el.meetingPlannedCount.textContent = groups.planned;
+  if (el.meetingDoingCount) el.meetingDoingCount.textContent = groups.in_progress;
+  if (el.meetingEndedCount) el.meetingEndedCount.textContent = groups.ended;
+  if (el.meetingCount) el.meetingCount.textContent = groups.all;
 }
 
 function createMeetingCard(item) {
@@ -2893,6 +2975,10 @@ const TASK_PANEL_WIDTH_DEFAULT = 280;
 const TASK_PANEL_WIDTH_MIN = 200;
 const TASK_PANEL_WIDTH_MAX = 480;
 const TASK_PANEL_WIDTH_KEY = "today-planner-task-panel-width";
+/** Dual「待办清单 / 会议清单」only after the row can hold full labels at the narrow font. */
+const LIST_KIND_DROPDOWN_MAX_WIDTH = 268;
+/** Width where title/add chrome reach their comfortable full size. */
+const TASK_PANEL_SCALE_FULL_WIDTH = 420;
 
 function clampTaskPanelWidth(width) {
   const value = Number(width);
@@ -2919,7 +3005,54 @@ function applyTaskPanelWidth(width) {
   const next = clampTaskPanelWidth(width);
   state.taskPanelWidth = next;
   document.documentElement.style.setProperty("--task-panel-width", `${next}px`);
+  syncTaskPanelDensity();
   return next;
+}
+
+function taskPanelScaleProgress(width) {
+  const span = Math.max(1, TASK_PANEL_SCALE_FULL_WIDTH - TASK_PANEL_WIDTH_MIN);
+  return Math.min(1, Math.max(0, (width - TASK_PANEL_WIDTH_MIN) / span));
+}
+
+function syncTaskPanelDensity() {
+  const panel = el.taskPanel;
+  if (!panel) return;
+  const width = panel.clientWidth || state.taskPanelWidth || TASK_PANEL_WIDTH_DEFAULT;
+  const t = taskPanelScaleProgress(width);
+  // Narrow baseline matches the best-looking min column; widen in step with 新增事项.
+  const titleSize = Math.round((14 + t * 6) * 10) / 10; // 14 → 20
+  const addFont = Math.round((12 + t * 2.5) * 10) / 10; // 12 → 14.5
+  const sideActionRem = (4.35 + t * 1.15).toFixed(2); // ~4.35 → 5.5
+  const toolbarH = Math.round(28 + t * 4); // 28 → 32
+  const quickBtn = Math.round(26 + t * 4); // 26 → 30
+  panel.style.setProperty("--task-title-size", `${titleSize}px`);
+  panel.style.setProperty("--task-add-font-size", `${addFont}px`);
+  panel.style.setProperty("--task-side-action-w", `${sideActionRem}rem`);
+  panel.style.setProperty("--task-toolbar-h", `${toolbarH}px`);
+  panel.style.setProperty("--quick-add-size", `${quickBtn}px`);
+  panel.classList.toggle("density-md", width < 360);
+  panel.classList.toggle("density-sm", width < LIST_KIND_DROPDOWN_MAX_WIDTH);
+  panel.classList.toggle("density-xs", width < 230);
+  // Only the true min column uses the dropdown; otherwise always full dual titles.
+  const useKindSelect = width < LIST_KIND_DROPDOWN_MAX_WIDTH;
+  if (el.taskViewTitle) el.taskViewTitle.hidden = useKindSelect;
+  if (el.listKindMenu) {
+    el.listKindMenu.hidden = !useKindSelect;
+    if (!useKindSelect) closeListKindMenu();
+  }
+  if (el.listKindTodo) el.listKindTodo.textContent = "待办清单";
+  if (el.listKindMeeting) el.listKindMeeting.textContent = "会议清单";
+  syncListKindMenu();
+  if (el.continueYesterdayButton) {
+    const label = el.continueYesterdayButton.querySelector(".task-side-label");
+    if (label) label.textContent = width < 230 ? "昨天" : "继续昨天";
+  }
+  if (el.quickTaskInput && document.activeElement !== el.quickTaskInput) {
+    el.quickTaskInput.placeholder = width < 230 ? "新增" : "新增事项";
+  }
+  if (el.taskListSearch && !(el.taskListSearch.value || "").trim()) {
+    el.taskListSearch.placeholder = "搜索…";
+  }
 }
 
 function bindWorkspaceSplitResize() {
@@ -2938,6 +3071,7 @@ function bindWorkspaceSplitResize() {
     handle.setPointerCapture(event.pointerId);
     const onMove = moveEvent => {
       applyTaskPanelWidth(startWidth + (moveEvent.clientX - startX));
+      adaptTaskTabsOverflow();
     };
     const onUp = upEvent => {
       handle.classList.remove("is-dragging");
@@ -3367,7 +3501,13 @@ function renderMonthCalendar() {
 
 function restoreTaskStatusOptions(task) {
   const priority = el.taskPriority?.value || task?.priority || "general_daily";
-  const currentStatus = el.taskStatus?.value || task?.status || "planned";
+  let currentStatus = task?.status || el.taskStatus?.value || "planned";
+  if (currentStatus === "closed") currentStatus = "done";
+  // Automatic statuses must stay selectable when they are the current value;
+  // disabling both lets the browser fall through to “已完成”.
+  if (!task?.completedAt && currentStatus === "done" && !TaskStatusPolicy.isEndedStatus(task?.status)) {
+    currentStatus = "planned";
+  }
   const isTracking = TaskStatusPolicy.isTrackingStatus(task) || currentStatus === "tracking";
   const allowTrackingChoice = isTracking || priority === "follow_up";
 
@@ -3375,23 +3515,31 @@ function restoreTaskStatusOptions(task) {
     el.taskStatus.innerHTML = `
       <option value="tracking" selected>待跟踪（关注提醒，不计入投入）</option>
       <option value="done">已完成 / 已关闭</option>`;
+    el.taskStatus.value = currentStatus === "done" ? "done" : "tracking";
     return;
   }
 
   const trackingOption = allowTrackingChoice
     ? `<option value="tracking">待跟踪（关注提醒，不计入投入）</option>`
     : "";
+  const plannedDisabled = currentStatus === "planned" ? "" : " disabled";
+  const progressDisabled = currentStatus === "in_progress" ? "" : " disabled";
   el.taskStatus.innerHTML = `
-    <option value="planned" disabled>计划中（尚未排入日程）</option>
-    <option value="in_progress" disabled>进行中（已排入日程）</option>
+    <option value="planned"${plannedDisabled}>计划中（尚未排入日程）</option>
+    <option value="in_progress"${progressDisabled}>进行中（已排入日程）</option>
     ${trackingOption}
     <option value="done">已完成 / 已关闭</option>`;
 
-  if (currentStatus === "closed") el.taskStatus.value = "done";
-  else if (["planned", "in_progress", "tracking", "done"].includes(currentStatus)) {
+  if (["planned", "in_progress", "tracking", "done"].includes(currentStatus)) {
     el.taskStatus.value = currentStatus;
   } else {
     el.taskStatus.value = "planned";
+  }
+  // If the browser still cannot honor a disabled value, keep the automatic status visible.
+  if (el.taskStatus.value !== currentStatus && (currentStatus === "planned" || currentStatus === "in_progress")) {
+    const option = el.taskStatus.querySelector(`option[value="${currentStatus}"]`);
+    if (option) option.disabled = false;
+    el.taskStatus.value = currentStatus;
   }
 }
 
@@ -3405,7 +3553,9 @@ function openNewTaskFromQuickAdd() {
 }
 
 function applyTaskFilter(filter) {
-  if (!filter) return;
+  if (!filter || filter === "meeting") return;
+  state.listKind = "todo";
+  state.lastTodoFilter = filter;
   state.filter = filter;
   state.showContinueYesterdayOnly = false;
   TodoListPolicy.saveFilter(state.filter);
@@ -3418,6 +3568,92 @@ function applyTaskFilter(filter) {
   renderTasks();
   if (state.taskView !== "project") renderSchedule();
   adaptTaskTabsOverflow();
+}
+
+function applyMeetingFilter(filter) {
+  if (!filter) return;
+  state.listKind = "meeting";
+  state.meetingFilter = filter;
+  state.showContinueYesterdayOnly = false;
+  renderTasks();
+}
+
+function applyListKind(kind) {
+  if (kind === "meeting") {
+    state.listKind = "meeting";
+    state.showContinueYesterdayOnly = false;
+    if (!state.meetingFilter) state.meetingFilter = "all";
+    renderTasks();
+    return;
+  }
+  state.listKind = "todo";
+  const restore = state.lastTodoFilter && state.lastTodoFilter !== "meeting"
+    ? state.lastTodoFilter
+    : "in_progress";
+  applyTaskFilter(restore);
+}
+
+function syncListKindMenu() {
+  const meeting = state.listKind === "meeting";
+  if (el.listKindMenuLabel) el.listKindMenuLabel.textContent = meeting ? "会议清单" : "待办清单";
+  el.listKindMenuPanel?.querySelectorAll("button[data-list-kind]").forEach(item => {
+    const kind = item.dataset.listKind === "meeting" ? "meeting" : "todo";
+    const active = kind === (meeting ? "meeting" : "todo");
+    item.textContent = kind === "meeting" ? "会议清单" : "待办清单";
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-selected", String(active));
+  });
+}
+
+function positionListKindMenuPanel() {
+  const panel = el.listKindMenuPanel;
+  const trigger = el.listKindMenuButton;
+  if (!panel || !trigger) return;
+  const rect = trigger.getBoundingClientRect();
+  const width = Math.max(96, Math.ceil(rect.width) + 24);
+  let left = Math.round(rect.left);
+  left = Math.min(left, Math.max(8, window.innerWidth - width - 8));
+  panel.style.position = "fixed";
+  panel.style.left = `${left}px`;
+  panel.style.top = `${Math.round(rect.bottom + 4)}px`;
+  panel.style.minWidth = `${width}px`;
+  panel.style.right = "auto";
+  panel.style.zIndex = "5000";
+}
+
+function closeListKindMenu() {
+  if (!el.listKindMenuPanel || !el.listKindMenuButton) return;
+  el.listKindMenuPanel.hidden = true;
+  el.listKindMenuButton.setAttribute("aria-expanded", "false");
+  el.listKindMenu?.classList.remove("is-open");
+  if (el.listKindMenuPanel.parentElement !== el.listKindMenu && el.listKindMenu) {
+    el.listKindMenu.appendChild(el.listKindMenuPanel);
+  }
+}
+
+function openListKindMenu() {
+  if (!el.listKindMenuPanel || !el.listKindMenuButton || el.listKindMenu?.hidden) return;
+  syncListKindMenu();
+  // Escape task-panel overflow:hidden / container containment so the menu can receive clicks.
+  document.body.appendChild(el.listKindMenuPanel);
+  el.listKindMenuPanel.hidden = false;
+  positionListKindMenuPanel();
+  el.listKindMenuButton.setAttribute("aria-expanded", "true");
+  el.listKindMenu?.classList.add("is-open");
+}
+
+function syncListKindSwitch() {
+  const meeting = state.listKind === "meeting";
+  el.listKindTodo?.classList.toggle("active", !meeting);
+  el.listKindMeeting?.classList.toggle("active", meeting);
+  el.listKindTodo?.setAttribute("aria-selected", String(!meeting));
+  el.listKindMeeting?.setAttribute("aria-selected", String(meeting));
+  syncListKindMenu();
+  el.taskPanel?.classList.toggle("is-meeting-list", meeting);
+  if (el.taskListSearch) {
+    el.taskListSearch.placeholder = "搜索…";
+    el.taskListSearch.setAttribute("aria-label", meeting ? "搜索会议清单" : "搜索待办清单");
+  }
 }
 
 function closeTaskTabsMoreMenu() {
@@ -3442,10 +3678,17 @@ function adaptTaskTabsOverflow() {
   const moreBtn = el.taskTabsMoreButton;
   if (!wrap || !tabs || !more || !menu || !moreBtn) return;
 
+  // Meeting tabs are a separate strip; never show the todo overflow "⋯" there.
+  if (state.listKind === "meeting" || tabs.hidden) {
+    closeTaskTabsMoreMenu();
+    more.hidden = true;
+    return;
+  }
+
   const buttons = [...tabs.querySelectorAll("button[data-filter]")];
   if (!buttons.length) return;
 
-  const preferredCollapse = new Set(["ended", "meeting", "memo"]);
+  const preferredCollapse = new Set(["ended", "memo"]);
   buttons.forEach(btn => { btn.hidden = false; });
   more.hidden = true;
   closeTaskTabsMoreMenu();
@@ -3593,9 +3836,11 @@ function openTaskDialog(task = null, options = {}) {
   syncMonthlyRecurringFromPriority();
   el.taskProgress.value = task?.progress || 0;
   el.taskProgressValue.textContent = `${task?.progress || 0}%`;
-  restoreTaskStatusOptions(task);
-  el.taskActualStart.value = toLocalDateTimeInput(task?.startOverrideAt || task?.startedAt);
-  el.taskActualEnd.value = toLocalDateTimeInput(task?.completedAt);
+  if (task?.id) refreshTaskStatusForId(task.id);
+  const statusTask = task?.id ? (findTask(task.id)?.task || task) : task;
+  restoreTaskStatusOptions(statusTask);
+  el.taskActualStart.value = toLocalDateTimeInput(statusTask?.startOverrideAt || statusTask?.startedAt);
+  el.taskActualEnd.value = toLocalDateTimeInput(statusTask?.completedAt);
   // UI merges background / reason / description; originals stay in data until user saves.
   el.taskBusinessBackground.value = mergeTaskContextText(task);
   el.taskProblemReason.value = task?.problemReason || "";

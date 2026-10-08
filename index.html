@@ -76,23 +76,34 @@
     </nav>
 
     <main class="workspace">
-      <aside class="task-panel">
+      <aside class="task-panel" id="taskPanel">
         <div class="panel-heading">
           <div class="panel-heading-main">
             <span class="eyebrow">TASKS</span>
             <div class="panel-heading-row">
-              <h2 id="taskViewTitle">待办清单</h2>
-              <span class="task-count-inline" id="taskCount" aria-label="待办数量">0</span>
-              <div class="panel-heading-actions">
-                <div class="task-search" id="taskSearchWrap">
-                  <span class="task-search-icon-wrap" aria-hidden="true">
-                    <svg class="task-search-icon" viewBox="0 0 16 16" width="14" height="14" focusable="false">
-                      <circle cx="6.5" cy="6.5" r="4.25" fill="none" stroke="currentColor" stroke-width="1.4"/>
-                      <path d="M9.6 9.6 L13.2 13.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-                    </svg>
-                  </span>
-                  <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索待办名称、父级路径或状态…" aria-label="搜索待办清单" />
+              <div class="panel-heading-lead">
+                <div class="list-kind-switch" id="taskViewTitle" role="tablist" aria-label="清单类型">
+                  <button type="button" class="list-kind-option active" id="listKindTodo" role="tab" aria-selected="true" data-list-kind="todo">待办清单</button>
+                  <span class="list-kind-sep" aria-hidden="true">/</span>
+                  <button type="button" class="list-kind-option" id="listKindMeeting" role="tab" aria-selected="false" data-list-kind="meeting">会议清单</button>
                 </div>
+                <div class="list-kind-menu" id="listKindMenu" hidden>
+                  <button type="button" class="list-kind-menu-trigger" id="listKindMenuButton" aria-haspopup="listbox" aria-expanded="false" aria-label="清单类型">
+                    <span class="list-kind-menu-label" id="listKindMenuLabel">待办清单</span>
+                    <span class="list-kind-menu-caret" aria-hidden="true">▾</span>
+                  </button>
+                  <div class="list-kind-menu-panel" id="listKindMenuPanel" role="listbox" hidden>
+                    <button type="button" role="option" class="list-kind-menu-item" data-list-kind="todo">待办清单</button>
+                    <button type="button" role="option" class="list-kind-menu-item" data-list-kind="meeting">会议清单</button>
+                  </div>
+                </div>
+                <span class="task-count-inline" id="taskCount" aria-label="待办数量">0</span>
+              </div>
+              <div class="panel-heading-actions task-side-slot">
+                <label class="task-search task-side-control" id="taskSearchWrap">
+                  <span class="task-side-glyph" aria-hidden="true">⌕</span>
+                  <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索…" aria-label="搜索待办清单" />
+                </label>
               </div>
             </div>
           </div>
@@ -100,12 +111,17 @@
 
         <div class="task-list-toolbar">
           <form class="quick-add quick-task-form" id="quickTaskForm">
-            <button type="button" id="taskAddTrigger" class="quick-add-new-btn" title="新建待办" aria-label="新建待办">
+            <button type="button" id="taskAddTrigger" class="quick-add-new-btn" title="新建事项" aria-label="新建事项">
               <span class="quick-add-new-plus" aria-hidden="true">+</span>
             </button>
-            <input id="quickTaskInput" maxlength="80" placeholder="新增待办事项" autocomplete="off" aria-label="新增待办事项" />
+            <input id="quickTaskInput" maxlength="80" placeholder="新增事项" autocomplete="off" aria-label="新增事项" />
           </form>
-          <button type="button" class="soft-button task-continue-yesterday" id="continueYesterdayButton" title="查看昨天有投入、今天可继续的任务">↺ 继续昨天</button>
+          <div class="task-side-slot task-continue-slot">
+            <button type="button" class="soft-button task-continue-yesterday task-side-control" id="continueYesterdayButton" title="查看昨天有投入、今天可继续的任务">
+              <span class="task-side-glyph" aria-hidden="true">↺</span>
+              <span class="task-side-label">继续昨天</span>
+            </button>
+          </div>
         </div>
 
         <div class="task-tabs-wrap" id="taskTabsWrap">
@@ -115,8 +131,13 @@
             <button data-filter="planned">计划中 <span id="openCount">0</span></button>
             <button class="active" data-filter="in_progress">进行中 <span id="doneCount">0</span></button>
             <button data-filter="ended">已结束 <span id="closedCount">0</span></button>
-            <button data-filter="meeting">会议 <span id="meetingCount">0</span></button>
             <button data-filter="memo">待跟踪 <span id="memoCount">0</span></button>
+          </div>
+          <div class="task-tabs meeting-tabs" id="meetingTabs" role="tablist" hidden>
+            <button class="active" data-meeting-filter="all">全部会议 <span id="meetingAllCount">0</span></button>
+            <button data-meeting-filter="planned">计划中 <span id="meetingPlannedCount">0</span></button>
+            <button data-meeting-filter="in_progress">进行中 <span id="meetingDoingCount">0</span></button>
+            <button data-meeting-filter="ended">已结束 <span id="meetingEndedCount">0</span></button>
           </div>
           <div class="task-tabs-more" id="taskTabsMore" hidden>
             <button type="button" class="task-tabs-more-trigger" id="taskTabsMoreButton" aria-haspopup="listbox" aria-expanded="false" aria-label="更多" title="更多">⋯</button>
@@ -411,7 +432,7 @@
         <label>
           <span>任务状态</span>
           <select id="taskStatus">
-            <option value="planned" disabled>计划中（尚未排入日程）</option>
+            <option value="planned">计划中（尚未排入日程）</option>
             <option value="in_progress" disabled>进行中（已排入日程）</option>
             <option value="done">已完成 / 已关闭</option>
           </select>

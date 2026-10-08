@@ -49,6 +49,29 @@ if (!styles.includes(".task-list.unified-view .task-group-heading")) {
 if (!styles.includes('.task-search input[type="search"]')) {
   throw new Error("glass mode should provide readable task search colors");
 }
+if (!styles.includes("--task-side-action-w") || !styles.includes("task-side-slot")) {
+  throw new Error("task search and continue-yesterday should share a side-action width");
+}
+if (!app.includes("applyListKind") || !app.includes("syncListKindSwitch")) {
+  throw new Error("todo/meeting list titles should switch via list-kind controls");
+}
+if (!app.includes("syncTaskPanelDensity") || !styles.includes("density-md")) {
+  throw new Error("task panel should adapt layout density by width");
+}
+const html = fs.readFileSync("index.html", "utf8");
+if (!app.includes("useKindSelect") || !html.includes('id="listKindMenu"') || !app.includes("openListKindMenu")) {
+  throw new Error("minimum width should switch list kind to a custom dropdown");
+}
+const kindTriggerRule = styles.match(/\.list-kind-menu-trigger\s*\{[^}]*\}/);
+if (!kindTriggerRule || /border-bottom/.test(kindTriggerRule[0])) {
+  throw new Error("list-kind dropdown trigger must not show a bottom underline");
+}
+if (!/\.task-panel\.density-md \.panel-heading-row[\s\S]*?flex-direction:\s*row/.test(styles)) {
+  throw new Error("density-md must keep title and search on one row (scale title, do not stack)");
+}
+if (/glass-mode \.task-panel \.panel-heading[\s\S]*?background:\s*rgba\(6,\s*16,\s*28/.test(styles)) {
+  throw new Error("glass mode must not paint separate opaque chrome strips on task heading");
+}
 if (!styles.includes(".entry-parent-create-field")) {
   throw new Error("entry linking should provide a readable parent creation field");
 }

@@ -932,6 +932,11 @@ body.project-mode .app-shell {
 .day-button.is-today:not(.active) .day-number { color: var(--accent); background: var(--accent-soft); }
 
 .task-panel {
+  --task-side-action-w: 5.5rem;
+  --task-toolbar-h: 32px;
+  --task-title-size: 16px;
+  --task-add-font-size: 12px;
+  --quick-add-size: 28px;
   position: relative;
   padding: 26px 24px 112px;
   border-right: 1px solid var(--line-soft);
@@ -941,6 +946,8 @@ body.project-mode .app-shell {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  container-type: inline-size;
+  container-name: task-panel;
 }
 .workspace-split-handle {
   position: absolute;
@@ -986,22 +993,154 @@ body.in-desktop.shell-focus .workspace-split-handle {
   flex: 1 1 auto;
   min-width: 0;
 }
+.panel-heading,
+.task-list-toolbar,
+.task-tabs-wrap {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  min-width: 0;
+}
 .panel-heading-row {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px 12px;
   min-width: 0;
   margin-top: 4px;
+  overflow: hidden;
 }
-.panel-heading-row h2 {
+.panel-heading-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.panel-heading-actions {
+  flex: 0 0 var(--task-side-action-w);
+  flex-shrink: 0;
+  min-width: var(--task-side-action-w);
+  max-width: var(--task-side-action-w);
+  overflow: hidden;
+}
+.panel-heading-row h2,
+.list-kind-switch {
   margin: 0;
-  flex: 0 0 auto;
-  max-width: none;
-  overflow: visible;
-  text-overflow: clip;
-  white-space: nowrap;
-  font-size: clamp(16px, 2.1vw, 22px);
+  min-width: 0;
+  font-size: var(--task-title-size);
   line-height: 1.2;
+}
+.list-kind-switch {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: nowrap;
+  gap: 0.28em;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.list-kind-option {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: 600 var(--task-title-size)/1.2 "PingFang SC", "Microsoft YaHei", sans-serif;
+  white-space: nowrap;
+}
+.list-kind-option:hover {
+  color: var(--ink);
+}
+.list-kind-option.active {
+  color: var(--ink);
+}
+.list-kind-sep {
+  color: var(--muted);
+  font: 600 var(--task-title-size)/1.2 "PingFang SC", "Microsoft YaHei", sans-serif;
+  opacity: .5;
+  user-select: none;
+}
+.list-kind-menu {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  z-index: 6;
+}
+.list-kind-menu[hidden],
+.list-kind-switch[hidden] {
+  display: none !important;
+}
+.list-kind-menu-trigger {
+  position: relative;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28em;
+  min-width: 0;
+  height: var(--task-toolbar-h);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  /* Scales with --task-title-size as the panel (and 新增事项) widens. */
+  font: 600 var(--task-title-size)/1.2 "PingFang SC", "Microsoft YaHei", sans-serif;
+  letter-spacing: 0;
+  cursor: pointer;
+  box-shadow: none;
+  pointer-events: auto;
+}
+.list-kind-menu-trigger:focus-visible {
+  color: var(--accent);
+}
+.list-kind-menu-label {
+  min-width: 0;
+  white-space: nowrap;
+}
+.list-kind-menu-caret {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1;
+  opacity: .72;
+}
+.list-kind-menu-panel {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 5000;
+  min-width: 5.5rem;
+  padding: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #f8f7f3;
+  box-shadow: 0 10px 24px rgba(16, 28, 36, .16);
+  display: grid;
+  gap: 2px;
+  pointer-events: auto;
+}
+.list-kind-menu-panel[hidden] {
+  display: none !important;
+}
+.list-kind-menu-item {
+  margin: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: 600 13px/1.2 "PingFang SC", "Microsoft YaHei", sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+.list-kind-menu-item:hover,
+.list-kind-menu-item.active {
+  background: rgba(46, 140, 132, .12);
+  color: var(--accent);
 }
 .task-count-inline {
   display: none;
@@ -1010,60 +1149,90 @@ body.in-desktop.shell-focus .workspace-split-handle {
   font: 600 13px/1 Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
   opacity: .85;
 }
-.panel-heading-actions {
+.task-side-slot {
+  box-sizing: border-box;
+  flex: 0 0 var(--task-side-action-w);
+  width: var(--task-side-action-w);
+  min-width: var(--task-side-action-w);
+  max-width: var(--task-side-action-w);
   display: flex;
+  align-items: stretch;
+}
+.task-side-control {
+  --task-side-font: 400 11px/1 "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--task-toolbar-h) !important;
+  min-height: var(--task-toolbar-h) !important;
+  margin: 0;
+  padding: 0 !important;
+  display: inline-flex !important;
   align-items: center;
-  gap: 6px;
+  justify-content: flex-start;
+  gap: 4px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  border-bottom: 1px solid transparent !important;
+  background: transparent !important;
+  color: var(--muted);
+  font: var(--task-side-font) !important;
+  letter-spacing: 0;
+  box-shadow: none !important;
+  overflow: hidden;
+}
+.task-side-glyph,
+.task-side-label,
+.task-search input[type="search"] {
+  font: var(--task-side-font) !important;
+  letter-spacing: 0;
+  color: inherit;
+}
+.task-side-glyph {
+  flex: 0 0 12px;
+  width: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1;
+}
+.task-side-label {
   flex: 1 1 auto;
   min-width: 0;
-  justify-content: flex-end;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
 }
 .task-search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1 1 auto;
-  min-width: 96px;
-  max-width: 100%;
+  border-bottom-color: var(--line-soft) !important;
+  cursor: text;
 }
-.task-search-icon-wrap {
-  flex: 0 0 auto;
-  width: 16px;
-  height: 28px;
-  display: inline-grid;
-  place-items: center;
-  color: var(--muted);
-  pointer-events: none;
-}
-.task-search:focus-within .task-search-icon-wrap,
-.task-search.has-query .task-search-icon-wrap {
+.task-search:focus-within,
+.task-search.has-query {
   color: var(--ink);
-}
-.task-search-icon {
-  display: block;
+  border-bottom-color: var(--accent) !important;
 }
 .task-search input[type="search"] {
   flex: 1 1 auto;
   min-width: 0;
-  width: auto;
-  max-width: none;
-  height: 28px;
+  width: 100%;
+  height: auto;
   margin: 0;
-  padding: 0 2px 0 0;
+  padding: 0;
   border: 0;
-  border-bottom: 1px solid var(--line-soft);
   border-radius: 0;
   outline: 0;
   background: transparent;
-  color: var(--ink);
-  font-size: 12px;
-  line-height: 26px;
-  opacity: 1;
-  pointer-events: auto;
+  text-align: left;
+  -webkit-appearance: none;
+  appearance: none;
 }
-.task-search input[type="search"]:focus {
-  border-bottom-color: var(--accent);
+.task-search input[type="search"]::placeholder {
+  color: inherit;
+  opacity: 1;
+  font: inherit;
 }
 .task-search input[type="search"]::-webkit-search-cancel-button {
   -webkit-appearance: none;
@@ -1092,7 +1261,6 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   box-shadow: none;
 }
 .quick-add-new-btn {
-  --quick-add-size: 28px;
   position: relative;
   box-sizing: border-box;
   width: var(--quick-add-size);
@@ -1134,7 +1302,7 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
-  height: 28px;
+  height: var(--task-toolbar-h);
   margin: 0;
   padding: 0 2px;
   border: 0;
@@ -1143,8 +1311,8 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   outline: 0;
   background: transparent;
   color: var(--ink);
-  font-size: 12px;
-  line-height: 26px;
+  font-size: var(--task-add-font-size);
+  line-height: calc(var(--task-toolbar-h) - 2px);
   text-align: center;
 }
 .quick-add input::placeholder {
@@ -1289,14 +1457,28 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   font-weight: 700;
   box-shadow: inset 0 -1px 0 var(--accent);
 }
+.task-tabs.meeting-tabs[hidden],
+.task-tabs[hidden] {
+  display: none !important;
+}
+.task-tabs.meeting-tabs {
+  flex-wrap: wrap;
+  overflow: visible;
+  row-gap: 2px;
+}
+.task-panel.is-meeting-list .task-tabs-wrap {
+  align-items: flex-start;
+  height: auto;
+  overflow: visible;
+}
 
 .task-list-toolbar {
-  --task-toolbar-h: 32px;
   display: flex;
-  gap: 12px;
+  flex-wrap: nowrap;
   align-items: center;
-  justify-content: flex-start;
+  gap: 8px 12px;
   margin: 12px 0 8px;
+  min-width: 0;
 }
 
 .task-list-toolbar .quick-add {
@@ -1304,28 +1486,88 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   min-width: 0;
 }
 
-.task-continue-yesterday {
-  flex-shrink: 0;
-  margin-left: auto;
-  box-sizing: border-box;
-  height: var(--task-toolbar-h) !important;
-  min-height: var(--task-toolbar-h) !important;
-  padding: 0 2px !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  border-bottom: 1px solid transparent !important;
-  font-size: 11px;
-  line-height: 1;
-  background: transparent !important;
-  color: var(--muted);
-  box-shadow: none !important;
+.task-list-toolbar .task-side-slot {
+  height: var(--task-toolbar-h);
+}
+
+.task-continue-yesterday.soft-button {
+  flex: 0 0 auto !important;
+  font: var(--task-side-font) !important;
+  font-weight: 400 !important;
 }
 .task-continue-yesterday:hover,
 .task-continue-yesterday.active {
   color: var(--ink);
   border-bottom-color: var(--accent) !important;
   background: transparent !important;
-  font-weight: 600;
+  font-weight: 400 !important;
+}
+.task-panel.is-meeting-list .task-continue-slot,
+.task-panel.is-meeting-list .task-tabs-more {
+  display: none !important;
+}
+
+/* Density: medium — dual full titles; sizes come from JS scale vars */
+.task-panel.density-md {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.task-panel.density-md .panel-heading-row,
+.task-panel.density-md .task-list-toolbar {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+.task-panel.density-md .list-kind-switch {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.task-panel.density-md .task-list-toolbar .quick-add {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.task-panel.density-md .task-list-toolbar .quick-add input {
+  min-width: 0;
+}
+.task-panel.density-md .task-tabs button {
+  font-size: 10px;
+  padding: 5px 2px;
+}
+
+/* Density: small — kind dropdown with full「待办清单」 */
+.task-panel.density-sm {
+  padding-top: 18px;
+}
+.task-panel.density-sm .list-kind-menu {
+  flex: 1 1 auto;
+  max-width: calc(100% - var(--task-side-action-w) - 12px);
+}
+.task-panel.density-sm .task-tabs span {
+  margin-left: 1px;
+  font-size: 9px;
+}
+
+/* Density: extra-small — hide counts, tighter tabs */
+.task-panel.density-xs {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.task-panel.density-xs .task-tabs span,
+.task-panel.density-xs .meeting-tabs span {
+  display: none;
+}
+.task-panel.density-xs .eyebrow {
+  font-size: 8px;
+}
+.task-panel.density-xs .task-tabs button {
+  font-size: 10px;
+  letter-spacing: -.03em;
+}
+.task-panel.density-xs .list-kind-menu {
+  flex: 1 1 auto;
+  max-width: calc(100% - var(--task-side-action-w) - 10px);
 }
 
 .entry-link-confirm-message,
@@ -3369,11 +3611,38 @@ body.in-desktop.glass-mode .week-strip {
     linear-gradient(180deg, rgba(255, 255, 255, .10), transparent 55%),
     linear-gradient(180deg, rgba(8, 22, 36, .72), rgba(6, 16, 28, .58));
 }
-body.in-desktop.glass-mode .task-panel,
-body.in-desktop.glass-mode .schedule-panel,
 body.in-desktop.glass-mode .workspace {
-  /* Keep glass feel but stop desktop content bleeding through scroll areas. */
+  /* Day view uses display:contents; keep transparent so panels are not double-tinted. */
+  background: transparent;
+}
+body.in-desktop.glass-mode .task-panel,
+body.in-desktop.glass-mode .schedule-panel {
+  /* Single frosted plate — do not paint separate chrome strips on heading/toolbar. */
   background: rgba(6, 16, 28, .62);
+}
+body.in-desktop.glass-mode .list-kind-menu-trigger {
+  color: #f4fbff;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .78);
+}
+body.in-desktop.glass-mode .list-kind-menu-caret {
+  color: #c7dbe8;
+}
+body.in-desktop.glass-mode .list-kind-menu-panel {
+  background: rgba(8, 22, 36, .94);
+  border-color: rgba(181, 218, 239, .34);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .38);
+  color: #f4fbff;
+}
+body.in-desktop.glass-mode .list-kind-menu-item {
+  color: #d7e7f1;
+}
+body.in-desktop.glass-mode .list-kind-menu-item:hover,
+body.in-desktop.glass-mode .list-kind-menu-item.active {
+  background: rgba(143, 224, 215, .16);
+  color: #8fe0d7;
 }
 body.in-desktop.glass-mode .schedule-heading {
   min-height: 58px;
@@ -3414,23 +3683,26 @@ body.in-desktop.glass-mode .quick-add-new-btn:hover {
   color: #fff;
   border-color: rgba(143, 224, 215, .9);
 }
-body.in-desktop.glass-mode .task-search-icon-wrap {
-  color: rgba(232, 244, 252, .78);
+body.in-desktop.glass-mode .task-side-control {
+  color: #a9bac7 !important;
 }
-body.in-desktop.glass-mode .task-search:focus-within .task-search-icon-wrap,
-body.in-desktop.glass-mode .task-search.has-query .task-search-icon-wrap {
-  color: #fff;
+body.in-desktop.glass-mode .task-search {
+  border-bottom-color: rgba(172, 211, 233, .42) !important;
+}
+body.in-desktop.glass-mode .task-search:focus-within,
+body.in-desktop.glass-mode .task-search.has-query {
+  color: #fff !important;
+  border-bottom-color: var(--accent) !important;
 }
 body.in-desktop.glass-mode .task-search input[type="search"] {
-  color: #ffffff;
+  color: inherit;
   background: transparent;
-  border-bottom-color: rgba(172, 211, 233, .42);
   caret-color: #8fe0d7;
   box-shadow: none;
   text-shadow: none;
 }
 body.in-desktop.glass-mode .task-search input[type="search"]::placeholder {
-  color: #a9bac7;
+  color: inherit;
 }
 body.in-desktop.glass-mode .quick-add input {
   color: #ffffff;
@@ -3443,15 +3715,28 @@ body.in-desktop.glass-mode .quick-add input {
 body.in-desktop.glass-mode .quick-add input::placeholder {
   color: #a9bac7;
 }
+body.in-desktop.glass-mode .list-kind-option {
+  color: #a9bac7;
+  text-shadow: none;
+}
+body.in-desktop.glass-mode .list-kind-option:hover,
+body.in-desktop.glass-mode .list-kind-option.active {
+  color: #f4fbff;
+  text-shadow: 0 1px 3px rgba(0,0,0,.82);
+}
+body.in-desktop.glass-mode .list-kind-sep {
+  color: #7f93a3;
+}
 body.in-desktop.glass-mode .task-continue-yesterday,
 body.in-desktop.glass-mode .soft-button.task-continue-yesterday {
-  color: #ffffff !important;
+  color: #a9bac7 !important;
   background: transparent !important;
   border: 0 !important;
   border-bottom: 1px solid transparent !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   text-shadow: none;
+  font: var(--task-side-font) !important;
 }
 body.in-desktop.glass-mode .task-continue-yesterday:hover,
 body.in-desktop.glass-mode .task-continue-yesterday.active {
@@ -3608,6 +3893,7 @@ body.in-desktop.glass-mode .project-scale-switcher button.active {
 }
 body.in-desktop.glass-mode h2,
 body.in-desktop.glass-mode .panel-heading h2,
+body.in-desktop.glass-mode .list-kind-option.active,
 body.in-desktop.glass-mode .schedule-heading h2,
 body.in-desktop.glass-mode .task-body strong,
 body.in-desktop.glass-mode .task-group-heading strong,
@@ -3989,16 +4275,15 @@ body.in-desktop.glass-mode textarea { color: #f3f8fb; }
 body.in-desktop.glass-mode input::placeholder,
 body.in-desktop.glass-mode textarea::placeholder { color: #8298a7; }
 body.in-desktop.glass-mode .task-search input[type="search"] {
-  color: #ffffff;
+  color: inherit;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid rgba(172, 211, 233, .42);
   border-radius: 0;
   caret-color: #8fe0d7;
   box-shadow: none;
 }
 body.in-desktop.glass-mode .task-search input[type="search"]::placeholder {
-  color: #a9bac7;
+  color: inherit;
 }
 body.in-desktop.glass-mode .modal {
   color: #f3f8fb;
@@ -4856,14 +5141,23 @@ body.in-desktop.shell-focus .panel-heading {
   margin: 0 0 10px;
   padding: 2px 2px 0;
 }
-body.in-desktop.shell-focus .panel-heading-row {
-  flex-wrap: wrap;
+body.in-desktop.shell-focus .panel-heading-row,
+body.in-desktop.shell-focus .task-list-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px 10px;
   margin-top: 0;
 }
-body.in-desktop.shell-focus .panel-heading-row h2 {
-  font: 600 16px/1.2 "PingFang SC", "Microsoft YaHei", sans-serif;
+body.in-desktop.shell-focus .task-panel.density-md .panel-heading-row {
+  flex-direction: row;
+  align-items: center;
+}
+body.in-desktop.shell-focus .list-kind-menu-trigger,
+body.in-desktop.shell-focus .panel-heading-row h2,
+body.in-desktop.shell-focus .list-kind-option,
+body.in-desktop.shell-focus .list-kind-sep {
+  font: 600 var(--task-title-size)/1.2 "PingFang SC", "Microsoft YaHei", sans-serif;
   letter-spacing: 0;
 }
 body.in-desktop.shell-focus .task-count-inline {
@@ -4872,14 +5166,12 @@ body.in-desktop.shell-focus .task-count-inline {
   font-weight: 500;
   opacity: .72;
 }
-body.in-desktop.shell-focus .panel-heading-actions {
-  flex: 1 1 auto;
-  max-width: none;
-  justify-content: flex-end;
-  order: 0;
-}
-body.in-desktop.shell-focus .panel-heading-row h2 {
-  font-size: clamp(15px, 4.2vw, 18px);
+body.in-desktop.shell-focus .panel-heading-actions,
+body.in-desktop.shell-focus .task-side-slot {
+  flex: 0 0 var(--task-side-action-w);
+  width: var(--task-side-action-w);
+  min-width: var(--task-side-action-w);
+  max-width: var(--task-side-action-w);
 }
 body.in-desktop.shell-focus .quick-add {
   max-width: none;
@@ -4932,14 +5224,10 @@ body.in-desktop.shell-focus.glass-mode .task-count-inline {
   color: rgba(232, 244, 252, .7);
 }
 
-/* Mid-narrow: keep title + add button on one row. */
-body.in-desktop.shell-compact-topbar:not(.shell-focus) .panel-heading-row {
-  flex-wrap: nowrap;
-  gap: 8px;
-}
-body.in-desktop.shell-compact-topbar:not(.shell-focus) .panel-heading-actions {
-  flex: 0 0 auto;
-  max-width: none;
+/* Mid-narrow: keep title/search and add/continue wrapping without overlap. */
+body.in-desktop.shell-compact-topbar:not(.shell-focus) .panel-heading-row,
+body.in-desktop.shell-compact-topbar:not(.shell-focus) .task-list-toolbar {
+  gap: 8px 10px;
 }
 body.in-desktop.shell-compact-topbar:not(.shell-focus) .quick-add {
   max-width: none;
@@ -4970,7 +5258,9 @@ body.in-desktop.shell-compact-topbar .week-strip[hidden] {
 }
 /* Keep focus glass on the same panel tint as wide windows; schedule is hard-hidden
    so an extra-opaque plate is unnecessary and made the body look black vs gray topbar. */
-body.in-desktop.shell-focus.glass-mode .workspace,
+body.in-desktop.shell-focus.glass-mode .workspace {
+  background: transparent;
+}
 body.in-desktop.shell-focus.glass-mode .task-panel {
   background: rgba(6, 16, 28, .62);
 }
