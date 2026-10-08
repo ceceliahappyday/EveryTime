@@ -30,5 +30,7 @@ contextBridge.exposeInMainWorld("desktopAPI", {
   loadPlannerData: () => ipcRenderer.invoke("data:load-store"),
   savePlannerData: data => ipcRenderer.invoke("data:save-store", data),
   exportData: (filename, format, data) => ipcRenderer.invoke("data:export", filename, format, data),
-  importData: () => ipcRenderer.invoke("data:import")
+  importData: () => ipcRenderer.invoke("data:import"),
+  exportTables: (filename, tables) => ipcRenderer.invoke("data:export-tables", filename, tables),
+  writeClipboardText: text => ipcRenderer.invoke("clipboard:write-text", text)
 });

@@ -87,13 +87,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   [
     "todaySummary", "monthLabel", "monthPickerButton", "datePicker", "dateControls", "dateNavPrev", "dateNavNext",
     "appVersionBadge",
-    "todayButton", "weekDays", "taskCount", "taskList", "taskListSearch", "taskSearchWrap", "continueYesterdayButton", "unplannedCount", "openCount", "doneCount", "closedCount", "memoCount", "exportButton",
+    "todayButton", "weekDays", "taskCount", "taskList", "taskListSearch", "taskSearchWrap", "continueYesterdayButton", "unplannedCount", "openCount", "doneCount", "closedCount", "memoCount", "meetingCount", "exportButton",
     "plannedHours", "progressLabel", "progressBar", "scheduleTitle", "loggedHours", "freeHours",
     "timeline", "timelineWrap", "projectGanttChrome", "quickAddButton", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "workspaceSplitHandle", "viewSwitcher",
     "taskTabs", "allCount", "taskViewTitle", "taskDialog", "taskEditForm", "taskDialogEyebrow", "taskDialogTitle",
     "taskDetailSummary", "followUpDraftHint", "taskDialogScroll", "taskDialogCloseButton", "taskDialogCancelButton",
     "taskTabsWrap", "taskTabsMore", "taskTabsMoreButton", "taskTabsMoreMenu",
-    "taskTitleInput", "taskDueDateTime", "taskOwner", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
+    "taskTitleInput", "taskDueDateTime", "taskOwner", "taskParentField", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
     "taskProgress", "taskProgressValue", "taskStatus", "taskMonthlyRecurring", "taskRecurringUntil",
     "taskFollowUpOption", "taskFollowUpTracking",
     "recurringOptions", "taskActualStart", "taskActualEnd",
@@ -102,15 +102,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     "taskSubtaskList", "taskSubtaskDraftInput", "taskSubtasksSection",
     "deleteTaskButton", "closeTaskButton", "mergeTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle", "entryType",
     "entryLinkConfirmDialog", "entryLinkConfirmTitle", "entryLinkConfirmMessage", "entryLinkConfirmOptions", "entryLinkConfirmCancel", "entryLinkConfirmCreate",
-    "taskCloseConfirmDialog", "taskCloseConfirmTitle", "taskCloseConfirmMessage", "taskCloseOnlyButton", "taskCloseFollowUpButton",
+    "taskCloseConfirmDialog", "taskCloseConfirmTitle", "taskCloseConfirmMessage", "taskCloseCompletedAt", "taskCloseCompletionNote", "taskCloseOnlyButton", "taskCloseFollowUpButton", "taskCloseSuccessorButton",
     "taskMergeDialog", "taskMergeForm", "taskMergeMessage", "taskMergeTarget", "taskMergeSearch", "taskMergeOptions",
     "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
     "updateProgress", "updateProgressText", "updateProgressBar",
-    "exportDialog", "exportForm", "exportFormat", "importButton", "minimizeWindow", "maximizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiQuickActions",
+    "exportDialog", "exportForm", "exportFormat", "importButton", "minimizeWindow", "maximizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiExportTablesButton", "aiQuickActions",
     "aiChatLog", "aiAttachment", "aiAttachmentPreview", "aiAttachmentClear", "aiImageInput", "aiAttachImageButton", "aiSubmitButton", "aiScreenshotHintButton",
     "taskAiDropzone", "taskAiDropzoneBody", "taskAiDropzoneStatus", "taskAiImageInput", "taskAiPickImageButton",
-    "aiBatchDraftDialog", "aiBatchDraftForm", "aiBatchDraftTitle", "aiBatchDraftHint", "aiBatchDraftList", "aiBatchSelectAllButton", "aiBatchCreateButton",
+    "aiBatchDraftDialog", "aiBatchDraftForm", "aiBatchDraftTitle", "aiBatchDraftHint", "aiBatchDraftList", "aiBatchSharedParent", "aiBatchApplyParentButton", "aiBatchSelectAllButton", "aiBatchCreateButton",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "taskPanelToggle",
     "focusViewChrome", "focusViewButton", "focusViewMenu",
@@ -452,11 +452,32 @@ function bindEvents() {
     event.stopPropagation();
     closeDialogById("taskDialog");
   });
+  el.taskDialog?.addEventListener("close", () => {
+    if (suppressParentReviewAdvance) return;
+    if (parentReviewAdvanceOnClose) {
+      parentReviewAdvanceOnClose = false;
+      scheduleParentReviewAdvance();
+      return;
+    }
+    if (parentReviewPausedForFollowUp) {
+      parentReviewPausedForFollowUp = false;
+      scheduleParentReviewAdvance();
+    }
+  });
   el.deleteTaskButton.addEventListener("click", deleteEditingTask);
   el.closeTaskButton.addEventListener("click", closeEditingTask);
-  el.taskCloseOnlyButton?.addEventListener("click", () => confirmCloseTaskChoice(false));
-  el.taskCloseFollowUpButton?.addEventListener("click", () => confirmCloseTaskChoice(true));
-  el.taskCloseConfirmDialog?.addEventListener("close", () => { pendingCloseTaskId = null; });
+  el.taskCloseOnlyButton?.addEventListener("click", () => confirmCloseTaskChoice("only"));
+  el.taskCloseFollowUpButton?.addEventListener("click", () => confirmCloseTaskChoice("tracking"));
+  el.taskCloseSuccessorButton?.addEventListener("click", () => confirmCloseTaskChoice("successor"));
+  el.taskCloseConfirmDialog?.addEventListener("close", () => {
+    const cancelledId = pendingCloseTaskId;
+    pendingCloseTaskId = null;
+    if (cancelledId && parentReviewResumeTaskId === cancelledId) {
+      parentReviewResumeTaskId = null;
+      pendingParentReviewQueue.unshift(cancelledId);
+      scheduleParentReviewAdvance();
+    }
+  });
   el.taskProgress.addEventListener("input", () => el.taskProgressValue.textContent = `${el.taskProgress.value}%`);
   el.taskStatus.addEventListener("change", updateProgressAvailability);
   el.taskParent.addEventListener("change", updateParentRequirements);
@@ -464,6 +485,11 @@ function bindEvents() {
   el.taskPriority.addEventListener("change", () => {
     syncMonthlyRecurringFromPriority();
     updateRecurringOptions();
+    restoreTaskStatusOptions({
+      status: el.taskStatus?.value || "planned",
+      priority: el.taskPriority.value
+    });
+    updateProgressAvailability();
   });
   el.taskMonthlyRecurring?.addEventListener("change", updateRecurringOptions);
   [el.taskDueDateTime, el.taskActualStart, el.taskActualEnd].forEach(enableNativePicker);
@@ -1128,12 +1154,18 @@ async function initDesktop() {
     el.aiPrompt.focus();
   });
   el.aiForm?.addEventListener("submit", event => { event.preventDefault(); submitAiAssistant(); });
-  el.aiCopyButton?.addEventListener("click", async () => {
+  el.aiCopyButton?.addEventListener("click", async event => {
+    event.preventDefault();
+    event.stopPropagation();
     const text = getAiCopyText();
-    if (!text) return;
-    await navigator.clipboard?.writeText(text);
-    showToast("AI 结果已复制");
+    if (!text) {
+      showToast("暂无可复制的 AI 结果");
+      return;
+    }
+    const ok = await copyTextToClipboard(text);
+    showToast(ok ? "AI 结果已复制" : "复制失败，请手动选择文本复制");
   });
+  el.aiExportTablesButton?.addEventListener("click", () => exportLatestAiTables());
   el.aiAttachImageButton?.addEventListener("click", () => el.aiImageInput?.click());
   el.aiImageInput?.addEventListener("change", async () => {
     const file = el.aiImageInput.files?.[0];
@@ -1142,6 +1174,14 @@ async function initDesktop() {
   });
   el.aiAttachmentClear?.addEventListener("click", clearAiAttachment);
   el.aiPrompt?.addEventListener("paste", event => handleAiImagePaste(event));
+  el.aiPrompt?.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    if (event.isComposing || event.keyCode === 229) return;
+    // Enter / Ctrl+Enter / Cmd+Enter 发送；Shift+Enter 换行
+    if (event.shiftKey && !event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    submitAiAssistant();
+  });
   el.aiDialog?.addEventListener("dragover", event => {
     if (![...event.dataTransfer?.types || []].includes("Files")) return;
     event.preventDefault();
@@ -1332,8 +1372,8 @@ function openAiDialog() {
   el.aiPrompt.value = "";
   clearAiAttachment();
   aiChatMessages = [];
-  renderAiChatLog();
-  el.aiStatus.textContent = "可查询本地任务，或附加截图直接创建 1 条待办。";
+  syncAiExportTablesButton();
+  el.aiStatus.textContent = "在下方消息框输入后发送；回复会显示在同一框内。";
   if (el.aiResult) {
     el.aiResult.textContent = "";
     el.aiResult.classList.add("hidden");
@@ -1342,32 +1382,132 @@ function openAiDialog() {
   setTimeout(() => el.aiPrompt?.focus(), 40);
 }
 
-function renderAiChatLog() {
-  if (!el.aiChatLog) return;
-  if (!aiChatMessages.length) {
-    el.aiChatLog.innerHTML = `<div class="ai-chat-bubble assistant"><span class="ai-chat-meta">助手</span>在这里提问，或粘贴截图后发送以创建待办。</div>`;
-    return;
+function showAiMessageInBox(text = "") {
+  const value = String(text || "");
+  if (el.aiPrompt) {
+    el.aiPrompt.value = value;
+    el.aiPrompt.scrollTop = 0;
   }
-  el.aiChatLog.innerHTML = aiChatMessages.map(item => `
-    <div class="ai-chat-bubble ${escapeHtml(item.role)}">
-      <span class="ai-chat-meta">${item.role === "user" ? "我" : "助手"}</span>${escapeHtml(item.text)}
-    </div>
-  `).join("");
-  el.aiChatLog.scrollTop = el.aiChatLog.scrollHeight;
+  if (el.aiResult) el.aiResult.textContent = value;
 }
 
-function appendAiChat(role, text) {
-  aiChatMessages.push({ role, text: String(text || "").trim() });
-  renderAiChatLog();
-  if (el.aiResult) {
-    el.aiResult.textContent = aiChatMessages.filter(item => item.role === "assistant").map(item => item.text).join("\n\n");
-  }
+function appendAiChat(role, text, meta = {}) {
+  const tables = Array.isArray(meta.tables) ? meta.tables : [];
+  const content = String(text || "").trim();
+  aiChatMessages.push({ role, text: content, tables });
+  if (role === "assistant") showAiMessageInBox(content);
+  syncAiExportTablesButton();
 }
 
 function getAiCopyText() {
-  const assistants = aiChatMessages.filter(item => item.role === "assistant").map(item => item.text).filter(Boolean);
+  const assistants = aiChatMessages
+    .filter(item => item.role === "assistant")
+    .map(item => item.text)
+    .filter(text => String(text || "").trim());
   if (assistants.length) return assistants[assistants.length - 1];
+  const fromBox = el.aiPrompt?.value?.trim() || "";
+  if (fromBox) return fromBox;
   return el.aiResult?.textContent?.trim() || "";
+}
+
+async function copyTextToClipboard(text = "") {
+  const value = String(text || "");
+  if (!value) return false;
+  if (window.desktopAPI?.writeClipboardText) {
+    try {
+      await window.desktopAPI.writeClipboardText(value);
+      return true;
+    } catch {
+      /* fall through */
+    }
+  }
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const area = document.createElement("textarea");
+    area.value = value;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.left = "-9999px";
+    area.style.top = "0";
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function getLatestAiTables() {
+  for (let i = aiChatMessages.length - 1; i >= 0; i -= 1) {
+    const tables = aiChatMessages[i]?.tables;
+    if (tables?.length) return tables;
+  }
+  return [];
+}
+
+function syncAiExportTablesButton() {
+  const tables = getLatestAiTables();
+  if (!el.aiExportTablesButton) return;
+  el.aiExportTablesButton.classList.toggle("hidden", !tables.length);
+  el.aiExportTablesButton.textContent = tables.length
+    ? `下载 Excel（${tables.length} 张表）`
+    : "下载 Excel";
+}
+
+function buildFallbackAiTables(context = {}, question = "") {
+  const tasks = Array.isArray(context.tasks) ? context.tasks : [];
+  if (!tasks.length) return [];
+  const openOnly = /未完成/.test(question);
+  const list = openOnly
+    ? tasks.filter(task => !["done", "closed"].includes(task.status))
+    : tasks;
+  if (!list.length) return [];
+  return [{
+    name: openOnly ? "未完成任务" : "任务明细",
+    headers: ["任务", "状态", "优先级", "责任人", "截止日期", "计划工时", "投入工时"],
+    rows: list.map(task => [
+      task.title || "",
+      statusLabel(task.status),
+      priorityLabel(task.priority),
+      task.owner || "",
+      task.dueDate || "",
+      Number(task.scheduledHours || 0),
+      Number(task.actualHours || 0)
+    ])
+  }];
+}
+
+async function exportAiTables(tables = []) {
+  const list = Array.isArray(tables) ? tables : [];
+  if (!list.length) {
+    showToast("当前没有可下载的表格");
+    return;
+  }
+  const filename = `EveryTime-AI表格-${toDateKey(new Date())}.xlsx`;
+  if (!window.desktopAPI?.exportTables) {
+    showToast("请在桌面版下载 Excel 表格");
+    return;
+  }
+  try {
+    const saved = await window.desktopAPI.exportTables(filename, list);
+    showToast(saved ? "Excel 表格已保存" : "已取消保存");
+  } catch (error) {
+    showToast(error?.message || "表格导出失败");
+  }
+}
+
+function exportLatestAiTables() {
+  return exportAiTables(getLatestAiTables());
 }
 
 function clearAiAttachment() {
@@ -1417,6 +1557,7 @@ function buildAiContext(startKey, endKey) {
 }
 
 async function submitAiAssistant() {
+  if (aiExtractBusy || el.aiPrompt?.disabled) return;
   if (aiPendingAttachment) {
     await extractAndCreateTaskFromImage({
       attachment: aiPendingAttachment,
@@ -1440,17 +1581,30 @@ async function askAi() {
   }
   const startKey = el.aiPeriodStart.value || "1900-01-01";
   const endKey = el.aiPeriodEnd.value || "2999-12-31";
+  const context = buildAiContext(startKey, endKey);
   appendAiChat("user", question);
-  el.aiPrompt.value = "";
   el.aiStatus.textContent = "正在整理本地任务数据并请求 AI…";
+  el.aiPrompt.disabled = true;
   try {
-    const result = await window.desktopAPI.aiAsk({ question, rangeLabel: `${startKey} 至 ${endKey}`, context: buildAiContext(startKey, endKey) });
-    appendAiChat("assistant", result);
-    el.aiStatus.textContent = "已完成。结果只来自当前应用数据。";
-    el.aiDialogScroll?.scrollTo?.({ top: el.aiDialogScroll.scrollHeight, behavior: "smooth" });
+    const result = await window.desktopAPI.aiAsk({ question, rangeLabel: `${startKey} 至 ${endKey}`, context });
+    const rawText = typeof result === "string" ? result : (result?.text || "");
+    const parsed = (typeof AiAnswerPolicy !== "undefined" && AiAnswerPolicy.parseAssistantAnswer)
+      ? AiAnswerPolicy.parseAssistantAnswer(rawText)
+      : { displayText: rawText, tables: [] };
+    let tables = parsed.tables || [];
+    if (!tables.length && (AiAnswerPolicy?.wantsTableExport?.(question) || /表格|明细|清单|汇总/.test(question))) {
+      tables = buildFallbackAiTables(context, question);
+    }
+    appendAiChat("assistant", parsed.displayText || rawText, { tables });
+    el.aiStatus.textContent = tables.length
+      ? `已完成。可下载 Excel（${tables.length} 张表）。清空或改写后可继续提问。`
+      : "已完成。清空或改写后可继续提问。";
   } catch (error) {
     el.aiStatus.textContent = error?.message || "AI 请求失败";
     appendAiChat("assistant", "请检查设置中的 API Key、模型名称和网络连接。");
+  } finally {
+    el.aiPrompt.disabled = false;
+    el.aiPrompt.focus();
   }
 }
 
@@ -1566,13 +1720,14 @@ function createTaskFromAiDraft(draft = {}, { persist = true } = {}) {
   const now = new Date();
   const dueDate = String(draft.dueDate || "").trim();
   const dueTime = String(draft.dueTime || "").trim();
+  const parentId = String(draft.parentId || "").trim();
   const task = {
     id: crypto.randomUUID(),
     title: String(draft.title || "").trim().slice(0, 80),
     dueDate,
     dueTime: dueDate ? (dueTime || defaultWorkEndTime()) : "",
     owner: String(draft.owner || "我").trim().slice(0, 30) || "我",
-    parentId: "",
+    parentId,
     description: "",
     priority: draft.priority || "general_daily",
     progress: 0,
@@ -1591,6 +1746,7 @@ function createTaskFromAiDraft(draft = {}, { persist = true } = {}) {
     createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
   };
   if (!task.title) throw new Error("截图中未能识别出待办名称");
+  if (task.parentId && !findTask(task.parentId)?.task) task.parentId = "";
   const dayKey = dueDate || state.selectedDate;
   getDay(dayKey).tasks.unshift(task);
   if (persist) {
@@ -1620,6 +1776,40 @@ function createTasksFromAiDrafts(drafts = []) {
 
 let pendingAiBatchDrafts = [];
 let pendingAiBatchSource = "task-dialog";
+let pendingParentReviewQueue = [];
+let parentReviewAdvanceOnClose = false;
+let suppressParentReviewAdvance = false;
+let parentReviewResumeTaskId = null;
+let parentReviewPausedForFollowUp = false;
+
+function beginParentReviewQueue(tasks = []) {
+  pendingParentReviewQueue = (tasks || []).map(task => task?.id).filter(Boolean);
+  parentReviewResumeTaskId = null;
+  openNextParentReviewTask();
+}
+
+function scheduleParentReviewAdvance() {
+  if (!pendingParentReviewQueue.length) {
+    parentReviewAdvanceOnClose = false;
+    return;
+  }
+  requestAnimationFrame(() => openNextParentReviewTask());
+}
+
+function openNextParentReviewTask() {
+  while (pendingParentReviewQueue.length) {
+    const id = pendingParentReviewQueue.shift();
+    const task = findTask(id)?.task;
+    if (!task || TaskStatusPolicy.isEndedStatus(task.status)) continue;
+    openTaskDialog(task, {
+      mode: "parentReview",
+      queueLeft: pendingParentReviewQueue.length
+    });
+    return true;
+  }
+  parentReviewAdvanceOnClose = false;
+  return false;
+}
 
 function priorityOptionsHtml(selected = "general_daily") {
   return [
@@ -1633,8 +1823,80 @@ function priorityOptionsHtml(selected = "general_daily") {
   ).join("");
 }
 
+function getAiBatchParentCandidateTasks() {
+  return uniqueTasks(getAllTasks().map(({ task }) => task));
+}
+
+function suggestAiBatchParent(title = "", priority = "") {
+  if (typeof TaskOptionPolicy?.suggestParentForTitle !== "function") return null;
+  return TaskOptionPolicy.suggestParentForTitle({
+    title,
+    priority,
+    tasks: getAiBatchParentCandidateTasks(),
+    isHiddenFutureRecurringInstance
+  });
+}
+
+function aiBatchParentOptionsHtml(selectedId = "", extraIds = []) {
+  const tasks = getAiBatchParentCandidateTasks();
+  const byId = new Map(tasks.map(task => [task.id, task]));
+  const browse = TaskOptionPolicy.parentPickerBrowseCandidates({
+    tasks,
+    selectedId,
+    isHiddenFutureRecurringInstance,
+    limit: 60
+  }).map(item => item.task);
+  const seen = new Set();
+  const list = [];
+  const push = task => {
+    if (!task?.id || seen.has(task.id) || ["done", "closed"].includes(task.status)) return;
+    if (isHiddenFutureRecurringInstance(task)) return;
+    seen.add(task.id);
+    list.push(task);
+  };
+  if (selectedId && byId.has(selectedId)) push(byId.get(selectedId));
+  (extraIds || []).forEach(id => {
+    if (id && byId.has(id)) push(byId.get(id));
+  });
+  browse.forEach(push);
+  return [
+    `<option value="">不选择，作为顶层任务</option>`,
+    ...list.flatMap(task => {
+      const path = TaskOptionPolicy.taskHierarchyPath({ task, tasks }) || String(task.title || "").trim();
+      if (!TodoListPolicy.hasDisplayTitle(path)) return [];
+      const selected = task.id === selectedId ? " selected" : "";
+      return [`<option value="${escapeHtml(task.id)}"${selected}>${escapeHtml(path)}</option>`];
+    })
+  ].join("");
+}
+
+function syncAiBatchSharedParentOptions(preferredIds = []) {
+  if (!el.aiBatchSharedParent) return;
+  const current = el.aiBatchSharedParent.value || "";
+  el.aiBatchSharedParent.innerHTML = aiBatchParentOptionsHtml(current, preferredIds);
+  if (current && [...el.aiBatchSharedParent.options].some(option => option.value === current)) {
+    el.aiBatchSharedParent.value = current;
+  }
+}
+
 function openAiBatchDraftDialog(drafts = [], source = "task-dialog") {
-  pendingAiBatchDrafts = drafts.map(draft => ({ ...draft, selected: true }));
+  pendingAiBatchDrafts = drafts.map(draft => {
+    const title = String(draft.title || "").trim();
+    const priority = draft.priority || "general_daily";
+    const suggestion = suggestAiBatchParent(title, priority);
+    const parentId = String(draft.parentId || suggestion?.parentId || "").trim();
+    return {
+      ...draft,
+      title,
+      priority,
+      selected: true,
+      parentId,
+      suggestedParentId: suggestion?.parentId || "",
+      suggestedParentHint: suggestion
+        ? `建议：${suggestion.parent?.title || "上级"}（参考历史「${suggestion.sampleTitle || title}」）`
+        : ""
+    };
+  });
   pendingAiBatchSource = source;
   if (el.aiBatchDraftTitle) {
     el.aiBatchDraftTitle.textContent = drafts.length > 1
@@ -1643,9 +1905,11 @@ function openAiBatchDraftDialog(drafts = [], source = "task-dialog") {
   }
   if (el.aiBatchDraftHint) {
     el.aiBatchDraftHint.textContent = drafts.length > 1
-      ? "可勾选、修改后再批量创建。创建后会打开第一条供继续编辑。"
-      : "可修改后创建，创建后会打开编辑窗。";
+      ? "可勾选、修改并选择上级后一次创建。上级已按历史同类任务预填，可改。"
+      : "可修改并选择上级后创建。上级已按历史同类任务预填，可改。";
   }
+  const preferredIds = pendingAiBatchDrafts.map(draft => draft.parentId).filter(Boolean);
+  syncAiBatchSharedParentOptions(preferredIds);
   renderAiBatchDraftList();
   el.aiBatchDraftDialog?.showModal();
 }
@@ -1659,6 +1923,7 @@ function draftDueDateTimeValue(draft = {}) {
 
 function renderAiBatchDraftList() {
   if (!el.aiBatchDraftList) return;
+  const preferredIds = pendingAiBatchDrafts.map(draft => draft.parentId || draft.suggestedParentId).filter(Boolean);
   el.aiBatchDraftList.innerHTML = pendingAiBatchDrafts.map((draft, index) => `
     <section class="ai-batch-card" data-index="${index}">
       <div class="ai-batch-card-top">
@@ -1669,6 +1934,11 @@ function renderAiBatchDraftList() {
         <span class="form-hint">把握 ${Math.round((Number(draft.confidence) || 0) * 100)}%</span>
       </div>
       <label><span>待办名称</span><input type="text" data-field="title" maxlength="80" value="${escapeHtml(draft.title || "")}" /></label>
+      <label>
+        <span>上级任务</span>
+        <select data-field="parentId">${aiBatchParentOptionsHtml(draft.parentId || "", preferredIds)}</select>
+      </label>
+      ${draft.suggestedParentHint ? `<p class="ai-batch-parent-hint">${escapeHtml(draft.suggestedParentHint)}</p>` : ""}
       <label>
         <span>目标日期时间</span>
         <input type="datetime-local" data-field="dueDateTime" step="60" value="${escapeHtml(draftDueDateTimeValue(draft))}" />
@@ -1683,6 +1953,51 @@ function renderAiBatchDraftList() {
   el.aiBatchDraftList.querySelectorAll('input[data-field="dueDateTime"]').forEach(input => {
     bindWorkHourDateTimeDefault(input, "end");
   });
+  el.aiBatchDraftList.querySelectorAll('input[data-field="title"]').forEach(input => {
+    input.addEventListener("change", () => refreshAiBatchCardParentSuggestion(input.closest(".ai-batch-card")));
+  });
+  el.aiBatchDraftList.querySelectorAll('select[data-field="priority"]').forEach(select => {
+    select.addEventListener("change", () => refreshAiBatchCardParentSuggestion(select.closest(".ai-batch-card")));
+  });
+}
+
+function refreshAiBatchCardParentSuggestion(card) {
+  if (!card) return;
+  const index = Number(card.dataset.index);
+  const draft = pendingAiBatchDrafts[index];
+  if (!draft) return;
+  const titleInput = card.querySelector('[data-field="title"]');
+  const prioritySelect = card.querySelector('[data-field="priority"]');
+  const parentSelect = card.querySelector('[data-field="parentId"]');
+  if (!titleInput || !parentSelect) return;
+  const title = String(titleInput.value || "").trim();
+  const priority = String(prioritySelect?.value || draft.priority || "general_daily");
+  const suggestion = suggestAiBatchParent(title, priority);
+  const previousSuggested = draft.suggestedParentId || "";
+  const keepManual = parentSelect.value && parentSelect.value !== previousSuggested;
+  draft.title = title;
+  draft.priority = priority;
+  draft.suggestedParentId = suggestion?.parentId || "";
+  draft.suggestedParentHint = suggestion
+    ? `建议：${suggestion.parent?.title || "上级"}（参考历史「${suggestion.sampleTitle || title}」）`
+    : "";
+  if (!keepManual) {
+    draft.parentId = suggestion?.parentId || "";
+    const preferredIds = pendingAiBatchDrafts.map(item => item.parentId || item.suggestedParentId).filter(Boolean);
+    parentSelect.innerHTML = aiBatchParentOptionsHtml(draft.parentId, preferredIds);
+    parentSelect.value = draft.parentId || "";
+  }
+  let hint = card.querySelector(".ai-batch-parent-hint");
+  if (draft.suggestedParentHint) {
+    if (!hint) {
+      hint = document.createElement("p");
+      hint.className = "ai-batch-parent-hint";
+      parentSelect.closest("label")?.after(hint);
+    }
+    hint.textContent = draft.suggestedParentHint;
+  } else if (hint) {
+    hint.remove();
+  }
 }
 
 function collectAiBatchDraftsFromForm() {
@@ -1701,6 +2016,7 @@ function collectAiBatchDraftsFromForm() {
       dueTime,
       owner: String(read("owner")?.value || "我").trim().slice(0, 30) || "我",
       priority: String(read("priority")?.value || "general_daily"),
+      parentId: String(read("parentId")?.value || "").trim(),
       businessBackground: String(read("businessBackground")?.value || "").trim().slice(0, 800),
       confidence: pendingAiBatchDrafts[Number(card.dataset.index)]?.confidence
     };
@@ -1713,6 +2029,21 @@ function bindAiBatchDraftDialog() {
       input.checked = true;
     });
   });
+  el.aiBatchApplyParentButton?.addEventListener("click", () => {
+    const parentId = String(el.aiBatchSharedParent?.value || "").trim();
+    el.aiBatchDraftList?.querySelectorAll(".ai-batch-card").forEach(card => {
+      if (!card.querySelector('[data-field="selected"]')?.checked) return;
+      const select = card.querySelector('[data-field="parentId"]');
+      if (!select) return;
+      if (![...select.options].some(option => option.value === parentId)) {
+        select.innerHTML = aiBatchParentOptionsHtml(parentId, [parentId]);
+      }
+      select.value = parentId;
+      const index = Number(card.dataset.index);
+      if (pendingAiBatchDrafts[index]) pendingAiBatchDrafts[index].parentId = parentId;
+    });
+    showToast(parentId ? "已将统一上级应用到所选条目" : "已将所选条目设为顶层任务");
+  });
   el.aiBatchDraftForm?.addEventListener("submit", event => {
     event.preventDefault();
     const drafts = collectAiBatchDraftsFromForm();
@@ -1723,14 +2054,17 @@ function bindAiBatchDraftDialog() {
     try {
       const created = createTasksFromAiDrafts(drafts);
       el.aiBatchDraftDialog?.close();
+      const missingParent = created.filter(task => !task.parentId);
       showToast(created.length > 1 ? `已创建 ${created.length} 条待办` : `已创建「${created[0].title}」`);
       if (pendingAiBatchSource === "ai-dialog") {
-        appendAiChat("assistant", created.length > 1
-          ? `已批量创建 ${created.length} 条待办。已打开第一条供继续编辑。`
-          : `已创建待办「${created[0].title}」。已打开编辑窗，可继续调整。`);
+        appendAiChat("assistant", missingParent.length
+          ? `已批量创建 ${created.length} 条待办。其中 ${missingParent.length} 条尚未指定上级，将打开以便补充。`
+          : `已批量创建 ${created.length} 条待办，上级已按选择写入。`);
         el.aiStatus.textContent = created.length > 1 ? `已创建 ${created.length} 条待办。` : "已从截图创建待办。";
       }
-      requestAnimationFrame(() => openTaskDialog(created[0]));
+      if (missingParent.length) {
+        requestAnimationFrame(() => beginParentReviewQueue(missingParent));
+      }
     } catch (error) {
       showToast(error?.message || "创建失败");
     }
@@ -1772,15 +2106,23 @@ async function extractAndCreateTaskFromImage({ file = null, attachment = null, n
     if (source === "ai-dialog") el.aiPrompt.value = "";
     setTaskAiDropzoneStatus("");
     if (drafts.length === 1) {
-      const task = createTaskFromAiDraft(drafts[0]);
+      const suggestion = suggestAiBatchParent(drafts[0].title, drafts[0].priority);
+      const task = createTaskFromAiDraft({
+        ...drafts[0],
+        parentId: drafts[0].parentId || suggestion?.parentId || ""
+      });
       const confidence = Number(drafts[0].confidence);
       const hint = Number.isFinite(confidence) && confidence < 0.55 ? "（把握较低，请核对）" : "";
       showToast(`已从截图创建「${task.title}」${hint}`);
       if (source === "ai-dialog") {
-        appendAiChat("assistant", `已创建待办「${task.title}」。已打开编辑窗，可继续调整。`);
+        appendAiChat("assistant", task.parentId
+          ? `已创建待办「${task.title}」，并按历史同类任务写入上级。`
+          : `已创建待办「${task.title}」。尚未匹配到上级，已打开编辑窗以便补充。`);
         el.aiStatus.textContent = "已从截图创建待办。";
       }
-      requestAnimationFrame(() => openTaskDialog(task));
+      if (!task.parentId) {
+        requestAnimationFrame(() => beginParentReviewQueue([task]));
+      }
       return [task];
     }
     if (source === "ai-dialog") {
@@ -1878,13 +2220,16 @@ function renderUnifiedTodoList() {
     RecurringPolicy.currentMonthKey()
   ).filter(isTodoListTask);
   const workLeafTasks = allLeafTasks.filter(isWorkLeafTask);
-  const memoLeafTasks = allLeafTasks.filter(isMemoReminderTask);
+  const memoLeafTasks = allLeafTasks.filter(belongsInMemoList);
+  const meetingItems = getMeetingListItems();
 
-  updateTaskStats(workLeafTasks, memoLeafTasks);
+  updateTaskStats(workLeafTasks, memoLeafTasks, meetingItems);
 
   const query = (state.taskListSearch || el.taskListSearch?.value || "").trim();
-  let visibleTasks = allLeafTasks.filter(task => matchesUnifiedTaskFilter(task, state.filter));
-  if (query) {
+  let visibleTasks = state.filter === "meeting"
+    ? []
+    : allLeafTasks.filter(task => matchesUnifiedTaskFilter(task, state.filter));
+  if (query && state.filter !== "meeting") {
     const searchPool = state.filter === "memo" ? memoLeafTasks
       : state.filter === "all" ? allLeafTasks
         : workLeafTasks;
@@ -1899,7 +2244,11 @@ function renderUnifiedTodoList() {
     }).map(item => item.task);
   }
 
-  el.taskViewTitle.textContent = state.filter === "memo" ? "待跟踪" : "待办清单";
+  el.taskViewTitle.textContent = state.filter === "memo"
+    ? "待跟踪"
+    : state.filter === "meeting"
+      ? "会议清单"
+      : "待办清单";
   el.taskList.className = "task-list unified-view";
   el.taskList.innerHTML = "";
   el.taskTabs.classList.remove("hidden");
@@ -1930,12 +2279,22 @@ function renderUnifiedTodoList() {
   }
 
   let sections;
-  if (state.filter === "memo") {
+  if (state.filter === "meeting") {
+    const meetings = getMeetingListItems({ query });
+    const totalInvested = meetings.reduce((sum, item) => sum + item.investedHours, 0);
+    sections = meetings.length
+      ? [{
+        key: "meeting",
+        label: `会议投入（合计 ${trimNumber(totalInvested)}h）`,
+        tasks: meetings
+      }]
+      : [];
+  } else if (state.filter === "memo") {
     const memos = query
-      ? visibleTasks.filter(isMemoReminderTask)
+      ? visibleTasks.filter(belongsInMemoList)
       : TodoListPolicy.sortByCreatedAtDesc(memoLeafTasks);
     sections = memos.length
-      ? [{ key: "memo", label: "待跟踪（不计入投入）", tasks: memos }]
+      ? [{ key: "memo", label: "待跟踪", tasks: memos }]
       : [];
   } else {
     const workVisible = visibleTasks.filter(task => !isMemoReminderTask(task));
@@ -1959,10 +2318,22 @@ function renderUnifiedTodoList() {
       const remaining = sections.find(section => section.key === "remaining");
       if (remaining?.tasks.length) remaining.label = "其他任务";
       if (memoLeafTasks.length) {
+        const trackingMemos = memoLeafTasks.filter(isMemoReminderTask);
+        if (trackingMemos.length) {
+          sections.push({
+            key: "memo",
+            label: "待跟踪",
+            tasks: TodoListPolicy.sortByCreatedAtDesc(trackingMemos)
+          });
+        }
+      }
+      const allMeetings = getMeetingListItems({ query, recentDays: 30, futureDays: 14 });
+      if (allMeetings.length) {
+        const totalInvested = allMeetings.reduce((sum, item) => sum + item.investedHours, 0);
         sections.push({
-          key: "memo",
-          label: "待跟踪（不计入投入）",
-          tasks: TodoListPolicy.sortByCreatedAtDesc(memoLeafTasks)
+          key: "meeting",
+          label: `会议（近月合计 ${trimNumber(totalInvested)}h）`,
+          tasks: allMeetings
         });
       }
     }
@@ -1996,10 +2367,12 @@ function renderUnifiedTodoList() {
     el.taskList.innerHTML = `<div class="empty-state">${state.showContinueYesterdayOnly
       ? "昨天没有可继续的任务投入"
       : query
-        ? "没有匹配的待办任务"
+        ? (state.filter === "meeting" ? "没有匹配的会议" : "没有匹配的待办任务")
         : state.filter === "memo"
-          ? "暂无待跟踪事项<br>关闭任务并选择「关闭并跟踪」后会出现在这里"
-          : "当前分类没有待办任务<br>会议和普通日程只显示在右侧日程中"}</div>`;
+          ? "暂无待跟踪事项<br>可将优先级设为「跟踪关注」，或关闭任务时选择「关闭并跟踪」"
+          : state.filter === "meeting"
+            ? "暂无会议记录<br>在右侧日程新建「会议 / 日程」后，会在这里统计投入工时"
+            : "当前分类没有待办任务"}</div>`;
     return;
   }
 
@@ -2024,9 +2397,11 @@ function renderUnifiedTodoList() {
       el.taskList.appendChild(heading);
     }
     if (collapsed) return;
-    section.tasks.forEach(item => el.taskList.appendChild(
-      item.entryId ? createLinkedWorkCard(item) : createTaskCard(item)
-    ));
+    section.tasks.forEach(item => {
+      if (item.kind === "meeting") el.taskList.appendChild(createMeetingCard(item));
+      else if (item.entryId) el.taskList.appendChild(createLinkedWorkCard(item));
+      else el.taskList.appendChild(createTaskCard(item));
+    });
   });
 }
 
@@ -2036,6 +2411,72 @@ function getWorkEntriesByDate() {
     map[dateKey] = (day.entries || []).filter(entry => entry.entryType === "task_work");
   });
   return map;
+}
+
+function getMeetingListItems({ query = "", recentDays = 90, futureDays = 30 } = {}) {
+  const selected = fromDateKey(state.selectedDate);
+  const minKey = toDateKey(addDays(selected, -recentDays));
+  const maxKey = toDateKey(addDays(selected, futureDays));
+  const normalizedQuery = query ? TaskOptionPolicy.normalizeSearchText(query) : "";
+  const keywords = normalizedQuery.split(" ").filter(Boolean);
+  return getAllCalendarEntries()
+    .filter(({ dateKey, entry }) => {
+      if (dateKey < minKey || dateKey > maxKey) return false;
+      const title = String(entry.title || "").trim();
+      if (!TodoListPolicy.hasDisplayTitle(title)) return false;
+      if (!keywords.length) return true;
+      const searchable = TaskOptionPolicy.normalizeSearchText(
+        `${title} ${dateKey} ${entry.note || ""} 会议`
+      );
+      return keywords.every(keyword => searchable.includes(keyword));
+    })
+    .map(({ dateKey, entry }) => ({
+      kind: "meeting",
+      entryId: entry.id,
+      dateKey,
+      title: String(entry.title || "").trim(),
+      note: entry.note || "",
+      start: entry.start,
+      end: entry.end,
+      investedHours: getEntryInvestedHours(dateKey, entry),
+      plannedHours: Math.max(0, Number(entry.end) - Number(entry.start))
+    }))
+    .sort((a, b) =>
+      b.dateKey.localeCompare(a.dateKey) ||
+      Number(a.start) - Number(b.start) ||
+      a.title.localeCompare(b.title, "zh-CN")
+    );
+}
+
+function createMeetingCard(item) {
+  const card = document.createElement("article");
+  card.className = "task-card meeting-card has-priority";
+  card.draggable = true;
+  card.dataset.entryId = item.entryId;
+  const timeText = `${formatTime(item.start)}–${formatTime(item.end)}`;
+  const investText = `${trimNumber(item.investedHours)}h`;
+  card.title = `${item.title} · ${item.dateKey} ${timeText} · 已投入 ${investText}`;
+  card.innerHTML = `
+    <span class="meeting-dot" aria-hidden="true"></span>
+    <div class="task-body">
+      <strong>${escapeHtml(item.title)}</strong>
+      <span class="task-description">${escapeHtml(item.dateKey)} · ${escapeHtml(timeText)}</span>
+    </div>
+    <span class="priority-mark meeting-invest" title="已投入工时">${escapeHtml(investText)}</span>`;
+  card.addEventListener("click", () => {
+    const found = findEntry(item.entryId);
+    if (found) openEntryDialog(found.entry.start, found.entry, found.dateKey);
+  });
+  card.addEventListener("dragstart", event => {
+    card.classList.add("dragging");
+    event.dataTransfer.setData("text/entry-id", item.entryId);
+    event.dataTransfer.effectAllowed = "copy";
+  });
+  card.addEventListener("dragend", () => {
+    card.classList.remove("dragging");
+    clearDragHighlights();
+  });
+  return card;
 }
 
 function shiftDateKey(dateKey, deltaDays) {
@@ -2048,7 +2489,7 @@ function taskHasWorkHistory(taskId) {
 }
 
 function matchesUnifiedTaskFilter(task, filter) {
-  if (filter === "memo") return isMemoReminderTask(task);
+  if (filter === "memo") return belongsInMemoList(task);
   if (isMemoReminderTask(task)) return filter === "all";
   if (filter === "in_progress") return isOngoingTask(task);
   if (filter === "all") return true;
@@ -2336,7 +2777,7 @@ function projectStatusGroups(projects) {
 }
 
 function projectStatusLabel(status) {
-  return { unplanned: "未计划", planned: "计划中", in_progress: "进行中", tracking: "备忘", ended: "已关闭" }[status] || "计划中";
+  return { unplanned: "未计划", planned: "计划中", in_progress: "进行中", tracking: "待跟踪", ended: "已关闭" }[status] || "计划中";
 }
 
 function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
@@ -2779,24 +3220,29 @@ function materializeLinkedWorkLeaf(item) {
   return leaf;
 }
 
-function updateTaskStats(tasks, memoTasks = []) {
+function updateTaskStats(tasks, memoTasks = [], meetingItems = []) {
   tasks = uniqueTasks(tasks).filter(isWorkLeafTask);
-  const memos = uniqueTasks(memoTasks).filter(isMemoReminderTask);
+  const memos = uniqueTasks(memoTasks).filter(belongsInMemoList);
+  const trackingOnly = memos.filter(isMemoReminderTask);
+  const meetings = Array.isArray(meetingItems) ? meetingItems : [];
   const groups = {
     unplanned: tasks.filter(isUnplannedTask),
     planned: tasks.filter(task =>
       task.status === "planned" && !isUnplannedTask(task) && !isContainerOnlyTask(task)),
     inProgress: tasks.filter(task => task.status === "in_progress"),
     ended: tasks.filter(task => task.status === "done" || task.status === "closed"),
-    memo: memos
+    memo: memos,
+    meeting: meetings
   };
   el.unplannedCount.textContent = groups.unplanned.length;
   el.openCount.textContent = groups.planned.length;
   el.doneCount.textContent = groups.inProgress.length;
   el.closedCount.textContent = groups.ended.length;
   if (el.memoCount) el.memoCount.textContent = groups.memo.length;
-  el.allCount.textContent = tasks.length + groups.memo.length;
-  el.taskCount.textContent = tasks.length + groups.memo.length;
+  if (el.meetingCount) el.meetingCount.textContent = groups.meeting.length;
+  // 跟踪关注优先级任务已计入工作待办，全部计数只再叠加真正的备忘提醒
+  el.allCount.textContent = tasks.length + trackingOnly.length;
+  el.taskCount.textContent = tasks.length + trackingOnly.length;
   // 当天计划 = 工作日可用时长；完成进度 = 当日已投入时长 / 工作日时长。
   const workDayHours = Math.max(1, Number(state.workEndHour) - Number(state.workStartHour));
   const invested = taskDatesForView().reduce((sum, key) => {
@@ -2920,17 +3366,33 @@ function renderMonthCalendar() {
 }
 
 function restoreTaskStatusOptions(task) {
-  if (TaskStatusPolicy.isTrackingStatus(task)) {
+  const priority = el.taskPriority?.value || task?.priority || "general_daily";
+  const currentStatus = el.taskStatus?.value || task?.status || "planned";
+  const isTracking = TaskStatusPolicy.isTrackingStatus(task) || currentStatus === "tracking";
+  const allowTrackingChoice = isTracking || priority === "follow_up";
+
+  if (isTracking && priority !== "follow_up") {
     el.taskStatus.innerHTML = `
-      <option value="tracking" selected>备忘提醒（关注提醒，不计入投入）</option>
+      <option value="tracking" selected>待跟踪（关注提醒，不计入投入）</option>
       <option value="done">已完成 / 已关闭</option>`;
     return;
   }
+
+  const trackingOption = allowTrackingChoice
+    ? `<option value="tracking">待跟踪（关注提醒，不计入投入）</option>`
+    : "";
   el.taskStatus.innerHTML = `
     <option value="planned" disabled>计划中（尚未排入日程）</option>
     <option value="in_progress" disabled>进行中（已排入日程）</option>
+    ${trackingOption}
     <option value="done">已完成 / 已关闭</option>`;
-  el.taskStatus.value = task?.status || "planned";
+
+  if (currentStatus === "closed") el.taskStatus.value = "done";
+  else if (["planned", "in_progress", "tracking", "done"].includes(currentStatus)) {
+    el.taskStatus.value = currentStatus;
+  } else {
+    el.taskStatus.value = "planned";
+  }
 }
 
 function openNewTaskFromQuickAdd() {
@@ -2983,7 +3445,7 @@ function adaptTaskTabsOverflow() {
   const buttons = [...tabs.querySelectorAll("button[data-filter]")];
   if (!buttons.length) return;
 
-  const preferredCollapse = new Set(["ended", "memo"]);
+  const preferredCollapse = new Set(["ended", "meeting", "memo"]);
   buttons.forEach(btn => { btn.hidden = false; });
   more.hidden = true;
   closeTaskTabsMoreMenu();
@@ -3072,14 +3534,56 @@ function openTaskDialog(task = null, options = {}) {
   state.editingTaskId = task?.id || null;
   state.taskSubtaskDrafts = [];
   const followUpDraft = options.mode === "followUp";
-  el.taskEditForm?.classList.toggle("follow-up-draft", followUpDraft);
-  el.followUpDraftHint?.classList.toggle("hidden", !followUpDraft);
-  el.taskTitleField?.classList.toggle("follow-up-focus", followUpDraft);
-  el.taskDueDateField?.classList.toggle("follow-up-focus", followUpDraft);
-  el.businessBackgroundLabel?.classList.toggle("follow-up-focus", followUpDraft);
-  el.taskDialogEyebrow.textContent = followUpDraft ? "FOLLOW-UP" : (task ? "EDIT TASK" : "NEW TASK");
-  el.taskDialogTitle.textContent = followUpDraft ? "完善备忘提醒" : (task ? "编辑待办" : "新建待办");
-  el.taskAiDropzone?.classList.toggle("hidden", Boolean(task) || followUpDraft);
+  const successorDraft = options.mode === "successor";
+  const parentReview = options.mode === "parentReview";
+  if (parentReview) {
+    parentReviewAdvanceOnClose = true;
+  } else if (followUpDraft || successorDraft) {
+    parentReviewAdvanceOnClose = false;
+  } else {
+    pendingParentReviewQueue = [];
+    parentReviewAdvanceOnClose = false;
+    parentReviewResumeTaskId = null;
+    parentReviewPausedForFollowUp = false;
+  }
+  el.taskEditForm?.classList.toggle("follow-up-draft", followUpDraft || successorDraft || parentReview);
+  if (el.followUpDraftHint) {
+    if (parentReview) {
+      const left = Number(options.queueLeft) || 0;
+      el.followUpDraftHint.textContent = left
+        ? `请补充上级任务（也可继续完善其余字段）。保存或关闭后将打开下一条，还剩 ${left} 条。`
+        : "请补充上级任务（也可继续完善其余字段）。这是批量创建的最后一条。";
+      el.followUpDraftHint.classList.remove("hidden");
+    } else if (followUpDraft) {
+      el.followUpDraftHint.textContent = "请确认待办名称与目标完成日期，并补充背景说明。上级任务已与关闭任务保持一致。";
+      el.followUpDraftHint.classList.remove("hidden");
+    } else if (successorDraft) {
+      el.followUpDraftHint.textContent = "已按关闭任务生成后续待办：上级与来源一致，开始时间为关闭时刻。请确认名称与目标日期。";
+      el.followUpDraftHint.classList.remove("hidden");
+    } else {
+      el.followUpDraftHint.classList.add("hidden");
+    }
+  }
+  el.taskTitleField?.classList.toggle("follow-up-focus", followUpDraft || successorDraft);
+  el.taskDueDateField?.classList.toggle("follow-up-focus", followUpDraft || successorDraft);
+  el.businessBackgroundLabel?.classList.toggle("follow-up-focus", followUpDraft || successorDraft);
+  el.taskParentField?.classList.toggle("follow-up-focus", parentReview);
+  el.taskParentCombobox?.classList.toggle("follow-up-focus", parentReview);
+  el.taskDialogEyebrow.textContent = followUpDraft
+    ? "FOLLOW-UP"
+    : successorDraft
+      ? "SUCCESSOR"
+      : parentReview
+        ? "补充上级"
+        : (task ? "EDIT TASK" : "NEW TASK");
+  el.taskDialogTitle.textContent = followUpDraft
+    ? "完善备忘提醒"
+    : successorDraft
+      ? "完善后续任务"
+      : parentReview
+        ? "补充上级任务"
+        : (task ? "编辑待办" : "新建待办");
+  el.taskAiDropzone?.classList.toggle("hidden", Boolean(task) || followUpDraft || successorDraft || parentReview);
   setTaskAiDropzoneStatus("");
   el.taskTitleInput.value = task?.title || "";
   setTaskDueDateTime(task?.dueDate || "", task?.dueTime || "");
@@ -3107,21 +3611,21 @@ function openTaskDialog(task = null, options = {}) {
   }
   el.deleteTaskButton.classList.toggle("hidden", !task);
   el.mergeTaskButton?.classList.toggle("hidden", !task);
-  el.closeTaskButton.classList.toggle("hidden", !task || followUpDraft);
+  el.closeTaskButton.classList.toggle("hidden", !task || followUpDraft || successorDraft);
   el.closeTaskButton.textContent = task && TaskStatusPolicy.isEndedStatus(task.status) ? "恢复任务" : "关闭任务";
   // Follow-up choice lives on the close-confirm dialog (关闭并跟踪), not a buried checkbox.
   el.taskFollowUpOption?.classList.add("hidden");
   if (el.taskFollowUpTracking) el.taskFollowUpTracking.checked = false;
   if (el.businessBackgroundLabel?.querySelector("span")) {
-    el.businessBackgroundLabel.querySelector("span").textContent = followUpDraft
+    el.businessBackgroundLabel.querySelector("span").textContent = (followUpDraft || successorDraft)
       ? "背景与说明（来自已关闭任务）"
       : "背景与说明";
   }
   const dueLabel = el.taskDueDateField?.querySelector("span");
-  if (dueLabel) dueLabel.textContent = followUpDraft ? "目标完成日期时间" : "目标日期时间";
+  if (dueLabel) dueLabel.textContent = (followUpDraft || successorDraft) ? "目标完成日期时间" : "目标日期时间";
   el.taskDeliveryField?.classList.remove("follow-up-focus");
   const titleLabel = el.taskTitleField?.querySelector("span");
-  if (titleLabel) titleLabel.textContent = followUpDraft ? "待办名称（可修改）" : "待办名称";
+  if (titleLabel) titleLabel.textContent = (followUpDraft || successorDraft) ? "待办名称（可修改）" : "待办名称";
   updateProgressAvailability();
   updateParentRequirements();
   updateRecurringOptions();
@@ -3133,7 +3637,10 @@ function openTaskDialog(task = null, options = {}) {
   el.taskDialogScroll?.scrollTo?.(0, 0);
   el.taskDialog.showModal();
   setTimeout(() => {
-    if (followUpDraft) {
+    if (parentReview) {
+      el.taskParentTrigger?.focus?.();
+      el.taskParentTrigger?.click?.();
+    } else if (followUpDraft || successorDraft) {
       el.taskTitleInput.focus();
       el.taskTitleInput.select?.();
     } else {
@@ -3375,7 +3882,9 @@ function saveTask() {
     payload.progress = 100;
   } else if (!TaskStatusPolicy.isEndedStatus(payload.status)) {
     const editingTask = editing?.task || null;
-    if (TaskStatusPolicy.isTrackingStatus(editingTask) && !payload.completedAt) {
+    const choseTracking = payload.status === TaskStatusPolicy.TRACKING_STATUS
+      || (TaskStatusPolicy.isTrackingStatus(editingTask) && !payload.completedAt);
+    if (choseTracking) {
       payload.status = TaskStatusPolicy.TRACKING_STATUS;
     } else {
       payload.status = getAutomaticTaskStatusForPayload(state.editingTaskId, payload);
@@ -4079,11 +4588,16 @@ function closeDialogById(id) {
 function closeEditingTask() {
   const task = state.editingTaskId ? findTask(state.editingTaskId)?.task : null;
   if (!task) return;
+  const inParentReview = parentReviewAdvanceOnClose;
+  suppressParentReviewAdvance = true;
   closeDialogById("taskDialog");
+  suppressParentReviewAdvance = false;
   if (TaskStatusPolicy.isEndedStatus(task.status)) {
     toggleTaskCompletion(task);
+    if (inParentReview) scheduleParentReviewAdvance();
     return;
   }
+  if (inParentReview) parentReviewResumeTaskId = task.id;
   // Reuse the confirm dialog so「关闭并跟踪」stays available.
   requestTaskCompletion(task);
 }
@@ -4097,17 +4611,45 @@ function requestTaskCompletion(task) {
   pendingCloseTaskId = task.id;
   if (el.taskCloseConfirmTitle) el.taskCloseConfirmTitle.textContent = "关闭任务";
   if (el.taskCloseConfirmMessage) {
-    el.taskCloseConfirmMessage.textContent = `「${task.title}」关闭后可选择是否留下备忘提醒。选择「关闭并跟踪」会先关闭本任务，再新建一条备忘提醒（不计入投入）。`;
+    el.taskCloseConfirmMessage.textContent = `「${task.title}」请确认完成时间与完成情况。「关闭并跟踪」会新建备忘提醒（不计入投入）；「关闭并新建后续」会新建正式后续待办，上级与本任务一致，开始时间为完成时刻。`;
+  }
+  if (el.taskCloseCompletedAt) {
+    el.taskCloseCompletedAt.value = toLocalDateTimeInput(new Date().toISOString());
+  }
+  if (el.taskCloseCompletionNote) {
+    el.taskCloseCompletionNote.value = task.deliveryNote || "";
   }
   el.taskCloseConfirmDialog?.showModal();
 }
 
-function confirmCloseTaskChoice(createFollowUp) {
+function confirmCloseTaskChoice(mode = "only") {
+  const closeMode = mode === true ? "tracking" : mode === false ? "only" : String(mode || "only");
   const task = pendingCloseTaskId ? findTask(pendingCloseTaskId)?.task : null;
+  const completedAt = fromLocalDateTimeInput(el.taskCloseCompletedAt?.value || "") || new Date().toISOString();
+  const completionNote = String(el.taskCloseCompletionNote?.value || "").trim().slice(0, 500);
+  const resumeAfterClose = parentReviewResumeTaskId && task && parentReviewResumeTaskId === task.id;
   pendingCloseTaskId = null;
+  parentReviewResumeTaskId = null;
   el.taskCloseConfirmDialog?.close();
   if (!task) return;
-  toggleTaskCompletion(task, { createFollowUp: Boolean(createFollowUp) });
+  const startedAt = task.startOverrideAt || task.startedAt || getTaskScheduleInfo(task.id)?.firstStartIso || "";
+  if (startedAt && new Date(completedAt) < new Date(startedAt)) {
+    showToast("完成时间不能早于实际开始时间");
+    pendingCloseTaskId = task.id;
+    if (resumeAfterClose) parentReviewResumeTaskId = task.id;
+    el.taskCloseConfirmDialog?.showModal();
+    return;
+  }
+  toggleTaskCompletion(task, {
+    createFollowUp: closeMode === "tracking",
+    createSuccessor: closeMode === "successor",
+    completedAt,
+    completionNote
+  });
+  // 跟踪/后续会先打开编辑窗；仅关闭时继续批量补充上级
+  if (closeMode === "only" && (resumeAfterClose || pendingParentReviewQueue.length)) {
+    scheduleParentReviewAdvance();
+  }
 }
 
 function createFollowUpTrackingTask(sourceTask, closedAt = "") {
@@ -4124,16 +4666,38 @@ function createFollowUpTrackingTask(sourceTask, closedAt = "") {
   return trackingTask;
 }
 
+function createSuccessorWorkTask(sourceTask, closedAt = "") {
+  const closedIso = closedAt || sourceTask.completedAt || new Date().toISOString();
+  const dateKey = toDateKey(new Date(closedIso)) || state.selectedDate || toDateKey(new Date());
+  const now = new Date();
+  const payload = TaskStatusPolicy.buildSuccessorTask(sourceTask, { closedAt: closedIso });
+  const successorTask = {
+    id: crypto.randomUUID(),
+    ...payload,
+    createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+  };
+  getDay(dateKey).tasks.push(successorTask);
+  return successorTask;
+}
+
 function toggleTaskCompletion(task, options = {}) {
   if (!task) return;
   const closing = !TaskStatusPolicy.isEndedStatus(task.status);
   const now = new Date().toISOString();
+  const completedAt = closing
+    ? (options.completedAt || now)
+    : "";
   const firstStartIso = getTaskScheduleInfo(task.id)?.firstStartIso || task.startOverrideAt || task.startedAt || "";
   const nextStatus = closing ? "done" : getAutomaticTaskStatus(task.id);
+  const hasCompletionNote = Object.prototype.hasOwnProperty.call(options, "completionNote");
+  const completionNote = hasCompletionNote
+    ? String(options.completionNote || "").trim().slice(0, 500)
+    : null;
   updateTaskRecords(task.id, record => {
     record.status = nextStatus;
-    record.completedAt = closing ? now : "";
+    record.completedAt = closing ? completedAt : "";
     if (closing && !record.startedAt && firstStartIso) record.startedAt = firstStartIso;
+    if (closing && completionNote != null) record.deliveryNote = completionNote;
     record.progress = closing ? 100 : ProjectSummaryPolicy.taskProgressPercent({
       status: nextStatus,
       investedHours: getTaskDuration(task.id),
@@ -4142,15 +4706,25 @@ function toggleTaskCompletion(task, options = {}) {
     record.updatedAt = now;
   });
   let followUpTask = null;
-  if (closing && options.createFollowUp) {
-    const closedTask = findTask(task.id)?.task || { ...task, status: nextStatus, completedAt: now };
-    followUpTask = createFollowUpTrackingTask(closedTask, now);
+  let successorTask = null;
+  if (closing && (options.createFollowUp || options.createSuccessor)) {
+    const closedTask = findTask(task.id)?.task || { ...task, status: nextStatus, completedAt };
+    if (options.createFollowUp) {
+      followUpTask = createFollowUpTrackingTask(closedTask, completedAt);
+    } else if (options.createSuccessor) {
+      successorTask = createSuccessorWorkTask(closedTask, completedAt);
+    }
   }
   saveData();
   render();
   if (closing && followUpTask) {
+    if (pendingParentReviewQueue.length) parentReviewPausedForFollowUp = true;
     showToast("任务已关闭，请完善备忘提醒的关注时间");
     requestAnimationFrame(() => openTaskDialog(followUpTask, { mode: "followUp" }));
+  } else if (closing && successorTask) {
+    if (pendingParentReviewQueue.length) parentReviewPausedForFollowUp = true;
+    showToast("任务已关闭，请完善后续任务");
+    requestAnimationFrame(() => openTaskDialog(successorTask, { mode: "successor" }));
   } else {
     showToast(closing ? "任务已关闭" : "任务已恢复");
   }
@@ -5720,6 +6294,10 @@ function isMemoReminderTask(task) {
   return TaskStatusPolicy.isMemoReminder(task);
 }
 
+function belongsInMemoList(task) {
+  return TaskStatusPolicy.belongsInMemoList(task);
+}
+
 function isWorkLeafTask(task) {
   return isTodoListTask(task) && !isMemoReminderTask(task);
 }
@@ -5781,7 +6359,7 @@ function retargetChildrenToMonthlyParentInstance(newParent, groupId) {
 
 function matchesFilter(task, filter) {
   if (!isTodoListTask(task)) return false;
-  if (filter === "memo") return isMemoReminderTask(task);
+  if (filter === "memo") return belongsInMemoList(task);
   if (isMemoReminderTask(task)) return false;
   if (filter === "all") return true;
   if (filter === "unplanned") return isUnplannedTask(task);

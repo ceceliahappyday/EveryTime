@@ -10,14 +10,19 @@ assert.strictEqual(policy.scheduleOverviewKind({ taskStatus: "tracking", investe
 assert.strictEqual(policy.scheduleOverviewBadge({ kind: "tracking" }), "备忘");
 assert.strictEqual(policy.scheduleOverviewBadge({ kind: "planned" }), "计划");
 assert.strictEqual(policy.scheduleOverviewBadge({ kind: "actual" }), "进行");
-assert.strictEqual(policy.statusLabel("tracking"), "备忘提醒");
+assert.strictEqual(policy.statusLabel("tracking"), "待跟踪");
 assert.strictEqual(policy.statusLabel("done"), "已关闭");
 assert.strictEqual(policy.listSideBadge({ status: "done", priority: "follow_up" }).text, "关闭");
-assert.strictEqual(policy.listSideBadge({ status: "tracking", priority: "follow_up" }).text, "备忘");
+assert.strictEqual(policy.listSideBadge({ status: "tracking", priority: "follow_up" }).text, "跟踪");
 assert.equal(policy.listSideBadge({ status: "planned", priority: "follow_up" }), null);
 
 assert.equal(policy.isMemoReminder({ status: "tracking" }), true);
 assert.equal(policy.isMemoReminder({ status: "planned" }), false);
+assert.equal(policy.isFollowUpPriority({ priority: "follow_up" }), true);
+assert.equal(policy.belongsInMemoList({ status: "planned", priority: "follow_up" }), true);
+assert.equal(policy.belongsInMemoList({ status: "tracking", priority: "general_daily" }), true);
+assert.equal(policy.belongsInMemoList({ status: "done", priority: "follow_up" }), false);
+assert.equal(policy.belongsInMemoList({ status: "planned", priority: "kpi" }), false);
 assert.equal(policy.isSchedulableStatus("tracking"), false);
 assert.equal(policy.isSchedulableStatus("planned"), true);
 assert.equal(policy.isSchedulableStatus("in_progress"), true);
@@ -45,6 +50,25 @@ assert.strictEqual(followUp.description, "完成验收清单");
 assert.strictEqual(followUp.problemReason, "验收材料不全");
 assert.strictEqual(followUp.businessBackground, "上线验收\n保障版本按期上线");
 assert.strictEqual(followUp.priority, "follow_up");
+
+const successor = policy.buildSuccessorTask({
+  id: "a1",
+  title: "上线验收",
+  parentId: "parent-1",
+  priority: "kpi",
+  owner: "我",
+  businessBackground: "保障版本按期上线",
+  completedAt: closedAt
+}, { closedAt });
+assert.strictEqual(successor.status, "planned");
+assert.strictEqual(successor.successorFromTaskId, "a1");
+assert.strictEqual(successor.parentId, "parent-1");
+assert.strictEqual(successor.title, "上线验收 · 后续");
+assert.strictEqual(successor.priority, "kpi");
+assert.strictEqual(successor.startedAt, closedAt);
+assert.strictEqual(successor.startOverrideAt, closedAt);
+assert.equal(policy.isMemoReminder(successor), false);
+assert.equal(policy.countsTowardWorkHours(successor), true);
 
 const workFromMemo = policy.buildWorkTodoFromMemo({
   id: "memo-1",

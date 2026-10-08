@@ -17,6 +17,9 @@ assert.match(styles, /body\.in-desktop \.modal\s*\{[^}]*margin-top:\s*88px/s, "d
 assert.match(styles, /-webkit-app-region:\s*no-drag/, "modal chrome must remain clickable over the desktop drag strip");
 assert.match(html, /id="closeTaskButton"/, "edit dialog must keep the close-task action");
 assert.match(html, /id="taskCloseFollowUpButton"/, "close confirm must keep 关闭并跟踪");
+assert.match(html, /id="taskCloseSuccessorButton"/, "close confirm must offer 关闭并新建后续");
+assert.match(app, /createSuccessorWorkTask/, "closing may spawn a successor work todo");
+assert.match(app, /buildSuccessorTask/, "successor payload must come from status policy");
 assert.match(html, /id="taskDialogCancelButton"/, "new-task cancel must have a dedicated button id");
 assert.match(app, /closeDialogById/, "cancel buttons must close dialogs reliably");
 assert.match(app, /taskDialogCancelButton/, "cancel button must bind a direct close handler");

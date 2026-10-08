@@ -24,6 +24,16 @@
     return isTrackingStatus(taskOrStatus);
   }
 
+  function isFollowUpPriority(task = {}) {
+    return (task?.priority || "") === "follow_up";
+  }
+
+  /** 待跟踪页签：备忘提醒（status=tracking）+ 优先级「跟踪关注」且未结束 */
+  function belongsInMemoList(task = {}) {
+    if (!task || isEndedStatus(task.status)) return false;
+    return isMemoReminder(task) || isFollowUpPriority(task);
+  }
+
   function countsTowardWorkHours(taskOrStatus) {
     return !isMemoReminder(taskOrStatus) && !isEndedStatus(
       typeof taskOrStatus === "string" ? taskOrStatus : taskOrStatus?.status
@@ -65,6 +75,46 @@
       recurrence: null,
       recurrenceGroupId: "",
       followUpFromTaskId: source.id || "",
+      createdAtIso: now,
+      updatedAt: now
+    };
+  }
+
+  function successorTaskTitle(sourceTitle = "") {
+    const title = String(sourceTitle || "").trim()
+      .replace(/\s*·\s*跟踪\s*$/u, "")
+      .replace(/\s*·\s*后续\s*$/u, "");
+    return title ? `${title} · 后续` : "后续任务";
+  }
+
+  /** 关闭后新建的正式后续待办（计入投入），上级与来源一致，开始时间为关闭时刻 */
+  function buildSuccessorTask(source = {}, options = {}) {
+    const opts = typeof options === "string" ? { dateKey: options } : (options || {});
+    const now = new Date().toISOString();
+    const closedAt = opts.closedAt || source.completedAt || now;
+    const sourcePriority = source.priority || "general_daily";
+    const priority = ["follow_up", "monthly_fixed", "paused"].includes(sourcePriority)
+      ? "general_daily"
+      : sourcePriority;
+    return {
+      title: successorTaskTitle(source.title),
+      dueDate: "",
+      dueTime: "",
+      owner: source.owner || "我",
+      parentId: source.parentId || "",
+      description: "",
+      priority,
+      progress: 0,
+      status: "planned",
+      startedAt: closedAt,
+      startOverrideAt: closedAt,
+      completedAt: "",
+      businessBackground: buildFollowUpBusinessBackground(source),
+      problemReason: "",
+      deliveryNote: "",
+      recurrence: null,
+      recurrenceGroupId: "",
+      successorFromTaskId: source.id || "",
       createdAtIso: now,
       updatedAt: now
     };
@@ -118,7 +168,7 @@
       unplanned: "未计划",
       planned: "计划中",
       in_progress: "进行中",
-      tracking: "备忘提醒",
+      tracking: "待跟踪",
       done: "已关闭",
       closed: "已关闭"
     }[status] || "计划中";
@@ -129,7 +179,7 @@
       return { className: "status-mark closed", text: "关闭", title: "已关闭" };
     }
     if (isTrackingStatus(task)) {
-      return { className: "status-mark tracking", text: "备忘", title: "备忘提醒（不计入投入）" };
+      return { className: "status-mark tracking", text: "跟踪", title: "待跟踪（关注提醒，不计入投入）" };
     }
     return null;
   }
@@ -140,11 +190,15 @@
     isEndedStatus,
     isTrackingStatus,
     isMemoReminder,
+    isFollowUpPriority,
+    belongsInMemoList,
     countsTowardWorkHours,
     isSchedulableStatus,
     followUpTaskTitle,
+    successorTaskTitle,
     buildFollowUpBusinessBackground,
     buildFollowUpTask,
+    buildSuccessorTask,
     buildWorkTodoFromMemo,
     scheduleOverviewKind,
     scheduleOverviewBadge,

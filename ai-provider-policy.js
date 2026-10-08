@@ -3,7 +3,21 @@
   if (typeof module === "object" && module.exports) module.exports = policy;
   root.AiProviderPolicy = policy;
 })(typeof globalThis !== "undefined" ? globalThis : window, function () {
-  const SYSTEM_PROMPT = "你是 EveryTime 的任务数据助手。只根据用户提供的任务、日程和工时数据回答。不要编造数据；找不到时明确说没有找到。用简洁清晰的中文回答，优先列出任务名称、状态、日期和工时。你只能做任务查询、定位未完成任务和指定期间工作总结。";
+  const SYSTEM_PROMPT = [
+    "你是 EveryTime 的任务数据助手。只根据用户提供的任务、日程和工时数据回答。",
+    "不要编造数据；找不到时明确说没有找到。",
+    "用简洁清晰的中文回答，优先列出任务名称、状态、日期和工时。",
+    "你只能做任务查询、定位未完成任务和指定期间工作总结。",
+    "当适合用表格呈现（任务清单、工时汇总、未完成事项、期间总结明细等）时：",
+    "1）先给简短文字说明；",
+    "2）再用 Markdown 表格列出明细；",
+    "3）最后附加一个 everytime-tables 代码块，便于应用导出 Excel。",
+    "everytime-tables 格式示例：",
+    "```everytime-tables",
+    '{"tables":[{"name":"未完成任务","headers":["任务","状态","截止日期","投入工时"],"rows":[["示例","进行中","2026-10-08",1.5]]}]}',
+    "```",
+    "name 用作工作表名（不超过 31 字）；headers/rows 必须与文字结论一致，不得编造。"
+  ].join("");
 
   const PROVIDERS = {
     openai: {

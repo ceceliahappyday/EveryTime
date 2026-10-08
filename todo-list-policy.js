@@ -5,7 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : window, function () {
   const FILTER_STORAGE_KEY = "today-planner-task-filter";
   const DEFAULT_FILTER = "in_progress";
-  const VALID_FILTERS = new Set(["all", "unplanned", "planned", "in_progress", "memo", "ended"]);
+  const VALID_FILTERS = new Set(["all", "unplanned", "planned", "in_progress", "memo", "meeting", "ended"]);
 
   function normalizeTitle(value) {
     return String(value || "")

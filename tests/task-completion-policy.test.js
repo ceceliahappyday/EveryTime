@@ -1,7 +1,14 @@
 const fs = require("fs");
 const app = fs.readFileSync("app.js", "utf8").replace(/\r\n/g, "\n");
 
-for (const marker of ["function findTaskRecords", "function updateTaskRecords", "toggleTaskCompletion(task)", "record.completedAt = closing ? now : \"\"", "saveData();\n  render();"]) {
+for (const marker of [
+  "function findTaskRecords",
+  "function updateTaskRecords",
+  "toggleTaskCompletion(task",
+  "completedAt = closing",
+  "completionNote",
+  "saveData();\n  render();"
+]) {
   if (!app.includes(marker)) throw new Error(`missing completion persistence marker: ${marker}`);
 }
 for (const marker of [

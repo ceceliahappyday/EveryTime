@@ -115,6 +115,7 @@
             <button data-filter="planned">计划中 <span id="openCount">0</span></button>
             <button class="active" data-filter="in_progress">进行中 <span id="doneCount">0</span></button>
             <button data-filter="ended">已结束 <span id="closedCount">0</span></button>
+            <button data-filter="meeting">会议 <span id="meetingCount">0</span></button>
             <button data-filter="memo">待跟踪 <span id="memoCount">0</span></button>
           </div>
           <div class="task-tabs-more" id="taskTabsMore" hidden>
@@ -199,7 +200,14 @@
         </div>
         <button type="button" class="close-button" data-close-dialog="aiBatchDraftDialog" aria-label="关闭">×</button>
       </div>
-      <p class="form-hint" id="aiBatchDraftHint">可勾选、改标题与日期后再创建。创建后会打开第一条供继续编辑。</p>
+      <p class="form-hint" id="aiBatchDraftHint">可勾选、修改并选择上级后再创建。上级会按历史同类任务预填，可改。</p>
+      <div class="ai-batch-parent-toolbar">
+        <label>
+          <span>统一上级</span>
+          <select id="aiBatchSharedParent"></select>
+        </label>
+        <button type="button" class="soft-button" id="aiBatchApplyParentButton">应用到所选</button>
+      </div>
       <div class="modal-scroll" id="aiBatchDraftList"></div>
       <div class="modal-actions">
         <button type="button" class="soft-button" id="aiBatchSelectAllButton">全选</button>
@@ -218,11 +226,22 @@
       </div>
       <button type="button" class="close-button" data-close-dialog="taskCloseConfirmDialog" aria-label="关闭">×</button>
     </div>
-    <p class="entry-link-confirm-message" id="taskCloseConfirmMessage">本环节结束后，是否需要后续跟踪闭环？</p>
+    <p class="entry-link-confirm-message" id="taskCloseConfirmMessage">本环节结束后，可仅关闭，或继续新建跟踪/后续任务。</p>
+    <div class="task-close-confirm-fields">
+      <label>
+        <span>完成时间</span>
+        <input type="datetime-local" id="taskCloseCompletedAt" step="60" />
+      </label>
+      <label>
+        <span>完成情况说明（选填）</span>
+        <textarea id="taskCloseCompletionNote" maxlength="500" rows="3" placeholder="已完成什么、结果如何、还有哪些遗留"></textarea>
+      </label>
+    </div>
     <div class="modal-actions task-close-confirm-actions">
       <button type="button" class="soft-button" data-close-dialog="taskCloseConfirmDialog">取消</button>
       <button type="button" class="soft-button" id="taskCloseOnlyButton">仅关闭</button>
-      <button type="button" class="primary-button" id="taskCloseFollowUpButton">关闭并跟踪</button>
+      <button type="button" class="soft-button" id="taskCloseFollowUpButton">关闭并跟踪</button>
+      <button type="button" class="primary-button" id="taskCloseSuccessorButton">关闭并新建后续</button>
     </div>
   </dialog>
 
@@ -270,7 +289,7 @@
       <label>
         <span>日程类型</span>
         <select id="entryType">
-          <option value="calendar">会议 / 日程（仅计入日程，不进入待办）</option>
+          <option value="calendar">会议 / 日程（计入投入，在「会议」清单查看）</option>
           <option value="task_work">任务投入（关联待办并统计工时）</option>
         </select>
       </label>
@@ -577,30 +596,33 @@
       </div>
       <div class="modal-scroll" id="aiDialogScroll">
         <div class="ai-quick-actions" id="aiQuickActions">
-          <button type="button" class="soft-button" data-ai-prompt="请列出当前所有未完成的任务，并按状态和截止时间整理。">哪些任务未完成</button>
-          <button type="button" class="soft-button" data-ai-prompt="请总结本周的工作完成情况、实际投入工时和未完成事项。">本周工作总结</button>
-          <button type="button" class="soft-button" data-ai-prompt="请根据下面的日期范围生成工作总结。">生成指定期间总结</button>
+          <button type="button" class="soft-button" data-ai-prompt="请列出当前所有未完成的任务，并按状态和截止时间整理，同时用表格输出明细以便导出 Excel。">哪些任务未完成</button>
+          <button type="button" class="soft-button" data-ai-prompt="请总结本周的工作完成情况、实际投入工时和未完成事项，并用表格输出明细以便导出 Excel。">本周工作总结</button>
+          <button type="button" class="soft-button" data-ai-prompt="请根据下面的日期范围生成工作总结，并用表格输出任务与工时明细以便导出 Excel。">生成指定期间总结</button>
           <button type="button" class="soft-button" id="aiScreenshotHintButton" data-ai-mode="screenshot">从截图创建待办</button>
         </div>
         <div class="ai-range"><label><span>开始日期</span><input type="date" id="aiPeriodStart" /></label><label><span>结束日期</span><input type="date" id="aiPeriodEnd" /></label></div>
-        <div class="ai-chat-log" id="aiChatLog" aria-live="polite"></div>
         <div class="ai-status" id="aiStatus"></div>
-        <div class="ai-result hidden" id="aiResult" aria-hidden="true">AI 结果会显示在这里。</div>
+        <div class="ai-result hidden" id="aiResult" aria-hidden="true"></div>
         <div class="ai-compose">
           <div class="ai-attachment hidden" id="aiAttachment">
             <img id="aiAttachmentPreview" alt="待发送截图预览" />
             <button type="button" class="soft-button" id="aiAttachmentClear">移除截图</button>
           </div>
-          <label><span>消息</span><textarea id="aiPrompt" rows="3" placeholder="提问查询，或粘贴/拖入截图后发送以创建待办"></textarea></label>
+          <label class="ai-message-field">
+            <span>消息</span>
+            <textarea id="aiPrompt" rows="10" placeholder="在此输入问题；回复也会显示在这里。Enter 或 Ctrl+Enter 发送，Shift+Enter 换行；可粘贴/拖入截图。"></textarea>
+          </label>
           <div class="ai-compose-tools">
             <input type="file" id="aiImageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
             <button type="button" class="soft-button" id="aiAttachImageButton">附加截图</button>
-            <span class="form-hint">有截图时发送 = 识别待办（可多条）；无截图 = 查询本应用数据</span>
+            <span class="form-hint">Enter / Ctrl+Enter 发送 · Shift+Enter 换行 · 有截图=识别待办 · 无截图=查询数据</span>
           </div>
         </div>
       </div>
       <div class="modal-actions">
         <button type="button" class="soft-button" id="aiCopyButton">复制结果</button>
+        <button type="button" class="soft-button hidden" id="aiExportTablesButton">下载 Excel</button>
         <span></span>
         <button type="button" class="soft-button" data-close-dialog="aiDialog">取消</button>
         <button type="submit" class="primary-button" id="aiSubmitButton">发送</button>
@@ -627,6 +649,7 @@
   <script src="project-view-policy.js"></script>
   <script src="task-status-policy.js"></script>
   <script src="ai-task-draft-policy.js"></script>
+  <script src="ai-answer-policy.js"></script>
   <script src="navigation-policy.js"></script>
   <script src="ui-scale-policy.js"></script>
   <script src="import-policy.js"></script>

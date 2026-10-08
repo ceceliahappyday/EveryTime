@@ -207,6 +207,96 @@
       .slice(0, limit);
   }
 
+  function tokenizeTitle(title = "") {
+    return normalizeSearchText(title)
+      .replace(/[（）()【】\[\]<>《》""'']/g, " ")
+      .split(/[\s\-_./·]+/)
+      .filter(token => token.length >= 2);
+  }
+
+  function charNgrams(text = "", size = 2) {
+    const value = String(text || "");
+    const grams = new Set();
+    if (!value) return grams;
+    if (value.length < size) {
+      grams.add(value);
+      return grams;
+    }
+    for (let i = 0; i <= value.length - size; i += 1) {
+      grams.add(value.slice(i, i + size));
+    }
+    return grams;
+  }
+
+  function setOverlapRatio(leftSet, rightSet) {
+    if (!leftSet.size || !rightSet.size) return 0;
+    let overlap = 0;
+    leftSet.forEach(item => {
+      if (rightSet.has(item)) overlap += 1;
+    });
+    return overlap / Math.max(leftSet.size, rightSet.size);
+  }
+
+  function titleSimilarity(a = "", b = "") {
+    const left = normalizeSearchText(a).replace(/\s+/g, "");
+    const right = normalizeSearchText(b).replace(/\s+/g, "");
+    if (!left || !right) return 0;
+    if (left === right) return 1;
+    if (left.includes(right) || right.includes(left)) return 0.9;
+    const tokenScore = setOverlapRatio(new Set(tokenizeTitle(a)), new Set(tokenizeTitle(b)));
+    const gramScore = setOverlapRatio(charNgrams(left, 2), charNgrams(right, 2));
+    return Math.max(tokenScore, gramScore);
+  }
+
+  /** 根据历史同类任务（标题相近）推荐上级；仅返回仍有效的上级任务 */
+  function suggestParentForTitle({
+    title = "",
+    priority = "",
+    tasks = [],
+    isHiddenFutureRecurringInstance = () => false,
+    minSimilarity = 0.34
+  } = {}) {
+    const draftTitle = String(title || "").trim();
+    if (!draftTitle) return null;
+    const byId = new Map(tasks.map(task => [task.id, task]));
+    const scores = new Map();
+    tasks.forEach(task => {
+      const parentId = parentIdOf(task);
+      if (!parentId) return;
+      const parent = byId.get(parentId);
+      if (!parent || ["done", "closed"].includes(parent.status)) return;
+      if (isHiddenFutureRecurringInstance(parent)) return;
+      const similarity = titleSimilarity(draftTitle, task.title || "");
+      if (similarity < minSimilarity) return;
+      let score = similarity;
+      if (priority && task.priority === priority) score += 0.08;
+      const stamp = Date.parse(task.updatedAt || task.createdAtIso || task.completedAt || "") || 0;
+      if (stamp) {
+        const ageDays = (Date.now() - stamp) / 86400000;
+        score += ageDays <= 90 ? 0.12 : ageDays <= 365 ? 0.05 : 0;
+      }
+      const current = scores.get(parentId) || {
+        parentId,
+        parent,
+        score: 0,
+        count: 0,
+        bestSimilarity: 0,
+        sampleTitle: task.title || ""
+      };
+      current.score += score;
+      current.count += 1;
+      if (similarity >= current.bestSimilarity) {
+        current.bestSimilarity = similarity;
+        current.sampleTitle = task.title || "";
+      }
+      scores.set(parentId, current);
+    });
+    const ranked = [...scores.values()].sort((a, b) =>
+      b.score - a.score || b.count - a.count || b.bestSimilarity - a.bestSimilarity
+    );
+    return ranked[0] || null;
+  }
+
   return {
     shouldIncludeEntryTaskOption,
     entryTaskOptionLabel,
@@ -216,6 +306,9 @@
     parentPickerBrowseCandidates,
     parentPickerSearchCandidates,
     matchingParentContainers,
+    tokenizeTitle,
+    titleSimilarity,
+    suggestParentForTitle,
     taskHierarchyPath,
     parentIdOf,
     hierarchyMeta,

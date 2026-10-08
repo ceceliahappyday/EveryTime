@@ -18,7 +18,7 @@ EveryTime 同时包含三种能力，但三者必须分开：
 
 ### 1. 日程 entry
 
-- `entryType: calendar`：会议 / 日程，仅显示在日、周、月日程中，不进入待办。
+- `entryType: calendar`：会议 / 日程，显示在日、周、月日程中，并计入当日/周/甘特投入工时；在左侧「会议」清单单独查看，不自动变成可关闭的待办任务。
 - `entryType: task_work`：任务投入，必须关联一个待办，计入该任务的计划时长、实际投入和进度。
 - 一个任务可以有多个 task_work 日程段，允许跨日期、跨时间段重复投入。
 - 日程的结束时间只代表本次投入结束，不代表任务完成。
@@ -58,12 +58,12 @@ EveryTime 同时包含三种能力，但三者必须分开：
 
 ## 四、日历与待办的显示规则
 
-- 日视图左侧：当天待办、未计划任务、计划中任务、所有可继续投入的进行中任务、已结束任务。
+- 日视图左侧：待办筛选（全部、未计划、计划中、进行中、已结束、会议、待跟踪）；会议为独立类别，展示 calendar 日程及其已投入工时。
 - 日视图右侧：当天时间轴；会议 / 日程和任务投入都显示，但视觉类型必须区分。
 - 周视图：显示本周日期和对应任务名称、会议 / 日程；点击日期可直接新增日程或待办。
 - 月视图：显示月历、节假日、任务名称和会议 / 日程名称；同一逻辑任务不能在同一个自然月重复列示。
-- 项目视图：左侧按全部任务、未计划、计划中、进行中、已结束折叠查看；右侧甘特图跟随左侧筛选。
-- 普通待办列表不显示没有关联任务的会议 / 日程。
+- 项目视图：左侧按状态筛选；右侧甘特图展示任务与会议投入。
+- 会议 / 日程不进入普通待办状态页签，只出现在「会议」页签（以及「全部」中的会议分组）。
 
 ## 五、固定周期任务
 
@@ -95,11 +95,12 @@ EveryTime 同时包含三种能力，但三者必须分开：
 - 日、周、月、项目只改变右侧日程 / 月历 / 周历 / 甘特图的展示方式。
 - 左侧状态筛选只改变任务状态，不改变日期范围。
 - 项目视图左侧不再替换为项目汇总卡片；项目层级只在右侧甘特图展示。
-- 没有任务关联的会议 / 日程永远不进入左侧待办清单。
+- 会议 / 日程进入左侧「会议」清单并计入投入工时，但不会自动生成可勾选关闭的待办任务。
 
 ## 八、已经废弃、不得重新引入的规则
 
-- 会议 / 日程自动生成待办：废弃。
+- 会议 / 日程自动生成待办任务对象：废弃（会议只作为日程条目出现在会议清单）。
+- 会议 / 日程不计入投入工时：废弃；会议与任务投入一并计入日进度、周统计与甘特会议投入。
 - 只按当前日期显示进行中任务：废弃。
 - 子任务因为属于父任务就从待办消失：废弃；只有真正的父容器不在普通待办中平铺。
 - 拖入未来时间就立即进行中：废弃。
@@ -117,14 +118,15 @@ EveryTime 同时包含三种能力，但三者必须分开：
 - Outlook 日历双向同步尚未完成，当前仅保留本地日程分类能力。
 - 国家节假日目前是应用内置数据，不等同于实时联网更新。
 - 会议参与人、地点、提醒、会议链接等字段还可以继续扩展。
-- 会议参与人、地点、提醒、会议链接等字段还可以继续扩展。
 
-## 数据备份与恢复（v2.0.76）
+## 数据备份与恢复（v2.0.76+）
 
 - 换电脑请先「导出」JSON 备份，再在新电脑「导入」同一文件恢复；导入前桌面版会自动做本地备份。
 - JSON 备份可完整还原；Excel 仅供查看，不可导入。
 - GitHub Releases 只负责软件发布，不负责用户数据同步。
-## AI assistant policy (v2.0.75+)
+
+## AI assistant policy (v2.0.78+)
+
 - AI is an optional assistant. Default mode is read-only over EveryTime task/calendar/work-log context: unfinished-task answers, task search/location, and date-range work summaries.
 - The user enters their own API Key in Settings. The key is handled by Electron main process, encrypted with Windows safeStorage when available, and never returned to the renderer.
 - Chat requests use the provider’s chat/completions, Anthropic messages, or Gemini generateContent protocols (not a single OpenAI-only Responses API).

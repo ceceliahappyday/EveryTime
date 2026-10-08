@@ -86,4 +86,22 @@ assert.equal(isValidParentTarget({ sourceId: "leaf", parentId: "leaf", tasks: hi
 assert.equal(isValidParentTarget({ sourceId: "root", parentId: "leaf", tasks: hierarchyTasks }), false, "cannot hang ancestor under its descendant");
 assert.equal(isValidParentTarget({ sourceId: "other", parentId: "phase", tasks: hierarchyTasks }), true);
 
+const {
+  suggestParentForTitle,
+  titleSimilarity
+} = require("../task-option-policy");
+assert.ok(titleSimilarity("合同审批材料", "合同审批清单") > 0.3);
+const historyTasks = [
+  { id: "p1", title: "资产管理", status: "in_progress", parentId: "" },
+  { id: "c1", title: "科技园盈利结构表", status: "done", parentId: "p1", priority: "kpi", updatedAt: "2026-09-01T00:00:00.000Z" },
+  { id: "c2", title: "科技园成本结构复核", status: "planned", parentId: "p1", priority: "kpi", updatedAt: "2026-09-20T00:00:00.000Z" },
+  { id: "other", title: "无关事项", status: "planned", parentId: "", priority: "general_daily" }
+];
+const suggestion = suggestParentForTitle({
+  title: "科技园盈利结构更新",
+  priority: "kpi",
+  tasks: historyTasks
+});
+assert.equal(suggestion?.parentId, "p1", "similar historical tasks should suggest their shared parent");
+
 console.log("task option policy tests passed");

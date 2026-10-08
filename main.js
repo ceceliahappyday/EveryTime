@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage, safeStorage, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage, safeStorage, screen, clipboard } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { execFileSync } = require("child_process");
@@ -227,6 +227,10 @@ if (singleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("ai:extract-task", async (_event, payload) => extractAiTask(payload || {}));
   ipcMain.handle("ai:detect-provider", (_event, payload) => detectAiProvider(payload || {}));
   ipcMain.handle("ai:list-models", async (_event, payload) => listAiModels(payload || {}));
+  ipcMain.handle("clipboard:write-text", (_event, text) => {
+    clipboard.writeText(String(text ?? ""));
+    return true;
+  });
   ipcMain.handle("app:get-version", () => app.getVersion());
   ipcMain.handle("app:check-for-updates", () => {
     checkForUpdates(true);
@@ -377,6 +381,18 @@ if (singleInstanceLock) app.whenReady().then(() => {
       exportedAt: parsed.exportedAt || "",
       filePath: result.filePaths[0]
     };
+  });
+  ipcMain.handle("data:export-tables", async (_event, filename, tables) => {
+    const exportDir = defaultExportDir();
+    try { fs.mkdirSync(exportDir, { recursive: true }); } catch {}
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "导出 AI 表格",
+      defaultPath: path.join(exportDir, filename || `AI表格-${new Date().toISOString().slice(0, 10)}.xlsx`),
+      filters: [{ name: "Excel 工作簿", extensions: ["xlsx"] }]
+    });
+    if (result.canceled || !result.filePath) return false;
+    await buildTablesExcel(result.filePath, tables);
+    return true;
   });
   createWindow();
   if (settings.pinned) mainWindow.setAlwaysOnTop(true, "floating");
@@ -904,6 +920,39 @@ function createTray() {
     if (locked) setLocked(false);
     showMainWindow({ relocateToCursor: true });
   });
+}
+
+async function buildTablesExcel(outputPath, tables = []) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "今日日程";
+  workbook.created = new Date();
+  workbook.modified = new Date();
+  const list = Array.isArray(tables) ? tables.filter(item => item && Array.isArray(item.headers)) : [];
+  if (!list.length) {
+    addSheet(workbook, "说明", ["内容"], [["当前没有可导出的表格数据"]]);
+  } else {
+    const usedNames = new Set();
+    list.forEach((table, index) => {
+      let name = String(table.name || `表格${index + 1}`).replace(/[\\/*?:\[\]]/g, "_").slice(0, 31) || `表格${index + 1}`;
+      let unique = name;
+      let suffix = 2;
+      while (usedNames.has(unique)) {
+        const base = name.slice(0, Math.max(1, 31 - String(suffix).length - 1));
+        unique = `${base}_${suffix}`;
+        suffix += 1;
+      }
+      usedNames.add(unique);
+      const headers = table.headers.map(cell => String(cell ?? ""));
+      const rows = (table.rows || []).map(row => headers.map((_, col) => {
+        const value = Array.isArray(row) ? row[col] : "";
+        return value == null ? "" : value;
+      }));
+      addSheet(workbook, unique, headers, rows, {
+        wrapCols: headers.map((_, i) => i + 1).filter(i => i > 2)
+      });
+    });
+  }
+  await workbook.xlsx.writeFile(outputPath);
 }
 
 async function buildExcel(outputPath, data) {

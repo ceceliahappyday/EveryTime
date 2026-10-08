@@ -124,45 +124,18 @@
   background: rgba(0,0,0,.38);
   color: #f2f7fa;
 }
-.ai-chat-log {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 120px;
-  max-height: min(42vh, 360px);
-  overflow: auto;
-  margin-top: 12px;
-  padding: 10px 12px 14px;
-  border: 1px solid var(--line-soft, rgba(160, 180, 180, .28));
-  border-radius: 12px;
-  background: rgba(0, 0, 0, .12);
-  scrollbar-gutter: stable;
-}
-.ai-chat-bubble {
-  max-width: 92%;
-  padding: 10px 12px;
-  border-radius: 12px;
-  white-space: pre-wrap;
-  line-height: 1.55;
-  font-size: 13px;
-}
-.ai-chat-bubble.user {
-  align-self: flex-end;
-  background: rgba(90, 140, 120, .28);
-  color: var(--ink, #1d2421);
-}
-.ai-chat-bubble.assistant {
-  align-self: flex-start;
-  background: rgba(0, 0, 0, .38);
-  color: #f2f7fa;
-}
-.ai-chat-bubble .ai-chat-meta {
-  display: block;
-  margin-bottom: 4px;
-  opacity: .7;
-  font-size: 11px;
-}
 .ai-compose { margin-top: 8px; }
+.ai-message-field {
+  display: grid;
+  gap: 6px;
+}
+.ai-message-field #aiPrompt {
+  min-height: min(36vh, 280px);
+  max-height: min(52vh, 420px);
+  resize: vertical;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
 .ai-compose-tools {
   display: flex;
   flex-wrap: wrap;
@@ -244,6 +217,41 @@ body.in-desktop .ai-batch-modal {
   background: #fff;
   position: relative;
   z-index: 2;
+}
+.ai-batch-parent-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 12px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft, rgba(160, 180, 180, .28));
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .04);
+}
+.ai-batch-parent-toolbar label {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 240px;
+  min-width: 200px;
+}
+.ai-batch-parent-toolbar span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-batch-parent-toolbar select {
+  min-height: 34px;
+  width: 100%;
+}
+.ai-batch-parent-toolbar .soft-button {
+  flex: 0 0 auto;
+  min-height: 34px;
+}
+.ai-batch-parent-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
 }
 .ai-batch-card {
   --ai-batch-control-h: 34px;
@@ -440,9 +448,6 @@ body.in-desktop.glass-mode .ai-batch-modal .modal-actions {
 body.in-desktop.glass-mode #aiDialog .modal-actions {
   background: rgba(8, 22, 36, .92);
   border-top-color: rgba(181, 218, 239, .28);
-}
-body.in-desktop.glass-mode .ai-chat-bubble.user {
-  color: #e8f2f6;
 }
 body.in-desktop.glass-mode .task-ai-dropzone {
   background: rgba(120, 180, 170, .08);
@@ -1492,6 +1497,34 @@ button.task-group-heading {
   transform: translateY(0);
 }
 .task-card.unplanned .task-check { border-style: dashed; }
+.task-card.meeting-card {
+  grid-template-columns: 18px minmax(0, 1fr);
+  padding-right: 48px;
+}
+.task-card.meeting-card .task-body {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.task-card.meeting-card .task-description {
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.meeting-dot {
+  width: 8px;
+  height: 8px;
+  margin: 4px;
+  border-radius: 50%;
+  background: #aa7b39;
+  flex: 0 0 auto;
+}
+.priority-mark.meeting-invest {
+  color: #8a6230;
+  font-variant-numeric: tabular-nums;
+}
 .task-body { min-width: 0; overflow: hidden; display: flex; align-items: center; }
 .task-body strong {
   display: block;
@@ -3251,6 +3284,23 @@ body.in-desktop:has(dialog[open]) .resize-handle {
   font-size: 13px;
   line-height: 1.65;
   color: var(--muted);
+}
+.task-close-confirm-fields {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0 4px;
+}
+.task-close-confirm-fields label {
+  display: grid;
+  gap: 6px;
+}
+.task-close-confirm-fields span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.task-close-confirm-fields textarea {
+  min-height: 72px;
+  resize: vertical;
 }
 .danger-button {
   display: inline-flex;
