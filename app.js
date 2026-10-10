@@ -109,7 +109,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "entryLinkConfirmDialog", "entryLinkConfirmTitle", "entryLinkConfirmMessage", "entryLinkConfirmOptions", "entryLinkConfirmCancel", "entryLinkConfirmCreate",
     "taskCloseConfirmDialog", "taskCloseConfirmTitle", "taskCloseConfirmMessage", "taskCloseCompletedAt", "taskCloseCompletionNote", "taskCloseOnlyButton", "taskCloseFollowUpButton", "taskCloseSuccessorButton",
     "taskMergeDialog", "taskMergeForm", "taskMergeMessage", "taskMergeTarget", "taskMergeSearch", "taskMergeOptions",
-    "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
+    "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryOwner", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
     "updateProgress", "updateProgressText", "updateProgressBar",
     "exportDialog", "exportForm", "exportFormat", "importButton", "minimizeWindow", "maximizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiExportTablesButton", "aiQuickActions",
@@ -180,6 +180,7 @@ function migrateData() {
     day.entries.forEach(entry => {
       entry.entryType ||= entry.taskId ? "task_work" : "calendar";
       entry.note ||= "";
+      entry.owner ||= "";
       entry.color ||= "sage";
     });
     day.tasks.forEach(task => {
@@ -1601,7 +1602,7 @@ function buildAiContext(startKey, endKey) {
   });
   const entries = Object.entries(state.data).flatMap(([date, day]) => (day.entries || [])
     .filter(entry => date >= startKey && date <= endKey)
-    .map(entry => ({ date, title: entry.title, entryType: entry.entryType || "calendar", start: formatTime(entry.start), end: formatTime(entry.end), note: entry.note || "", taskId: entry.taskId || "" })));
+    .map(entry => ({ date, title: entry.title, entryType: entry.entryType || "calendar", start: formatTime(entry.start), end: formatTime(entry.end), note: entry.note || "", owner: entry.owner || "", taskId: entry.taskId || "" })));
   return { period: { start: startKey, end: endKey }, tasks, calendarEntries: entries, dayNotes: Object.entries(state.data).filter(([date, day]) => date >= startKey && date <= endKey && day.note).map(([date, day]) => ({ date, note: day.note })) };
 }
 
@@ -2277,22 +2278,34 @@ function renderUnifiedTodoList() {
   updateMeetingFilterCounts(meetingItems);
 
   const query = (state.taskListSearch || el.taskListSearch?.value || "").trim();
+  const ownerSearch = TaskOptionPolicy.parseOwnerSearchQuery?.(query) || { ownerTokens: [], textQuery: query };
+  const hasListSearch = Boolean(ownerSearch.textQuery || ownerSearch.ownerTokens?.length);
   let visibleTasks = meetingMode
     ? []
     : allLeafTasks.filter(task => matchesUnifiedTaskFilter(task, state.filter));
-  if (query && !meetingMode) {
+  if (hasListSearch && !meetingMode) {
     const searchPool = state.filter === "memo" ? memoLeafTasks
       : state.filter === "all" ? allLeafTasks
         : workLeafTasks;
-    visibleTasks = TaskOptionPolicy.searchTaskCandidates({
-      tasks: searchPool,
-      query,
-      selectedId: "",
-      includeEnded: true,
-      isHiddenFutureRecurringInstance: task => isHiddenRecurringCatalogInstance(task),
-      statusText: task => statusLabel(task.status),
-      dateText: task => task.dueDate || "未计划"
-    }).map(item => item.task);
+    if (ownerSearch.textQuery) {
+      visibleTasks = TaskOptionPolicy.searchTaskCandidates({
+        tasks: searchPool,
+        query: ownerSearch.textQuery,
+        selectedId: "",
+        includeEnded: true,
+        isHiddenFutureRecurringInstance: task => isHiddenRecurringCatalogInstance(task),
+        statusText: task => statusLabel(task.status),
+        dateText: task => task.dueDate || "未计划"
+      }).map(item => item.task);
+    } else {
+      // @-only: stay within the current status tab pool, then filter by owner.
+      visibleTasks = searchPool.filter(task => matchesUnifiedTaskFilter(task, state.filter));
+    }
+    if (ownerSearch.ownerTokens?.length) {
+      visibleTasks = visibleTasks.filter(task =>
+        TaskOptionPolicy.matchesOwnerTokens?.(task.owner, ownerSearch.ownerTokens)
+      );
+    }
   }
 
   syncListKindSwitch();
@@ -2325,13 +2338,21 @@ function renderUnifiedTodoList() {
     yesterdayKey,
     hasChildTasks
   });
-  if (query) {
-    const normalizedQuery = TaskOptionPolicy.normalizeSearchText(query);
-    const keywords = normalizedQuery.split(" ").filter(Boolean);
-    linkedWorkItems = linkedWorkItems.filter(item => {
-      const searchable = TaskOptionPolicy.normalizeSearchText(`${item.title} ${item.parentTitle} 进行中 ${item.dateKey}`);
-      return keywords.every(keyword => searchable.includes(keyword));
-    });
+  if (hasListSearch) {
+    if (ownerSearch.textQuery) {
+      const normalizedQuery = TaskOptionPolicy.normalizeSearchText(ownerSearch.textQuery);
+      const keywords = normalizedQuery.split(" ").filter(Boolean);
+      linkedWorkItems = linkedWorkItems.filter(item => {
+        const searchable = TaskOptionPolicy.normalizeSearchText(`${item.title} ${item.parentTitle} 进行中 ${item.dateKey}`);
+        return keywords.every(keyword => searchable.includes(keyword));
+      });
+    }
+    if (ownerSearch.ownerTokens?.length) {
+      linkedWorkItems = linkedWorkItems.filter(item => {
+        const parentOwner = findTask(item.taskId)?.task?.owner || "";
+        return TaskOptionPolicy.matchesOwnerTokens?.(parentOwner, ownerSearch.ownerTokens);
+      });
+    }
   } else if (!["all", "in_progress"].includes(state.filter)) {
     linkedWorkItems = [];
   }
@@ -2356,7 +2377,7 @@ function renderUnifiedTodoList() {
       }]
       : [];
   } else if (state.filter === "memo") {
-    const memos = query
+    const memos = hasListSearch
       ? visibleTasks.filter(belongsInMemoList)
       : TodoListPolicy.sortByCreatedAtDesc(memoLeafTasks);
     sections = memos.length
@@ -2364,7 +2385,7 @@ function renderUnifiedTodoList() {
       : [];
   } else {
     const workVisible = visibleTasks.filter(task => !isMemoReminderTask(task));
-    const includeSections = !query && (state.filter === "all" || state.filter === "in_progress" || state.filter === "planned" || state.filter === "unplanned");
+    const includeSections = !hasListSearch && (state.filter === "all" || state.filter === "in_progress" || state.filter === "planned" || state.filter === "unplanned");
     const orderedVisible = state.filter === "unplanned"
       ? TodoListPolicy.sortByCreatedAtDesc(workVisible)
       : orderedTasks(workVisible);
@@ -2380,7 +2401,7 @@ function renderUnifiedTodoList() {
     });
 
     sections = TodoListPolicy.flattenGroups(groups).filter(section => section.label || section.tasks.length);
-    if (!query && state.filter === "all") {
+    if (!hasListSearch && state.filter === "all") {
       const remaining = sections.find(section => section.key === "remaining");
       if (remaining?.tasks.length) remaining.label = "其他任务";
       if (memoLeafTasks.length) {
@@ -2395,7 +2416,7 @@ function renderUnifiedTodoList() {
       }
     }
     if (linkedWorkItems.length) {
-      if (query) {
+      if (hasListSearch) {
         sections = [{ key: "search", label: "搜索结果", tasks: [...workVisible, ...linkedWorkItems] }];
       } else {
         const yesterdayItems = linkedWorkItems.filter(item => item.isFromYesterday);
@@ -2423,7 +2444,7 @@ function renderUnifiedTodoList() {
   if (!renderedCount) {
     el.taskList.innerHTML = `<div class="empty-state">${state.showContinueYesterdayOnly
       ? "昨天没有可继续的任务投入"
-      : query
+      : hasListSearch
         ? (meetingMode ? "没有匹配的会议" : "没有匹配的待办任务")
         : state.filter === "memo" && !meetingMode
           ? "暂无待跟踪事项<br>可将优先级设为「跟踪关注」，或关闭任务时选择「关闭并跟踪」"
@@ -2434,7 +2455,7 @@ function renderUnifiedTodoList() {
   }
 
   sections.forEach(section => {
-    const collapsible = !query && state.filter === "all" && !state.showContinueYesterdayOnly && Boolean(section.label);
+    const collapsible = !hasListSearch && state.filter === "all" && !state.showContinueYesterdayOnly && Boolean(section.label);
     const collapsed = collapsible && state.todoCollapsedSections.has(section.key);
     if (section.label && section.tasks.length) {
       const heading = document.createElement(collapsible ? "button" : "div");
@@ -2482,16 +2503,23 @@ function getMeetingListItems({ query = "", recentDays = 90, futureDays = 30 } = 
   const selected = fromDateKey(state.selectedDate);
   const minKey = toDateKey(addDays(selected, -recentDays));
   const maxKey = toDateKey(addDays(selected, futureDays));
-  const normalizedQuery = query ? TaskOptionPolicy.normalizeSearchText(query) : "";
+  const ownerSearch = TaskOptionPolicy.parseOwnerSearchQuery?.(query) || { ownerTokens: [], textQuery: query };
+  const normalizedQuery = ownerSearch.textQuery
+    ? TaskOptionPolicy.normalizeSearchText(ownerSearch.textQuery)
+    : "";
   const keywords = normalizedQuery.split(" ").filter(Boolean);
   return getAllCalendarEntries()
     .filter(({ dateKey, entry }) => {
       if (dateKey < minKey || dateKey > maxKey) return false;
       const title = String(entry.title || "").trim();
       if (!TodoListPolicy.hasDisplayTitle(title)) return false;
+      if (ownerSearch.ownerTokens?.length &&
+          !TaskOptionPolicy.matchesOwnerTokens?.(entry.owner, ownerSearch.ownerTokens)) {
+        return false;
+      }
       if (!keywords.length) return true;
       const searchable = TaskOptionPolicy.normalizeSearchText(
-        `${title} ${dateKey} ${entry.note || ""} 会议`
+        `${title} ${dateKey} ${entry.note || ""} ${entry.owner || ""} 会议`
       );
       return keywords.every(keyword => searchable.includes(keyword));
     })
@@ -2502,6 +2530,7 @@ function getMeetingListItems({ query = "", recentDays = 90, futureDays = 30 } = 
         dateKey,
         title: String(entry.title || "").trim(),
         note: entry.note || "",
+        owner: entry.owner || "",
         start: entry.start,
         end: entry.end,
         investedHours: getEntryInvestedHours(dateKey, entry),
@@ -3048,10 +3077,11 @@ function syncTaskPanelDensity() {
     if (label) label.textContent = width < 230 ? "昨天" : "继续昨天";
   }
   if (el.quickTaskInput && document.activeElement !== el.quickTaskInput) {
-    el.quickTaskInput.placeholder = width < 230 ? "新增" : "新增事项";
+    // Add lives in the narrow heading side slot — keep placeholder short.
+    el.quickTaskInput.placeholder = "新增";
   }
   if (el.taskListSearch && !(el.taskListSearch.value || "").trim()) {
-    el.taskListSearch.placeholder = "搜索…";
+    el.taskListSearch.placeholder = width < 230 ? "搜索.../@" : "搜索.../@负责人";
   }
 }
 
@@ -3652,7 +3682,10 @@ function syncListKindSwitch() {
   el.taskPanel?.classList.toggle("is-meeting-list", meeting);
   if (el.taskListSearch) {
     el.taskListSearch.placeholder = "搜索…";
-    el.taskListSearch.setAttribute("aria-label", meeting ? "搜索会议清单" : "搜索待办清单");
+    el.taskListSearch.setAttribute(
+      "aria-label",
+      meeting ? "搜索会议标题，或 @参会人" : "搜索待办标题，或 @责任人"
+    );
   }
 }
 
@@ -5691,6 +5724,7 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
   fillEntryTaskOptions(entry);
   el.entryStart.value = entry?.start ?? hour;
   el.entryEnd.value = entry?.end ?? Math.min(hour + 1, 22);
+  if (el.entryOwner) el.entryOwner.value = entry?.owner || "";
   el.entryNote.value = entry?.note || "";
   updateEntryTypeControls();
   el.deleteEntryButton.classList.toggle("hidden", !entry);
@@ -5702,6 +5736,7 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
 function saveEntry() {
   const payload = {
     title: el.entryTitle.value.trim(), start: Number(el.entryStart.value), end: Number(el.entryEnd.value),
+    owner: (el.entryOwner?.value || "").trim().slice(0, 80),
     note: el.entryNote.value.trim(), color: state.selectedColor,
     entryType: el.entryType.value === "task_work" ? "task_work" : "calendar"
   };

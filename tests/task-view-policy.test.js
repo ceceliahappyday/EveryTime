@@ -34,7 +34,8 @@ assert.match(
   "in-progress tasks from past schedule entries must keep their automatic status visible"
 );
 assert.match(html, /data-meeting-filter="all"/, "meeting list should expose an all-meetings tab");
-assert.match(html, /placeholder="新增事项"/, "quick add should use the shared 新增事项 label");
+assert.match(html, /placeholder="新增"/, "heading quick-add should use a short 新增 placeholder");
+assert.match(html, /placeholder="搜索\.\.\.\/@负责人"/, "toolbar search should hint @负责人 filtering");
 assert.match(styles, /\.task-side-control/, "search and continue-yesterday should share side-control styles");
 assert.match(app, /function matchesUnifiedTaskFilter\(task, filter\)/, "status filtering should happen inside the unified task list");
 

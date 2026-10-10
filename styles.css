@@ -1481,13 +1481,40 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   min-width: 0;
 }
 
-.task-list-toolbar .quick-add {
+.task-list-toolbar .task-search {
   flex: 1 1 auto;
+  width: auto;
   min-width: 0;
+  max-width: none;
 }
 
 .task-list-toolbar .task-side-slot {
   height: var(--task-toolbar-h);
+}
+
+.panel-heading-actions .quick-add {
+  width: 100%;
+  min-width: 0;
+  gap: 4px;
+}
+
+.panel-heading-actions .quick-add-new-btn {
+  --quick-add-size: 22px;
+}
+
+.panel-heading-actions .quick-add-new-plus {
+  font-size: 14px;
+}
+
+.panel-heading-actions .quick-add input {
+  text-align: left;
+  padding: 0;
+  font-size: 11px;
+  line-height: calc(var(--task-toolbar-h) - 2px);
+}
+
+.panel-heading-actions .quick-add input::placeholder {
+  text-align: left;
 }
 
 .task-continue-yesterday.soft-button {
@@ -1524,11 +1551,14 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
   flex: 1 1 auto;
   min-width: 0;
 }
-.task-panel.density-md .task-list-toolbar .quick-add {
+.task-panel.density-md .task-list-toolbar .task-search {
   flex: 1 1 auto;
   min-width: 0;
 }
-.task-panel.density-md .task-list-toolbar .quick-add input {
+.task-panel.density-md .panel-heading-actions .quick-add {
+  min-width: 0;
+}
+.task-panel.density-md .panel-heading-actions .quick-add input {
   min-width: 0;
 }
 .task-panel.density-md .task-tabs button {
@@ -5173,11 +5203,16 @@ body.in-desktop.shell-focus .task-side-slot {
   min-width: var(--task-side-action-w);
   max-width: var(--task-side-action-w);
 }
-body.in-desktop.shell-focus .quick-add {
+body.in-desktop.shell-focus .task-list-toolbar .task-search {
   max-width: none;
   width: auto;
   min-width: 0;
   flex: 1 1 auto;
+}
+body.in-desktop.shell-focus .panel-heading-actions .quick-add {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
 }
 body.in-desktop.shell-focus .quick-add-new-btn {
   --quick-add-size: 28px;
@@ -5229,7 +5264,7 @@ body.in-desktop.shell-compact-topbar:not(.shell-focus) .panel-heading-row,
 body.in-desktop.shell-compact-topbar:not(.shell-focus) .task-list-toolbar {
   gap: 8px 10px;
 }
-body.in-desktop.shell-compact-topbar:not(.shell-focus) .quick-add {
+body.in-desktop.shell-compact-topbar:not(.shell-focus) .task-list-toolbar .task-search {
   max-width: none;
   width: auto;
 }

@@ -32,5 +32,24 @@ assert.match(app, /state\.taskView === "day" && state\.filter === "in_progress"/
 assert.match(app, /isOngoingTask\(task\)/, "unfinished work should remain draggable across dates until closed");
 assert.match(app, /taskHasWorkHistory\(task\.id\)/, "a historical started worklog should keep the task discoverable");
 assert.match(app, /monthCanonicalTasks = RecurringPolicy\.dedupeRecurringTasksForDisplay/, "month view should deduplicate recurring tasks across all dates");
+assert.match(html, /id="entryOwner"/, "schedule dialog should expose attendees as entryOwner");
+assert.match(html, />参会人</, "schedule dialog label for owner field should read 参会人");
+assert.match(app, /entry\.owner \|\|= ""/, "calendar entries should migrate an empty owner/attendee field");
+assert.match(app, /parseOwnerSearchQuery/, "meeting and todo lists should parse @attendee search tokens");
+assert.match(
+  app,
+  /function createMeetingCard[\s\S]*?function createTaskCard/s,
+  "meeting cards stay before task cards for structural assertions"
+);
+assert.doesNotMatch(
+  app,
+  /function createMeetingCard[\s\S]*?责任人[\s\S]*?function createTaskCard/s,
+  "meeting list cards must not render 责任人/参会人 text"
+);
+assert.doesNotMatch(
+  app,
+  /function createTaskCard[\s\S]*?责任人[\s\S]*?function createLinkedWorkCard/s,
+  "todo list cards must not render 责任人 text"
+);
 
 console.log("entry type policy tests passed");

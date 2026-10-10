@@ -100,22 +100,22 @@
                 <span class="task-count-inline" id="taskCount" aria-label="待办数量">0</span>
               </div>
               <div class="panel-heading-actions task-side-slot">
-                <label class="task-search task-side-control" id="taskSearchWrap">
-                  <span class="task-side-glyph" aria-hidden="true">⌕</span>
-                  <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索…" aria-label="搜索待办清单" />
-                </label>
+                <form class="quick-add quick-task-form" id="quickTaskForm">
+                  <button type="button" id="taskAddTrigger" class="quick-add-new-btn" title="新建事项" aria-label="新建事项">
+                    <span class="quick-add-new-plus" aria-hidden="true">+</span>
+                  </button>
+                  <input id="quickTaskInput" maxlength="80" placeholder="新增" autocomplete="off" aria-label="新增事项" />
+                </form>
               </div>
             </div>
           </div>
         </div>
 
         <div class="task-list-toolbar">
-          <form class="quick-add quick-task-form" id="quickTaskForm">
-            <button type="button" id="taskAddTrigger" class="quick-add-new-btn" title="新建事项" aria-label="新建事项">
-              <span class="quick-add-new-plus" aria-hidden="true">+</span>
-            </button>
-            <input id="quickTaskInput" maxlength="80" placeholder="新增事项" autocomplete="off" aria-label="新增事项" />
-          </form>
+          <label class="task-search task-side-control" id="taskSearchWrap">
+            <span class="task-side-glyph" aria-hidden="true">⌕</span>
+            <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索.../@负责人" aria-label="搜索标题，或 @负责人 / @参会人" title="搜索标题；输入 @姓名 可按负责人/参会人过滤" />
+          </label>
           <div class="task-side-slot task-continue-slot">
             <button type="button" class="soft-button task-continue-yesterday task-side-control" id="continueYesterdayButton" title="查看昨天有投入、今天可继续的任务">
               <span class="task-side-glyph" aria-hidden="true">↺</span>
@@ -337,6 +337,11 @@
           <select id="entryEnd"></select>
         </label>
       </div>
+
+      <label>
+        <span>参会人</span>
+        <input id="entryOwner" maxlength="80" placeholder="例如：我、王芳、李明（多人用逗号分隔）" />
+      </label>
 
       <label>
         <span>完成内容 / 进度说明（可选）</span>

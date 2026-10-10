@@ -67,13 +67,25 @@ if (!kindTriggerRule || /border-bottom/.test(kindTriggerRule[0])) {
   throw new Error("list-kind dropdown trigger must not show a bottom underline");
 }
 if (!/\.task-panel\.density-md \.panel-heading-row[\s\S]*?flex-direction:\s*row/.test(styles)) {
-  throw new Error("density-md must keep title and search on one row (scale title, do not stack)");
+  throw new Error("density-md must keep title and quick-add on one row (scale title, do not stack)");
+}
+if (!html.includes('placeholder="搜索.../@负责人"')) {
+  throw new Error("task search placeholder should hint @负责人 filtering");
+}
+if (!/task-list-toolbar[\s\S]*?id="taskSearchWrap"/.test(html) || !/panel-heading-actions[\s\S]*?id="quickTaskForm"/.test(html)) {
+  throw new Error("search should sit in the toolbar row; quick-add should sit in the heading side slot");
 }
 if (/glass-mode \.task-panel \.panel-heading[\s\S]*?background:\s*rgba\(6,\s*16,\s*28/.test(styles)) {
   throw new Error("glass mode must not paint separate opaque chrome strips on task heading");
 }
 if (!styles.includes(".entry-parent-create-field")) {
   throw new Error("entry linking should provide a readable parent creation field");
+}
+if (!app.includes("matchesOwnerTokens") || !app.includes("parseOwnerSearchQuery")) {
+  throw new Error("todo/meeting search should support @owner/@attendee filtering");
+}
+if (!html.includes('id="entryOwner"') || !html.includes("参会人")) {
+  throw new Error("schedule dialog should collect attendees without crowding list cards");
 }
 
 console.log("todo list ui policy tests passed");

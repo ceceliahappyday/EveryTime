@@ -95,6 +95,44 @@
       .trim();
   }
 
+  function parseOwnerSearchQuery(query = "") {
+    const raw = String(query || "").trim();
+    if (!raw) return { ownerTokens: [], textQuery: "", textTokens: [] };
+    const ownerTokens = [];
+    const textParts = [];
+    raw.split(/\s+/).filter(Boolean).forEach(part => {
+      const matched = part.match(/^[@＠](.+)$/u);
+      if (matched && matched[1].trim()) {
+        const token = normalizeSearchText(matched[1]);
+        if (token) ownerTokens.push(token);
+        return;
+      }
+      textParts.push(part);
+    });
+    const textQuery = textParts.join(" ").trim();
+    return {
+      ownerTokens,
+      textQuery,
+      textTokens: normalizeSearchText(textQuery).split(" ").filter(Boolean)
+    };
+  }
+
+  function splitOwnerMembers(owner = "") {
+    return String(owner || "")
+      .split(/[,，;；]/)
+      .map(part => part.trim())
+      .filter(Boolean);
+  }
+
+  function matchesOwnerTokens(owner = "", ownerTokens = []) {
+    if (!ownerTokens.length) return true;
+    const members = splitOwnerMembers(owner).map(normalizeSearchText).filter(Boolean);
+    if (!members.length) return false;
+    return ownerTokens.every(token =>
+      members.some(member => member.includes(token) || token.includes(member))
+    );
+  }
+
   function searchTaskCandidates({ tasks = [], query = "", selectedId = "", includeEnded = false, leafOnly = false, hasChildTasks = () => false, isHiddenFutureRecurringInstance = () => false, statusText = task => task.status || "", dateText = task => task.dueDate || "" } = {}) {
     const normalizedQuery = normalizeSearchText(query);
     const keywords = normalizedQuery ? normalizedQuery.split(" ").filter(Boolean) : [];
@@ -313,6 +351,9 @@
     parentIdOf,
     hierarchyMeta,
     normalizeSearchText,
+    parseOwnerSearchQuery,
+    splitOwnerMembers,
+    matchesOwnerTokens,
     searchTaskCandidates
   };
 });

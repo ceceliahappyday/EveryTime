@@ -983,16 +983,16 @@ async function buildExcel(outputPath, data) {
   });
 
   addSheet(workbook, "日程记录", [
-    "日期", "开始时间", "结束时间", "计划时长", "实际投入工时", "事项", "关联任务ID", "备注", "颜色"
+    "日期", "开始时间", "结束时间", "计划时长", "实际投入工时", "事项", "关联任务ID", "参会人", "备注", "颜色"
   ], (data.schedules || []).map(entry => [
     asDate(entry.date), decimalTime(entry.start), decimalTime(entry.end),
     Number(entry.plannedDurationHours || 0), Number(entry.durationHours || 0),
-    entry.title || "", entry.taskId || "", entry.note || "", entry.color || ""
+    entry.title || "", entry.taskId || "", entry.owner || "", entry.note || "", entry.color || ""
   ]), {
     dateCols: [1],
     timeCols: [2, 3],
     numberCols: [4, 5],
-    wrapCols: [6, 8]
+    wrapCols: [6, 8, 9]
   });
 
   addSheet(workbook, "每日备注", ["日期", "当天备注"], (data.notes || []).map(note => [

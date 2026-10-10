@@ -39,4 +39,19 @@ assert.ok(browsed.some(item => item.task.id === "child"), "browse mode should ke
 assert.ok(!browsed.some(item => item.task.id === "leaf"), "browse mode should hide deep leaves until searched");
 const searched = policy.parentPickerSearchCandidates({ tasks, query: "准备" });
 assert.strictEqual(searched[0].task.id, "leaf");
+
+assert.deepStrictEqual(
+  policy.parseOwnerSearchQuery("@王芳 结账"),
+  { ownerTokens: ["王芳"], textQuery: "结账", textTokens: ["结账"] }
+);
+assert.deepStrictEqual(
+  policy.parseOwnerSearchQuery("＠李明"),
+  { ownerTokens: ["李明"], textQuery: "", textTokens: [] }
+);
+assert.equal(policy.matchesOwnerTokens("我,王芳", ["王芳"]), true, "@王芳 should hit comma-separated owners");
+assert.equal(policy.matchesOwnerTokens("我，王芳", ["王芳"]), true, "fullwidth comma owners should match");
+assert.equal(policy.matchesOwnerTokens("我", ["王芳"]), false, "@王芳 should not hit only 我");
+assert.equal(policy.matchesOwnerTokens("我", []), true, "no @ tokens means no owner filter");
+assert.equal(policy.matchesOwnerTokens("", ["王芳"]), false, "empty owner fails @ filter");
+
 console.log("task option search policy tests passed");
