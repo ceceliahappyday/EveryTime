@@ -1,6 +1,6 @@
 {
   "name": "today-daily-planner",
-  "version": "2.0.90",
+  "version": "2.0.91",
   "private": true,
   "description": "桌面浮窗日程与待办记事本",
   "main": "main.js",
@@ -43,6 +43,7 @@
       "week-entry-policy.js",
       "project-view-policy.js",
       "gantt-arrange-policy.js",
+      "task-category-policy.js",
       "task-status-policy.js",
       "navigation-policy.js",
       "ui-scale-policy.js",

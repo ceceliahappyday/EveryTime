@@ -8,9 +8,12 @@ const buckets = [
 assert.strictEqual(policy.anchorIndex(buckets, "2026-08-01"), 2);
 assert.strictEqual(policy.anchorScrollLeft({ buckets, anchorKey: "2026-08-01", labelWidth: 180, bucketWidth: 72 }), 144);
 assert.strictEqual(policy.anchorScrollLeft({ buckets, anchorKey: "missing", labelWidth: 180, bucketWidth: 72 }), 0);
-assert.strictEqual(policy.futureBucketCount("day"), 30);
-assert.strictEqual(policy.futureBucketCount("week"), 6);
-assert.strictEqual(policy.futureBucketCount("month"), 2);
+assert.strictEqual(policy.visibleBucketCount("day"), 7);
+assert.strictEqual(policy.visibleBucketCount("week"), 4);
+assert.strictEqual(policy.visibleBucketCount("month"), 3);
+assert.strictEqual(policy.futureBucketCount("day"), 7);
+assert.strictEqual(policy.futureBucketCount("week"), 4);
+assert.strictEqual(policy.futureBucketCount("month"), 3);
 assert.strictEqual(policy.anchorScrollLeft({ buckets, anchorKey: "2026-08-01", bucketWidth: 72 }), 144);
 assert.ok(policy.anchorScrollLeft({ buckets, anchorKey: "2026-08-01", bucketWidth: 72 }) < 216);
 
@@ -36,6 +39,38 @@ assert.deepStrictEqual(policy.investmentSegments({
 assert.deepStrictEqual(policy.investmentSegments({ investedDateKeys: [], buckets: dayBuckets, projectBucketKey: identity, scale: "day" }), []);
 assert.deepStrictEqual(policy.investmentSegments({
   investedDateKeys: ["2026-09-01"],
+  buckets: dayBuckets,
+  projectBucketKey: identity,
+  scale: "day"
+}), []);
+
+// Same-day schedule slots stay as separate, disconnected bars (not one merged day block).
+const sameDayEntries = policy.entryInvestmentSegments({
+  entries: [
+    { dateKey: "2026-07-02", start: 9, end: 10.5 },
+    { dateKey: "2026-07-02", start: 12, end: 13 }
+  ],
+  buckets: dayBuckets,
+  projectBucketKey: identity,
+  scale: "day",
+  dayStartHour: 9,
+  dayEndHour: 18
+});
+assert.strictEqual(sameDayEntries.length, 2);
+assert.ok(sameDayEntries[0].leftRatio + sameDayEntries[0].widthRatio < sameDayEntries[1].leftRatio - 0.001);
+assert.ok(sameDayEntries[0].leftRatio >= 0.2 - 0.001);
+assert.ok(sameDayEntries[1].leftRatio + sameDayEntries[1].widthRatio <= 0.4 + 0.001);
+// Width must follow duration: 1.5h bar longer than 1h bar under the same day window.
+assert.ok(
+  sameDayEntries[0].widthRatio > sameDayEntries[1].widthRatio,
+  "1.5h invest bar must render wider than 1h bar"
+);
+assert.ok(
+  Math.abs(sameDayEntries[0].widthRatio / sameDayEntries[1].widthRatio - 1.5) < 0.08,
+  "invest bar widths should stay proportional to hours"
+);
+assert.deepStrictEqual(policy.entryInvestmentSegments({
+  entries: [],
   buckets: dayBuckets,
   projectBucketKey: identity,
   scale: "day"
@@ -155,7 +190,7 @@ assert.deepStrictEqual(policy.initialGanttWindow({
   getMonday,
   fromDateKey,
   toDateKey
-}), { startKey: "2026-08-01", endKey: "2026-08-30" });
+}), { startKey: "2026-08-12", endKey: "2026-08-18" });
 
 assert.deepStrictEqual(policy.initialGanttWindow({
   scale: "week",
@@ -164,17 +199,36 @@ assert.deepStrictEqual(policy.initialGanttWindow({
   getMonday,
   fromDateKey,
   toDateKey
-}), { startKey: "2026-07-20", endKey: "2026-08-24" });
+}), { startKey: "2026-08-03", endKey: "2026-08-24" });
 
-assert.deepStrictEqual(policy.extendGanttWindow({
+assert.deepStrictEqual(policy.initialGanttWindow({
+  scale: "month",
+  centerDateKey: "2026-08-15",
+  addDays,
+  getMonday,
+  fromDateKey,
+  toDateKey
+}), { startKey: "2026-07", endKey: "2026-09" });
+
+assert.deepStrictEqual(policy.shiftGanttWindow({
   scale: "day",
-  startKey: "2026-08-01",
-  endKey: "2026-08-30",
+  startKey: "2026-08-12",
+  endKey: "2026-08-18",
+  direction: "future",
+  addDays,
+  fromDateKey,
+  toDateKey
+}), { startKey: "2026-08-13", endKey: "2026-08-19" });
+
+assert.deepStrictEqual(policy.shiftGanttWindow({
+  scale: "month",
+  startKey: "2026-07",
+  endKey: "2026-09",
   direction: "past",
   addDays,
   fromDateKey,
   toDateKey
-}), { startKey: "2026-07-02", endKey: "2026-08-30", addedCount: 30 });
+}), { startKey: "2026-06", endKey: "2026-08" });
 
 assert.strictEqual(policy.displayMarkerDateKey("2026-08-15", -1, addDays, fromDateKey, toDateKey), "2026-08-14");
 assert.strictEqual(policy.centeredScrollLeft({

@@ -9,9 +9,28 @@ const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 
 assert.match(html, /id="taskDueDateTime"/, "due date and time should share one field");
 assert.match(html, /type="text" id="taskDueDateTime"/, "due datetime should allow free typing");
-assert.match(html, /id="taskScheduleTimeRow"/, "start/end times should share one compact row");
+assert.match(html, /id="taskScheduleTimeRow"/, "status and due time share one compact row");
+assert.match(html, /id="taskTitleField"/, "task title field remains");
+assert.match(html, /id="taskTitleAttentionRow"/, "title shares a row with 仅关注");
+assert.match(html, /任务类别/, "category field labeled 任务类别");
+assert.match(html, /目标完成时间/, "due field labeled 目标完成时间");
+assert.match(html, /实际关闭时间/, "actual end labeled 实际关闭时间");
+assert.match(html, /id="taskStatusField"/, "task status remains a dedicated field");
 assert.match(html, /id="taskMeetingEndDateTime"/, "meeting create needs end datetime");
 assert.match(app, /parseFlexibleDateTime|bindFlexibleDateTimeInput/, "typed datetime text must normalize to standard format");
+assert.match(app, /finalizeFlexibleDateTimeParts/, "compact YYYYMMDDHHmm must share one parse path");
+assert.match(app, /replace\(\/-\/g,\s*"\/"\)/, "display datetime uses 2026/10/10 style");
+assert.match(app, /data-datetime-target[\s\S]*openDateTimePickerForInput/, "datetime calendar opens from the icon button");
+assert.match(app, /datetime-native-picker-anchor/, "native datetime picker overlays the field wrap");
+assert.match(styles, /\.datetime-native-picker-anchor/, "picker overlay styles keep calendar under the field");
+assert.doesNotMatch(app, /left:-9999/, "datetime picker must not anchor off-screen / top-left");
+assert.doesNotMatch(app, /datetimeDblclickBound/, "datetime fields no longer open calendar on double-click");
+assert.match(app, /bindFlexibleDateTimeInput\(el\.taskActualStart/, "actual start supports typed parse");
+assert.match(app, /bindFlexibleDateTimeInput\(el\.taskActualEnd/, "actual end supports typed parse");
+assert.match(app, /bindFlexibleDateTimeInput\(el\.taskCloseCompletedAt/, "close confirm time supports typed parse");
+assert.match(html, /type="text" id="taskActualStart"/, "actual start is a free-typed text field");
+assert.match(html, /type="text" id="taskActualEnd"/, "actual end is a free-typed text field");
+assert.match(html, /type="text" id="taskCloseCompletedAt"/, "close confirm completion time is free-typed");
 assert.match(app, /defaultWorkEndTime/, "due time should default to workday end");
 assert.match(app, /defaultWorkStartTime/, "actual start should default to workday start when picking");
 assert.match(app, /bindWorkHourDateTimeDefault/, "empty datetime pickers should seed work-hour defaults");
@@ -24,8 +43,29 @@ assert.match(html, /id="taskCloseSuccessorButton"/, "close confirm must offer �
 assert.match(app, /createSuccessorWorkTask/, "closing may spawn a successor work todo");
 assert.match(app, /buildSuccessorTask/, "successor payload must come from status policy");
 assert.match(app, /syncAttentionMode|syncAttentionOnlyChoice/, "successor dialog must expose 仅关注 toggle");
-assert.match(html, /task-attention-inline/, "仅关注 sits inline after due datetime");
-assert.match(html, /只提醒，不排投入/, "仅关注 explains memo-only meaning");
+assert.match(html, /task-attention-inline/, "仅关注 remains available inline");
+assert.match(
+  html,
+  /taskTitleCaption[\s\S]*taskFollowUpOption[\s\S]*taskTitleField[\s\S]*taskCreateKind[\s\S]*taskCategory[\s\S]*taskPriority[\s\S]*taskOwner[\s\S]*taskParent[\s\S]*taskStatusField[\s\S]*taskDueDateTime[\s\S]*taskActualStart[\s\S]*taskActualEnd[\s\S]*taskBusinessBackground/,
+  "form order: title caption|attention → title input → kind|category → priority|owner → parent → status|due → actual → background"
+);
+assert.match(html, /task-kind-category-row/, "type and category share one row");
+assert.match(html, /task-title-block|task-title-heading/, "title caption and 仅关注 share the heading row");
+assert.match(html, /id="taskTitleCaption"/, "title caption sits on the heading row");
+assert.match(styles, /\.task-title-heading[\s\S]*justify-content:\s*space-between/, "仅关注 sits on the right of the title caption row");
+assert.match(html, /task-status-due-row/, "status and due time share one row");
+assert.match(html, /待办类型/, "create kind labeled 待办类型");
+assert.match(html, /id="taskDueDateTime"[^>]*placeholder="2026\/10\/10 09:10"/, "datetime placeholder shows format only");
+assert.match(html, /任务级别/, "priority labeled 任务级别");
+assert.match(html, /责任人员/, "owner labeled 责任人员");
+assert.match(html, /<option value="planned">计划中<\/option>/, "status option drops parenthetical hint");
+assert.match(app, /计划中<\/option>[\s\S]*进行中<\/option>/, "status options rebuilt without parenthetical hints");
+assert.match(styles, /minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/, "paired form columns keep equal widths");
+assert.match(styles, /#taskEditForm[\s\S]*min-height:\s*42px/, "short controls share a unified 42px height");
+assert.match(app, /settingsDialog \|\| document\.body/, "color palette mounts inside settings dialog");
+assert.doesNotMatch(html, /task-attention-hint|只提醒，不排投入/, "仅关注 no longer shows helper microcopy");
+assert.match(styles, /#taskEditForm \.form-row > label:not\(#taskTitleField\):not\(\.checkbox-setting\)/, "short task fields keep label and control on one row");
+assert.match(styles, /\.task-attention-inline\s*\{[^}]*border:\s*0/s, "仅关注 has no outer border");
 assert.match(app, /abandonPendingSuccessorRollback/, "canceling successor draft must restore the closed source task");
 assert.match(app, /pendingSuccessorRollback/, "close-and-successor must be reversible until saved");
 assert.match(app, /继承原任务的优先级与上级/, "successor draft should explain inherited priority/parent");

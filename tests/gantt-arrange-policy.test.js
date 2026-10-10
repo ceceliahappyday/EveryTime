@@ -2,9 +2,9 @@ const assert = require("node:assert/strict");
 const policy = require("../gantt-arrange-policy.js");
 
 const classify = policy.rollupProjectStatus;
-const parent = { id: "p", title: "父", status: "planned", owner: "我", priority: "kpi" };
-const childActive = { id: "c1", title: "进行中子", status: "in_progress", parentId: "p", owner: "我", priority: "kpi" };
-const childDone = { id: "c2", title: "已结束子", status: "done", parentId: "p", owner: "张三", priority: "general_daily" };
+const parent = { id: "p", title: "父", status: "planned", owner: "我", priority: "kpi", category: "work" };
+const childActive = { id: "c1", title: "进行中子", status: "in_progress", parentId: "p", owner: "我", priority: "kpi", category: "study" };
+const childDone = { id: "c2", title: "已结束子", status: "done", parentId: "p", owner: "张三", priority: "general_daily", category: "life" };
 const project = {
   parent,
   children: [parent, childActive, childDone],
@@ -13,6 +13,8 @@ const project = {
 
 assert.equal(policy.DIMENSIONS.some(dim => dim.id === "projectStatus"), false, "project status removed");
 assert.equal(policy.dimensionMeta("taskTree").label, "任务项");
+assert.equal(policy.dimensionMeta("category").label, "分类");
+assert.ok(policy.DIMENSIONS.some(dim => dim.id === "category"), "category arrange dimension available");
 
 const defaults = policy.defaultConfig();
 assert.ok(defaults.dimensions.find(dim => dim.id === "taskTree")?.enabled);
@@ -136,5 +138,21 @@ const flat = policy.normalizeConfig({
 });
 const flatSections = policy.buildSections({ ...buildArgs, config: flat });
 assert.ok(flatSections.some(s => s.label === "进行中" || s.key === "in_progress"));
+
+// category / 标签 as arrange dimension
+const byTag = policy.normalizeConfig({
+  dimensions: [
+    { id: "category", enabled: true },
+    { id: "taskTree", enabled: false }
+  ]
+});
+const tagSections = policy.buildSections({
+  ...buildArgs,
+  config: byTag,
+  resolveCategory: task => task.category || "work",
+  categoryLabel: id => ({ work: "工作", study: "学习", life: "生活" })[id] || id
+});
+assert.ok(tagSections.some(s => s.label === "学习"), "tag arrange groups by category label");
+assert.ok(tagSections.some(s => s.label === "生活"));
 
 console.log("gantt arrange policy tests passed");

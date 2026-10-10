@@ -53,6 +53,8 @@ const state = {
   taskView: "day",
   projectScale: "day",
   projectScrollLeft: null,
+  projectRowsScrollTop: 0,
+  selectedGanttTaskId: "",
   projectHorizontalSyncing: false,
   projectAnchorDate: null,
   projectWindowStart: null,
@@ -71,12 +73,20 @@ const state = {
   todoCollapsedSections: new Set(),
   editingTaskId: null,
   editingParentTaskId: null,
+  lockedTaskParentId: "",
   editingEntryId: null,
+  highlightTaskId: "",
   editingEntryDateKey: null,
   taskSubtaskDrafts: [],
   selectedColor: "sage",
-  workStartHour: ScheduleHoursPolicy?.DEFAULT_WORK_START ?? 9,
+  morningStart: ScheduleHoursPolicy?.DEFAULT_MORNING_START ?? 8.5,
+  morningEnd: ScheduleHoursPolicy?.DEFAULT_MORNING_END ?? 12,
+  afternoonStart: ScheduleHoursPolicy?.DEFAULT_AFTERNOON_START ?? 13.5,
+  afternoonEnd: ScheduleHoursPolicy?.DEFAULT_AFTERNOON_END ?? 18,
+  workStartHour: ScheduleHoursPolicy?.DEFAULT_WORK_START ?? 8.5,
   workEndHour: ScheduleHoursPolicy?.DEFAULT_WORK_END ?? 18,
+  workdayHours: 8,
+  profileName: "",
   ganttLabelWidth: null,
   data: loadData()
 };
@@ -106,18 +116,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     "taskDetailSummary", "followUpDraftHint", "taskDialogScroll", "taskDialogCloseButton", "taskDialogCancelButton",
     "taskCreateKindField", "taskCreateKind",
     "taskTabsWrap", "taskTabsMore", "taskTabsMoreButton", "taskTabsMoreMenu",
-    "taskTitleInput", "taskDueDateTime", "taskMeetingEndField", "taskMeetingEndDateTime", "taskOwner", "taskParentField", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
+    "taskTitleInput", "taskDueDateTime", "taskMeetingEndField", "taskMeetingEndDateTime", "taskOwner", "taskCategory", "taskParentField", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
     "taskProgress", "taskProgressValue", "taskStatus", "taskMonthlyRecurring", "taskRecurringUntil",
     "taskFollowUpOption", "taskFollowUpTracking", "taskFollowUpTrackingLabel",
     "recurringOptions", "taskActualStart", "taskActualEnd",
     "taskBusinessBackground", "taskProblemReason", "taskDeliveryNote", "businessBackgroundLabel",
-    "problemReasonLabel", "taskDescription", "taskTitleField", "taskDueDateField", "taskDeliveryField",
+    "problemReasonLabel", "taskDescription", "taskTitleField", "taskTitleCaption", "taskDueDateField", "taskDeliveryField",
     "taskSubtaskList", "taskSubtaskDraftInput", "taskSubtasksSection",
     "deleteTaskButton", "closeTaskButton", "mergeTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle", "entryType",
     "entryLinkConfirmDialog", "entryLinkConfirmTitle", "entryLinkConfirmMessage", "entryLinkConfirmOptions", "entryLinkConfirmCancel", "entryLinkConfirmCreate",
     "taskCloseConfirmDialog", "taskCloseConfirmTitle", "taskCloseConfirmMessage", "taskCloseCompletedAt", "taskCloseCompletionNote", "taskCloseOnlyButton", "taskCloseSuccessorButton",
     "taskMergeDialog", "taskMergeForm", "taskMergeMessage", "taskMergeTarget", "taskMergeSearch", "taskMergeOptions",
-    "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryOwner", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
+    "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryOwner", "entryNote", "entryCategoryField", "entryCategory", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
     "updateProgress", "updateProgressText", "updateProgressBar",
     "exportDialog", "exportForm", "exportFormat", "importButton", "minimizeWindow", "maximizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiExportTablesButton", "aiQuickActions",
@@ -129,8 +139,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     "focusViewChrome", "focusViewButton", "focusViewMenu",
     "glassToggleButton",
     "topbarMain", "headerToolsSlot", "headerTools", "headerOverflow", "headerMoreButton", "headerMoreMenu", "headerActions",
-    "settingsButton", "settingsDialog", "settingsForm", "settingGlass", "settingPinned", "settingLocked",
-    "settingCompact", "settingStartAtLogin", "settingWorkStartHour", "settingWorkEndHour",
+    "settingsButton", "settingsDialog", "settingsForm", "settingsDialogScroll", "settingsCategoryList", "addCategoryButton", "settingsPaneTitle", "settingsNavList",
+    "settingProfileName", "settingGlass", "settingPinned", "settingLocked", "settingStartAtLogin",
+    "settingMorningStart", "settingMorningEnd", "settingAfternoonStart", "settingAfternoonEnd", "settingWorkHoursSummary",
     "settingAiEnabled", "settingAiApiKey", "settingAiProvider", "settingAiModel", "aiDetectModelsButton", "aiKeyStatus",
     "settingsAppVersion", "checkUpdateButton", "settingsDataPath", "settingsExportPath"
   ].forEach(id => el[id] = document.getElementById(id));
@@ -145,7 +156,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   fillWorkHourSettingOptions();
   fillTimeOptions();
   bindEvents();
-  if (localStorage.getItem("today-planner-compact") === "1") document.body.classList.add("compact");
   bindUiScale();
   bindWindowResize();
   bindHeaderOverflow();
@@ -189,15 +199,23 @@ function migrateData() {
       entry.entryType ||= entry.taskId ? "task_work" : "calendar";
       entry.note ||= "";
       entry.owner ||= "";
-      entry.color ||= "sage";
+      entry.color = typeof TaskCategoryPolicy?.normalizeColor === "function"
+        ? TaskCategoryPolicy.normalizeColor(entry.color || "sage")
+        : (entry.color || "sage");
     });
     day.tasks.forEach(task => {
       task.parentId ||= task.parentTaskId || task.parentTask || task.parent || "";
       task.dueDate ??= dateKey;
       task.dueTime ??= `${String(ScheduleHoursPolicy?.DEFAULT_WORK_END ?? 18).padStart(2, "0")}:00`;
-      task.owner ||= "我";
+      task.owner ||= getDefaultOwner();
       task.parentId ||= "";
       task.description ||= "";
+      task.category = typeof TaskCategoryPolicy?.resolveTaskCategory === "function"
+        ? TaskCategoryPolicy.resolveTaskCategory(task)
+        : (task.category || "work");
+      task.color = typeof TaskCategoryPolicy?.resolveTaskColor === "function"
+        ? TaskCategoryPolicy.resolveTaskColor(task)
+        : (task.color || "sage");
       task.priority = migratePriority(task.priority);
       // monthly_fixed is UI-only; never persist it. Repair any earlier mistaken writes.
       if (task.priority === "monthly_fixed") task.priority = "general_daily";
@@ -435,14 +453,14 @@ function bindEvents() {
     event.preventDefault();
     mergeTaskIntoTarget(state.editingTaskId, el.taskMergeTarget.value);
   });
-  el.entryLinkConfirmCancel?.addEventListener("click", () => {
-    pendingEntrySave = null;
-    el.entryLinkConfirmDialog.close();
+  el.entryLinkConfirmCancel?.addEventListener("click", () => cancelPendingEntryLinkConfirm());
+  el.entryLinkConfirmDialog?.addEventListener("cancel", event => {
+    event.preventDefault();
+    cancelPendingEntryLinkConfirm();
   });
   el.entryLinkConfirmCreate?.addEventListener("click", () => {
     if (!pendingEntrySave) return;
     const { resolve, entryPayload, createMode } = pendingEntrySave;
-    let task;
     if (createMode === "parent") {
       const parentTitle = el.entryLinkConfirmOptions.querySelector("#entryParentTaskTitle")?.value.trim() || "";
       if (!parentTitle) return showToast("请输入父级任务名称");
@@ -460,16 +478,37 @@ function bindEvents() {
           return;
         }
       }
-      task = createParentAndLeafFromEntryPayload(entryPayload, parentTitle);
+      const task = createParentAndLeafFromEntryPayload(entryPayload, parentTitle);
       showToast(existingParent
-        ? `已在已有父级「${existingParent.title}」下新建子待办`
-        : `已新建父级「${parentTitle}」并挂入子待办`);
-    } else {
-      task = createTaskFromEntryPayload(entryPayload);
+        ? `已在已有父级「${existingParent.title}」下新建「${task.title}」`
+        : `已新建父级「${parentTitle}」并挂入「${task.title}」`);
+      pendingEntrySave = null;
+      el.entryLinkConfirmDialog.close();
+      resolve(task.id);
+      return;
     }
+    if (createMode === "under_parent") {
+      const parentId = pendingEntrySave.selectedParentId
+        || el.entryLinkConfirmOptions.querySelector(".entry-link-confirm-option[aria-selected='true']")?.dataset.taskId
+        || "";
+      if (!parentId) return showToast("请先选择要挂入的父级任务");
+      const parent = findTask(parentId)?.task;
+      if (!parent) return showToast("未找到所选父级，请重新选择");
+      if (TodoListPolicy.normalizeTitle(parent.title) === TodoListPolicy.normalizeTitle(entryPayload.title)) {
+        return showToast("父级名称不能与当前事项相同");
+      }
+      const linkedId = resolveCreateUnderExistingParent(entryPayload, parent.title);
+      pendingEntrySave = null;
+      el.entryLinkConfirmDialog.close();
+      resolve(linkedId);
+      return;
+    }
+    // Similar-task dialog:「仍要新建」→ 选已有父级再挂子任务，不再静默建顶层
+    const payload = entryPayload;
+    const resolveFn = resolve;
     pendingEntrySave = null;
     el.entryLinkConfirmDialog.close();
-    resolve(task.id);
+    promptEntryCreateUnderParent(payload).then(resolveFn);
   });
 
   el.previousWeek = el.dateNavPrev;
@@ -561,15 +600,17 @@ function bindEvents() {
     updateProgressAvailability();
   });
   el.taskMonthlyRecurring?.addEventListener("change", updateRecurringOptions);
-  [el.taskActualStart, el.taskActualEnd].forEach(enableNativePicker);
   bindFlexibleDateTimeInput(el.taskDueDateTime, { kind: () => (isCreateMeetingKind() ? "start" : "end") });
   bindFlexibleDateTimeInput(el.taskMeetingEndDateTime, { kind: "end" });
+  bindFlexibleDateTimeInput(el.taskActualStart, { kind: "start" });
+  bindFlexibleDateTimeInput(el.taskActualEnd, { kind: "end" });
+  bindFlexibleDateTimeInput(el.taskCloseCompletedAt, { kind: "end" });
   bindWorkHourDateTimeDefault(el.taskActualStart, "start");
   bindWorkHourDateTimeDefault(el.taskActualEnd, "end");
   document.querySelectorAll("[data-datetime-target]").forEach(button => {
     button.addEventListener("click", event => {
       event.preventDefault();
-      openDateTimePickerForInput(button.dataset.datetimeTarget);
+      openDateTimePickerForInput(button.dataset.datetimeTarget, button);
     });
   });
   el.taskDueDateTime?.addEventListener("change", () => {
@@ -616,11 +657,15 @@ function bindEvents() {
       el.entryEnd.value = Math.min(Number(el.entryStart.value) + 1, 24);
     }
   });
-  el.colorPicker.addEventListener("click", event => {
+  el.colorPicker?.addEventListener("click", event => {
     const button = event.target.closest("button[data-color]");
     if (!button) return;
     state.selectedColor = button.dataset.color;
     el.colorPicker.querySelectorAll("button").forEach(item => item.classList.toggle("selected", item === button));
+    syncEntryCategoryFromColor(state.selectedColor);
+  });
+  el.entryCategory?.addEventListener("change", () => {
+    syncSelectedColorFromCategory();
   });
   el.deleteEntryButton.addEventListener("click", () => {
     cancelEditingEntry();
@@ -914,6 +959,11 @@ function updateGlassToggleChrome(glass) {
   el.glassToggleButton.title = on ? "关闭玻璃背景" : "开启玻璃背景";
 }
 
+function refreshAfterGlassModeChange() {
+  if (typeof render !== "function") return;
+  try { render(); } catch (_) { /* boot may not be ready */ }
+}
+
 async function toggleGlassMode() {
   if (!window.desktopAPI) return;
   const next = !document.body.classList.contains("glass-mode");
@@ -922,6 +972,7 @@ async function toggleGlassMode() {
     document.body.classList.toggle("glass-mode", !!saved?.glass);
     if (el.settingGlass) el.settingGlass.checked = !!saved?.glass;
     updateGlassToggleChrome(saved?.glass);
+    refreshAfterGlassModeChange();
     showToast(saved?.glass ? "已开启玻璃背景" : "已关闭玻璃背景");
     return;
   }
@@ -929,6 +980,7 @@ async function toggleGlassMode() {
   if (glass !== undefined) {
     document.body.classList.toggle("glass-mode", !!glass);
     updateGlassToggleChrome(glass);
+    refreshAfterGlassModeChange();
   }
 }
 
@@ -1032,6 +1084,82 @@ function bindFocusViewMenu() {
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") closeFocusViewMenu();
   });
+}
+
+function topbarWindowChromeTarget(target) {
+  return !target?.closest?.(
+    "button, input, select, a, label, textarea, option, .window-controls, .header-view-switcher, .focus-view-chrome, .header-actions, .header-overflow, .date-controls, .header-tools, .soft-button, .icon-button, .date-picker-button"
+  );
+}
+
+function bindTopbarWindowChrome(runToggleMaximize) {
+  const topbar = document.querySelector(".topbar");
+  if (!topbar || !window.desktopAPI?.setWindowBounds) return;
+  let drag = null;
+
+  topbar.addEventListener("dblclick", event => {
+    if (!topbarWindowChromeTarget(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    runToggleMaximize?.();
+  });
+
+  topbar.addEventListener("pointerdown", event => {
+    if (event.button !== 0) return;
+    if (!topbarWindowChromeTarget(event.target)) return;
+    drag = {
+      pointerId: event.pointerId,
+      startScreenX: event.screenX,
+      startScreenY: event.screenY,
+      originX: window.screenX,
+      originY: window.screenY,
+      width: window.outerWidth,
+      height: window.outerHeight,
+      moved: false,
+      restoring: false
+    };
+    try { topbar.setPointerCapture(event.pointerId); } catch {}
+  });
+
+  topbar.addEventListener("pointermove", event => {
+    if (!drag || event.pointerId !== drag.pointerId || drag.restoring) return;
+    const dx = event.screenX - drag.startScreenX;
+    const dy = event.screenY - drag.startScreenY;
+    if (!drag.moved && (dx * dx + dy * dy) < 25) return;
+    drag.moved = true;
+    if (document.body.classList.contains("window-maximized")) {
+      drag.restoring = true;
+      Promise.resolve(runToggleMaximize?.()).then(() => {
+        drag = {
+          pointerId: event.pointerId,
+          startScreenX: event.screenX,
+          startScreenY: event.screenY,
+          originX: window.screenX,
+          originY: window.screenY,
+          width: window.outerWidth,
+          height: window.outerHeight,
+          moved: true,
+          restoring: false
+        };
+      }).catch(() => { if (drag) drag.restoring = false; });
+      return;
+    }
+    window.desktopAPI.setWindowBounds({
+      x: Math.round(drag.originX + dx),
+      y: Math.round(drag.originY + dy),
+      width: drag.width,
+      height: drag.height
+    });
+  });
+
+  const endDrag = event => {
+    if (!drag) return;
+    if (event && event.pointerId != null && event.pointerId !== drag.pointerId) return;
+    drag = null;
+  };
+  topbar.addEventListener("pointerup", endDrag);
+  topbar.addEventListener("pointercancel", endDrag);
+  topbar.addEventListener("lostpointercapture", endDrag);
 }
 
 function bindWindowResize() {
@@ -1165,33 +1293,35 @@ async function initDesktop() {
   if (!window.desktopAPI) return;
   document.body.classList.add("in-desktop");
   const desktopSettings = await window.desktopAPI.getSettings?.();
-  if (desktopSettings?.compact) {
-    document.body.classList.add("compact");
-    localStorage.setItem("today-planner-compact", "1");
-    applyUiScale();
-  }
+  document.body.classList.remove("compact");
+  localStorage.removeItem("today-planner-compact");
+  if (desktopSettings?.profileName != null) applyProfileName(desktopSettings.profileName, { migrateOwners: false });
   if (desktopSettings) applyStoredWorkHours(desktopSettings);
   const pinned = await window.desktopAPI.getPinned();
   document.body.classList.toggle("pinned", pinned);
   const syncLock = locked => {
-    document.body.classList.toggle("desktop-locked", locked);
+    document.body.classList.toggle("desktop-locked", !!locked);
   };
-  const syncGlass = glass => {
+  const syncGlass = (glass, { rerender = true } = {}) => {
     document.body.classList.toggle("glass-mode", glass);
     updateGlassToggleChrome(glass);
     if (el.settingGlass) el.settingGlass.checked = !!glass;
+    if (rerender) refreshAfterGlassModeChange();
   };
-  syncGlass(await window.desktopAPI.getGlass());
-  window.desktopAPI.onGlassChanged(syncGlass);
+  syncGlass(await window.desktopAPI.getGlass(), { rerender: false });
+  window.desktopAPI.onGlassChanged(glass => syncGlass(glass, { rerender: true }));
   syncLock(await window.desktopAPI.getLocked());
   window.desktopAPI.onLockChanged(syncLock);
   el.minimizeWindow.addEventListener("click", () => window.desktopAPI.minimize());
-  el.maximizeWindow?.addEventListener("click", async () => {
-    if (!window.desktopAPI?.toggleMaximize) return;
+  const runToggleMaximize = async () => {
+    if (!window.desktopAPI?.toggleMaximize) return false;
     const maximized = await window.desktopAPI.toggleMaximize();
     updateMaximizeChrome(maximized);
     applyUiScale();
-  });
+    return maximized;
+  };
+  el.maximizeWindow?.addEventListener("click", () => { runToggleMaximize(); });
+  bindTopbarWindowChrome(runToggleMaximize);
   window.desktopAPI.onMaximizeChanged?.(maximized => {
     updateMaximizeChrome(maximized);
     applyUiScale();
@@ -1210,11 +1340,13 @@ async function initDesktop() {
   el.closeWindow.addEventListener("click", () => window.desktopAPI.quit());
   el.glassToggleButton?.addEventListener("click", () => toggleGlassMode());
   el.settingsButton?.addEventListener("click", openSettingsDialog);
+  bindSettingsNav();
   el.settingGlass?.addEventListener("change", async () => {
     if (!window.desktopAPI?.saveSettings) return;
     const saved = await window.desktopAPI.saveSettings({ glass: el.settingGlass.checked });
     document.body.classList.toggle("glass-mode", !!saved?.glass);
     updateGlassToggleChrome(saved?.glass);
+    refreshAfterGlassModeChange();
     showToast(saved?.glass ? "已开启玻璃背景" : "已关闭玻璃背景");
   });
   el.checkUpdateButton?.addEventListener("click", async () => {
@@ -1288,6 +1420,52 @@ async function initDesktop() {
     event.preventDefault();
     saveDesktopSettings();
   });
+  el.addCategoryButton?.addEventListener("click", event => {
+    event.preventDefault();
+    closeCategoryColorPalette();
+    TaskCategoryPolicy?.createCategory?.({
+      label: "新分类",
+      color: TaskCategoryPolicy.DEFAULT_COLOR || "#638576"
+    });
+    renderSettingsCategoryList();
+    refreshCategorySelects();
+  });
+  el.settingsCategoryList?.addEventListener("input", event => {
+    const row = event.target.closest?.("[data-category-id]");
+    if (!row || !event.target.matches?.("[data-category-label]")) return;
+    TaskCategoryPolicy?.upsertCategory?.({
+      id: row.dataset.categoryId,
+      label: event.target.value
+    });
+    refreshCategorySelects();
+  });
+  el.settingsCategoryList?.addEventListener("click", event => {
+    const openPalette = event.target.closest?.("[data-category-open-palette]");
+    const removeBtn = event.target.closest?.("[data-category-remove]");
+    const row = event.target.closest?.("[data-category-id]");
+    if (!row) return;
+    const id = row.dataset.categoryId;
+    if (openPalette) {
+      event.preventDefault();
+      event.stopPropagation();
+      openCategoryColorPalette(openPalette, id);
+      return;
+    }
+    if (removeBtn) {
+      event.preventDefault();
+      closeCategoryColorPalette();
+      TaskCategoryPolicy?.removeCategory?.(id);
+      renderSettingsCategoryList();
+      refreshCategorySelects();
+    }
+  });
+  el.settingsDialog?.addEventListener("close", () => closeCategoryColorPalette());
+  document.addEventListener("pointerdown", event => {
+    const palette = document.getElementById("categoryColorPalette");
+    if (!palette) return;
+    if (palette.contains(event.target) || event.target.closest?.("[data-category-open-palette]")) return;
+    closeCategoryColorPalette();
+  });
   el.aiDetectModelsButton?.addEventListener("click", () => refreshAiProviderModels({ forceList: true }));
   el.settingAiApiKey?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
   el.settingAiProvider?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
@@ -1326,22 +1504,81 @@ function bindUpdateProgress() {
   });
 }
 
+const SETTINGS_PANE_TITLES = {
+  account: "账号设置",
+  basic: "基本设置",
+  ai: "AI 助手",
+  tasks: "任务设置",
+  about: "关于"
+};
+
+function getDefaultOwner() {
+  const name = String(state.profileName || "").trim();
+  return name || "我";
+}
+
+function applyProfileName(name, { migrateOwners = false } = {}) {
+  const next = String(name || "").trim().slice(0, 40);
+  state.profileName = next;
+  const brandName = document.querySelector(".settings-nav-brand strong");
+  if (brandName) brandName.textContent = next || "今日日程";
+  const brandSub = document.querySelector(".settings-nav-brand span");
+  if (brandSub) brandSub.textContent = "桌面设置";
+  if (!migrateOwners || !next || next === "我") return 0;
+  let changed = 0;
+  getAllTasks().forEach(({ task }) => {
+    if (String(task.owner || "").trim() === "我") {
+      task.owner = next;
+      changed += 1;
+    }
+  });
+  Object.values(state.data || {}).forEach(day => {
+    (day.entries || []).forEach(entry => {
+      if (String(entry.owner || "").trim() === "我") {
+        entry.owner = next;
+        changed += 1;
+      }
+    });
+  });
+  return changed;
+}
+
+function bindSettingsNav() {
+  el.settingsNavList?.addEventListener("click", event => {
+    const button = event.target?.closest?.("[data-settings-pane]");
+    if (!button) return;
+    event.preventDefault();
+    selectSettingsPane(button.dataset.settingsPane);
+  });
+}
+
+function selectSettingsPane(paneId = "account") {
+  const id = SETTINGS_PANE_TITLES[paneId] ? paneId : "account";
+  el.settingsDialog?.querySelectorAll?.("[data-settings-pane]").forEach(button => {
+    button.classList.toggle("is-active", button.dataset.settingsPane === id);
+  });
+  el.settingsDialog?.querySelectorAll?.("[data-settings-panel]").forEach(panel => {
+    panel.classList.toggle("is-active", panel.dataset.settingsPanel === id);
+  });
+  if (el.settingsPaneTitle) el.settingsPaneTitle.textContent = SETTINGS_PANE_TITLES[id];
+  el.settingsDialogScroll?.scrollTo?.(0, 0);
+}
+
 async function openSettingsDialog() {
   if (!window.desktopAPI) return;
   const [settings, paths] = await Promise.all([
     window.desktopAPI.getSettings?.(),
     window.desktopAPI.getPaths?.()
   ]);
+  if (el.settingProfileName) el.settingProfileName.value = settings?.profileName || state.profileName || "";
+  applyProfileName(el.settingProfileName?.value || state.profileName || "", { migrateOwners: false });
   el.settingGlass.checked = !!settings?.glass;
   updateGlassToggleChrome(settings?.glass);
   el.settingPinned.checked = !!settings?.pinned;
   el.settingLocked.checked = !!settings?.locked;
-  el.settingCompact.checked = document.body.classList.contains("compact") || !!settings?.compact;
   el.settingStartAtLogin.checked = !!settings?.startAtLogin;
-  applyWorkHours({
-    workStartHour: settings?.workStartHour ?? state.workStartHour,
-    workEndHour: settings?.workEndHour ?? state.workEndHour
-  });
+  applyStoredWorkHours(settings || null);
+  selectSettingsPane("account");
   el.settingAiEnabled.checked = !!settings?.aiEnabled;
   el.settingAiApiKey.value = "";
   el.settingAiApiKey.placeholder = settings?.aiConfigured
@@ -1355,10 +1592,128 @@ async function openSettingsDialog() {
   el.settingsAppVersion.textContent = el.appVersionBadge?.textContent || await window.desktopAPI.getVersion?.().then(version => `v${version}`).catch(() => "读取失败");
   el.settingsDataPath.textContent = paths?.dataFile || "当前用户数据目录";
   el.settingsExportPath.textContent = paths?.exportDir || "文档目录";
+  renderSettingsCategoryList();
   el.settingsDialog.showModal();
   if (settings?.aiConfigured) {
     refreshAiProviderModels({ providerId: settings.aiProvider || "", selectedModel: settings.aiModel || "" }).catch(() => {});
   }
+}
+
+function renderSettingsCategoryList() {
+  if (!el.settingsCategoryList || typeof TaskCategoryPolicy?.listCategories !== "function") return;
+  closeCategoryColorPalette();
+  el.settingsCategoryList.innerHTML = TaskCategoryPolicy.listCategories().map(item => {
+    const hex = TaskCategoryPolicy.normalizeColor?.(item.color) || item.color || "#638576";
+    const remove = item.builtin
+      ? ""
+      : `<button type="button" class="settings-category-remove" data-category-remove aria-label="删除分类" title="删除分类">×</button>`;
+    return `<div class="settings-category-row" data-category-id="${escapeHtml(item.id)}">
+      <button type="button" class="settings-category-swatch" data-category-open-palette style="background:${escapeHtml(hex)}" aria-label="选择颜色" title="点击选择颜色（Excel 色板）"></button>
+      <input type="text" data-category-label maxlength="24" value="${escapeHtml(item.label)}" placeholder="分类名称" aria-label="分类名称" />
+      ${remove || `<span class="settings-category-remove-spacer" aria-hidden="true"></span>`}
+    </div>`;
+  }).join("");
+}
+
+function closeCategoryColorPalette() {
+  document.getElementById("categoryColorPalette")?.remove();
+}
+
+function openCategoryColorPalette(anchor, categoryId) {
+  if (!TaskCategoryPolicy || !anchor || !categoryId) return;
+  const existing = document.getElementById("categoryColorPalette");
+  if (existing?.dataset.categoryId === categoryId) {
+    closeCategoryColorPalette();
+    return;
+  }
+  closeCategoryColorPalette();
+  const current = TaskCategoryPolicy.normalizeColor(
+    TaskCategoryPolicy.findCategory?.(categoryId)?.color || TaskCategoryPolicy.DEFAULT_COLOR
+  );
+  const themeRows = TaskCategoryPolicy.THEME_PALETTE || [];
+  const standard = TaskCategoryPolicy.STANDARD_PALETTE || [];
+  const themeHtml = themeRows.map(row => (
+    `<div class="category-color-palette-row">${row.map(hex => {
+      const value = TaskCategoryPolicy.normalizeColor(hex);
+      const light = value === "#FFFFFF" || value === "#FFF2CC" || value === "#FFFF00";
+      return `<button type="button" class="category-color-palette-cell${value === current ? " selected" : ""}${light ? " is-light" : ""}" data-pick-color="${value}" style="background:${value}" title="${value}" aria-label="${value}"></button>`;
+    }).join("")}</div>`
+  )).join("");
+  const standardHtml = standard.map(hex => {
+    const value = TaskCategoryPolicy.normalizeColor(hex);
+    return `<button type="button" class="category-color-palette-cell${value === current ? " selected" : ""}" data-pick-color="${value}" style="background:${value}" title="${value}" aria-label="${value}"></button>`;
+  }).join("");
+  const palette = document.createElement("div");
+  palette.id = "categoryColorPalette";
+  palette.className = "category-color-palette";
+  palette.dataset.categoryId = categoryId;
+  palette.innerHTML = `
+    <div class="category-color-palette-label">主题颜色</div>
+    <div class="category-color-palette-theme">${themeHtml}</div>
+    <div class="category-color-palette-label">标准颜色</div>
+    <div class="category-color-palette-row category-color-palette-standard">${standardHtml}</div>
+  `;
+  palette.addEventListener("click", event => {
+    const cell = event.target.closest?.("[data-pick-color]");
+    if (!cell) return;
+    event.preventDefault();
+    event.stopPropagation();
+    TaskCategoryPolicy.upsertCategory?.({ id: categoryId, color: cell.dataset.pickColor });
+    closeCategoryColorPalette();
+    renderSettingsCategoryList();
+    refreshCategorySelects();
+  });
+  // <dialog> 在顶层：色板必须挂在设置弹窗内，挂 body 会被挡住且点不到
+  const host = el.settingsDialog || document.body;
+  host.appendChild(palette);
+  const hostRect = host.getBoundingClientRect?.() || { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  const rect = anchor.getBoundingClientRect();
+  const pad = 8;
+  const width = palette.offsetWidth || 220;
+  const height = palette.offsetHeight || 220;
+  let left = rect.left;
+  let top = rect.bottom + 6;
+  const maxRight = Math.min(window.innerWidth, hostRect.right) - pad;
+  const maxBottom = Math.min(window.innerHeight, hostRect.bottom) - pad;
+  const minLeft = Math.max(pad, hostRect.left + pad);
+  if (left + width > maxRight) left = maxRight - width;
+  if (top + height > maxBottom) top = Math.max(pad, rect.top - height - 6);
+  if (left < minLeft) left = minLeft;
+  palette.style.left = `${Math.round(left)}px`;
+  palette.style.top = `${Math.round(top)}px`;
+}
+
+function applyCategoryColorStyle(node, color) {
+  if (!node) return;
+  const tokens = typeof TaskCategoryPolicy?.colorTokens === "function"
+    ? TaskCategoryPolicy.colorTokens(color, { glass: document.body.classList.contains("glass-mode") })
+    : { entry: color || "#638576", entryBg: "#e3eee7" };
+  node.style.setProperty("--entry", tokens.entry);
+  node.style.setProperty("--entry-bg", tokens.entryBg);
+  node.style.setProperty("--chip", tokens.entry);
+}
+
+function fillCategorySelect(select, { selected = "work", includeMeeting = true } = {}) {
+  if (!select) return selected;
+  const html = typeof TaskCategoryPolicy?.categoryOptionsHtml === "function"
+    ? TaskCategoryPolicy.categoryOptionsHtml(selected, { includeMeeting })
+    : "";
+  if (html) {
+    select.innerHTML = html;
+    if (selected && [...select.options].some(option => option.value === selected)) {
+      select.value = selected;
+    }
+  }
+  return select.value || selected;
+}
+
+function refreshCategorySelects() {
+  const taskSelected = el.taskCategory?.value || "work";
+  const entrySelected = el.entryCategory?.value || "work";
+  const includeMeeting = el.taskCreateKind?.value === "meeting"
+    || TaskCategoryPolicy?.resolveTaskCategory?.(findTask(state.editingTaskId)?.task) === "meeting";
+  fillCategorySelect(el.taskCategory, { selected: taskSelected, includeMeeting });
+  fillCategorySelect(el.entryCategory, { selected: entrySelected, includeMeeting: true });
 }
 
 function fillAiProviderOptions(providers = [], selectedId = "") {
@@ -1411,34 +1766,42 @@ async function refreshAiProviderModels({ forceList = false, providerId = "", sel
 
 async function saveDesktopSettings() {
   if (!window.desktopAPI?.saveSettings) return;
+  const profileName = String(el.settingProfileName?.value || "").trim().slice(0, 40);
   const nextSettings = {
+    profileName,
     glass: el.settingGlass.checked,
     pinned: el.settingPinned.checked,
     locked: el.settingLocked.checked,
-    compact: el.settingCompact.checked,
+    compact: false,
     startAtLogin: el.settingStartAtLogin.checked,
-    workStartHour: Number(el.settingWorkStartHour?.value ?? state.workStartHour),
-    workEndHour: Number(el.settingWorkEndHour?.value ?? state.workEndHour),
+    morningStart: Number(el.settingMorningStart?.value ?? state.morningStart),
+    morningEnd: Number(el.settingMorningEnd?.value ?? state.morningEnd),
+    afternoonStart: Number(el.settingAfternoonStart?.value ?? state.afternoonStart),
+    afternoonEnd: Number(el.settingAfternoonEnd?.value ?? state.afternoonEnd),
     aiEnabled: el.settingAiEnabled.checked,
     aiProvider: el.settingAiProvider?.value || "openai",
     aiModel: el.settingAiModel?.value?.trim() || "gpt-4.1-mini",
     ...(el.settingAiApiKey.value.trim() ? { aiApiKey: el.settingAiApiKey.value.trim() } : {})
   };
   const saved = await window.desktopAPI.saveSettings(nextSettings);
+  const migrated = applyProfileName(saved?.profileName ?? profileName, { migrateOwners: true });
   applyWorkHours({
-    workStartHour: saved?.workStartHour ?? nextSettings.workStartHour,
-    workEndHour: saved?.workEndHour ?? nextSettings.workEndHour
+    morningStart: saved?.morningStart ?? nextSettings.morningStart,
+    morningEnd: saved?.morningEnd ?? nextSettings.morningEnd,
+    afternoonStart: saved?.afternoonStart ?? nextSettings.afternoonStart,
+    afternoonEnd: saved?.afternoonEnd ?? nextSettings.afternoonEnd
   });
   document.body.classList.toggle("glass-mode", !!saved?.glass);
   updateGlassToggleChrome(saved?.glass);
-  document.body.classList.toggle("compact", !!saved?.compact);
-  document.body.classList.toggle("pinned", !!saved?.pinned);
+  document.body.classList.remove("compact");
+  document.body.classList.toggle("pinned", !!saved?.pinned && !saved?.locked);
   document.body.classList.toggle("desktop-locked", !!saved?.locked);
-  localStorage.setItem("today-planner-compact", saved?.compact ? "1" : "0");
+  localStorage.removeItem("today-planner-compact");
   applyUiScale();
+  if (migrated > 0) saveData();
   el.settingsDialog.close();
   render();
-  showToast("设置已保存");
+  showToast(migrated > 0 ? `设置已保存，已更新 ${migrated} 处责任人` : "设置已保存");
 }
 
 function setAiRangeForWeek() {
@@ -1850,9 +2213,13 @@ function createTaskFromAiDraft(draft = {}, { persist = true } = {}) {
     title: String(draft.title || "").trim().slice(0, 80),
     dueDate: "",
     dueTime: "",
-    owner: "我",
+    owner: getDefaultOwner(),
     parentId: "",
     description: "",
+    category: "work",
+    color: typeof TaskCategoryPolicy?.colorForCategory === "function"
+      ? TaskCategoryPolicy.colorForCategory("work")
+      : "sage",
     priority: "general_daily",
     progress: 0,
     status: "planned",
@@ -2954,6 +3321,7 @@ function toggleProjectGroup(status) {
 }
 
 function toggleGanttGroup(status) {
+  captureProjectGanttRowsScroll();
   if (state.ganttCollapsedGroups.has(status)) state.ganttCollapsedGroups.delete(status);
   else state.ganttCollapsedGroups.add(status);
   renderSchedule();
@@ -3171,8 +3539,8 @@ function syncQuickAddChrome(width = el.taskPanel?.clientWidth || state.taskPanel
     el.taskAddTrigger.setAttribute("aria-label", "新建");
   }
   if (el.taskListSearch && !(el.taskListSearch.value || "").trim()) {
-    el.taskListSearch.placeholder = width < 230 ? "搜索.../@" : "搜索.../@人";
-    el.taskListSearch.setAttribute("aria-label", "搜索全部待办与会议，或 @责任人 / @参会人");
+    el.taskListSearch.placeholder = width < 230 ? "搜索.../@" : "搜索.../@人员";
+    el.taskListSearch.setAttribute("aria-label", "搜索全部待办与会议，或 @人员（责任人/参会人）");
   }
 }
 
@@ -3211,34 +3579,34 @@ function bindWorkspaceSplitResize() {
 }
 
 function projectTimelineBuckets(projects, scale = "day", meetings = []) {
-  if (scale === "month") return projectTimelineMonthBuckets(projects, meetings);
+  const expected = ProjectViewPolicy.visibleBucketCount?.(scale) || (scale === "month" ? 3 : scale === "week" ? 4 : 7);
   if (!state.projectWindowStart || !state.projectWindowEnd) resetProjectGanttWindow(scale);
-  if (scale === "week") return buildWeekTimelineBuckets(state.projectWindowStart, state.projectWindowEnd);
-  return buildDayTimelineBuckets(state.projectWindowStart, state.projectWindowEnd);
+  let buckets = scale === "month"
+    ? buildMonthTimelineBuckets(state.projectWindowStart, state.projectWindowEnd)
+    : scale === "week"
+      ? buildWeekTimelineBuckets(state.projectWindowStart, state.projectWindowEnd)
+      : buildDayTimelineBuckets(state.projectWindowStart, state.projectWindowEnd);
+  if (buckets.length !== expected) {
+    resetProjectGanttWindow(scale);
+    buckets = scale === "month"
+      ? buildMonthTimelineBuckets(state.projectWindowStart, state.projectWindowEnd)
+      : scale === "week"
+        ? buildWeekTimelineBuckets(state.projectWindowStart, state.projectWindowEnd)
+        : buildDayTimelineBuckets(state.projectWindowStart, state.projectWindowEnd);
+  }
+  return buckets;
 }
 
-function projectTimelineMonthBuckets(projects, meetings = []) {
-  const projectTasks = projects.flatMap(project =>
-    [project.parent, ...project.children, ...project.children.flatMap(task => getDescendantTasks(task.id))]
-  );
-  const meetingDates = meetings.flatMap(meeting => meeting.entries.map(item => item.dateKey));
-  const points = [
-    ...uniqueTasks(projectTasks).flatMap(task => taskTimelineDateKeys(task)),
-    ...meetingDates
-  ];
-  const fallback = state.selectedDate;
-  const todayKey = toDateKey(new Date());
-  const min = points.length ? [points.sort()[0], fallback, todayKey].sort()[0] : [fallback, todayKey].sort()[0];
-  const current = fromDateKey(todayKey);
-  const futureKey = toDateKey(addDays(current, 370));
-  const max = points.length ? [points.slice().sort().at(-1), futureKey].sort().at(-1) : futureKey;
+function buildMonthTimelineBuckets(startKey, endKey) {
   const buckets = [];
-  let cursor = new Date(fromDateKey(min).getFullYear(), fromDateKey(min).getMonth(), 1);
-  const end = new Date(fromDateKey(max).getFullYear(), fromDateKey(max).getMonth(), 1);
+  let cursor = String(startKey || "").slice(0, 7);
+  const end = String(endKey || "").slice(0, 7);
+  if (!cursor || !end) return buckets;
   while (cursor <= end) {
-    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
-    buckets.push({ key, label: `${cursor.getMonth() + 1}月` });
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    const [year, month] = cursor.split("-").map(Number);
+    buckets.push({ key: cursor, label: `${month}月` });
+    cursor = ProjectViewPolicy.shiftMonthKey(cursor, 1);
+    if (buckets.length > 36) break;
   }
   return buckets;
 }
@@ -3290,29 +3658,36 @@ function handleProjectGanttScroll() {
   syncProjectGanttChartOffset(scroller.scrollLeft);
 }
 
+function getProjectGanttRowsWrap() {
+  return el.timeline?.querySelector?.(".project-gantt-rows-wrap") || null;
+}
+
+function captureProjectGanttRowsScroll() {
+  const rowsWrap = getProjectGanttRowsWrap();
+  if (rowsWrap) state.projectRowsScrollTop = rowsWrap.scrollTop;
+  return state.projectRowsScrollTop || 0;
+}
+
+function restoreProjectGanttRowsScroll(scrollTop = state.projectRowsScrollTop) {
+  const top = Math.max(0, Number(scrollTop) || 0);
+  state.projectRowsScrollTop = top;
+  const apply = () => {
+    const rowsWrap = getProjectGanttRowsWrap();
+    if (rowsWrap) rowsWrap.scrollTop = top;
+  };
+  apply();
+  requestAnimationFrame(apply);
+}
+
 function maybeExtendProjectGanttWindow() {
-  if (state.taskView !== "project" || state.projectScale === "month" || state.projectGanttExtending) return;
-  const scroller = getProjectGanttScroller();
-  if (!scroller) return;
-  const threshold = 72;
-  const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-  if (maxScroll <= threshold) {
-    state.projectGanttLastExtend = null;
-    return;
-  }
-  let direction = null;
-  if (scroller.scrollLeft <= threshold) direction = "past";
-  else if (maxScroll - scroller.scrollLeft <= threshold) direction = "future";
-  if (!direction) {
-    if (scroller.scrollLeft > threshold * 2 && maxScroll - scroller.scrollLeft > threshold * 2) {
-      state.projectGanttLastExtend = null;
-    }
-    return;
-  }
-  if (state.projectGanttLastExtend === direction) return;
-  const bucketWidth = state.projectScale === "day" ? 44 : 72;
-  const prevScroll = scroller.scrollLeft;
-  const extended = ProjectViewPolicy.extendGanttWindow({
+  // Fixed-size windows use axis arrows instead of infinite edge extend.
+}
+
+function shiftProjectGanttWindow(direction = "future") {
+  if (state.taskView !== "project") return;
+  if (!state.projectWindowStart || !state.projectWindowEnd) resetProjectGanttWindow(state.projectScale);
+  const savedRowsTop = captureProjectGanttRowsScroll();
+  const shifted = ProjectViewPolicy.shiftGanttWindow({
     scale: state.projectScale,
     startKey: state.projectWindowStart,
     endKey: state.projectWindowEnd,
@@ -3321,15 +3696,21 @@ function maybeExtendProjectGanttWindow() {
     fromDateKey,
     toDateKey
   });
-  state.projectWindowStart = extended.startKey;
-  state.projectWindowEnd = extended.endKey;
-  state.projectGanttLastExtend = direction;
-  state.projectGanttExtending = true;
-  state.projectScrollLeft = direction === "past"
-    ? prevScroll + extended.addedCount * bucketWidth
-    : prevScroll;
+  state.projectWindowStart = shifted.startKey;
+  state.projectWindowEnd = shifted.endKey;
+  state.projectAnchorDate = state.projectScale === "month"
+    ? `${shifted.startKey}-01`
+    : shifted.startKey;
+  state.projectViewNeedsAnchor = false;
+  state.projectScrollLeft = 0;
   renderSchedule();
-  state.projectGanttExtending = false;
+  restoreProjectGanttRowsScroll(savedRowsTop);
+}
+
+function getGanttChartViewportWidth() {
+  const labelWidth = getGanttLabelWidth();
+  const shellWidth = el.timelineWrap?.clientWidth || el.timeline?.clientWidth || 720;
+  return Math.max(240, shellWidth - labelWidth - 20);
 }
 
 function taskTimelineDateKeys(task) {
@@ -3378,6 +3759,7 @@ function createTaskCard(task) {
   const displayTitle = TaskStatusPolicy.listDisplayTitle?.(task) || String(task.title || "").trim();
   const card = document.createElement("article");
   card.className = `task-card ${visualStatus}${incomplete ? " setup-incomplete" : ""}`;
+  if (state.highlightTaskId && state.highlightTaskId === task.id) card.classList.add("is-just-linked");
   card.dataset.taskId = task.id;
   card.draggable = !incomplete && (
     visualStatus === "unplanned"
@@ -3517,8 +3899,8 @@ function updateTaskStats(tasks, memoTasks = [], meetingItems = []) {
   // 跟踪关注优先级任务已计入工作待办，全部计数只再叠加真正的备忘提醒
   el.allCount.textContent = tasks.length + trackingOnly.length;
   el.taskCount.textContent = tasks.length + trackingOnly.length;
-  // 当天计划 = 工作日可用时长；完成进度 = 当日已投入时长 / 工作日时长。
-  const workDayHours = Math.max(1, Number(state.workEndHour) - Number(state.workStartHour));
+  // 当天计划 = 上午+下午工作时段合计（不含午休）；完成进度 = 当日已投入 / 工作日时长。
+  const workDayHours = Math.max(0.5, Number(state.workdayHours) || getConfiguredWorkdayHours());
   const invested = taskDatesForView().reduce((sum, key) => {
     const day = getDay(key);
     return sum + (day.entries || []).reduce((sub, entry) => sub + getEntryInvestedHours(key, entry), 0);
@@ -3654,8 +4036,8 @@ function restoreTaskStatusOptions(task) {
   const plannedDisabled = (currentStatus === "planned" || currentStatus === "tracking") ? "" : " disabled";
   const progressDisabled = currentStatus === "in_progress" ? "" : " disabled";
   el.taskStatus.innerHTML = `
-    <option value="planned"${plannedDisabled}>计划中（尚未排入日程）</option>
-    <option value="in_progress"${progressDisabled}>进行中（已排入日程）</option>
+    <option value="planned"${plannedDisabled}>计划中</option>
+    <option value="in_progress"${progressDisabled}>进行中</option>
     <option value="tracking" hidden>待跟踪</option>
     <option value="done">已完成 / 已关闭</option>`;
 
@@ -3718,16 +4100,15 @@ function syncTaskCreateKindUi() {
   }
   if (el.taskDialogEyebrow) el.taskDialogEyebrow.textContent = meeting ? "NEW MEETING" : "NEW TASK";
   if (el.taskDialogTitle) el.taskDialogTitle.textContent = meeting ? "新建会议" : "新建待办";
-  const titleLabel = el.taskTitleField?.querySelector("span");
-  if (titleLabel) titleLabel.textContent = meeting ? "会议名称" : "待办名称";
+  if (el.taskTitleCaption) el.taskTitleCaption.textContent = meeting ? "会议名称" : "待办名称";
   if (el.taskTitleInput) {
     el.taskTitleInput.placeholder = meeting ? "会议主题是什么？" : "需要完成什么？";
   }
   const dueLabel = el.taskDueDateField?.querySelector("span");
-  if (dueLabel) dueLabel.textContent = meeting ? "开始日期时间" : "目标日期时间";
+  if (dueLabel) dueLabel.textContent = meeting ? "开始日期时间" : "目标完成时间";
   if (meeting) ensureMeetingEndDefault();
   const ownerLabel = el.taskOwner?.closest("label")?.querySelector("span");
-  if (ownerLabel) ownerLabel.textContent = meeting ? "参会人" : "责任人";
+  if (ownerLabel) ownerLabel.textContent = meeting ? "参会人" : "责任人员";
   if (el.taskOwner) {
     el.taskOwner.maxLength = meeting ? 80 : 30;
     el.taskOwner.placeholder = meeting ? "例如：我、王芳、李明（多人用逗号分隔）" : "例如：我、王芳";
@@ -3739,6 +4120,13 @@ function syncTaskCreateKindUi() {
   }
   const bgLabel = el.businessBackgroundLabel?.querySelector("span");
   if (bgLabel) bgLabel.textContent = meeting ? "会议说明（可选）" : "背景与说明";
+  if (el.taskCategory) {
+    el.taskCategory.disabled = meeting;
+    const selected = meeting
+      ? "meeting"
+      : (el.taskCategory.value === "meeting" ? "work" : (el.taskCategory.value || "work"));
+    syncTaskCategoryOptions({ includeMeeting: meeting, selected });
+  }
 }
 
 function pad2(value) {
@@ -3748,27 +4136,48 @@ function pad2(value) {
 function formatDateTimeDisplay(dateKey = "", time = "") {
   if (!dateKey) return "";
   const safeTime = normalizeTimeInput(time) || defaultWorkEndTime();
-  return `${String(dateKey).replace(/\//g, "-")} ${safeTime}`;
+  return `${String(dateKey).replace(/-/g, "/")} ${safeTime}`;
 }
 
 function parseFlexibleDateTime(value = "") {
   const raw = String(value || "").trim().replace(/\s+/g, " ");
   if (!raw) return { dateKey: "", time: "", hour: null, minute: 0, display: "" };
-  let match = raw.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:[T\s]+(\d{1,2})(?::(\d{1,2}))?)?$/);
-  if (!match) {
-    match = raw.match(/^(\d{4})(\d{2})(\d{2})(?:\s*(\d{1,2})(?::?(\d{2}))?)?$/);
+  // Compact: YYYYMMDDHHmm / YYYYMMDDHHmmss / YYYYMMDD
+  let match = raw.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?$/);
+  if (match) {
+    return finalizeFlexibleDateTimeParts(
+      Number(match[1]), Number(match[2]), Number(match[3]),
+      Number(match[4]), Number(match[5]), raw
+    );
   }
-  if (!match) return { dateKey: "", time: "", hour: null, minute: 0, display: raw };
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
+  match = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (match) {
+    return finalizeFlexibleDateTimeParts(
+      Number(match[1]), Number(match[2]), Number(match[3]),
+      null, 0, raw
+    );
+  }
+  // Separated: 2026/10/10 09:10 | 2026-10-10T09:10 | 2026.10.10 9:10
+  match = raw.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:[T\s]+(\d{1,2})(?::(\d{1,2}))?)?$/);
+  if (!match) {
+    // Compact with optional space before time: 20261010 0910 / 2026101009:10
+    match = raw.match(/^(\d{4})(\d{2})(\d{2})(?:\s+(\d{1,2})(?::?(\d{2}))?)?$/);
+  }
+  if (!match) return { dateKey: "", time: "", hour: null, minute: 0, raw };
   const hour = match[4] == null || match[4] === "" ? null : Number(match[4]);
-  const minute = match[5] == null || match[5] === "" ? (hour == null ? 0 : 0) : Number(match[5]);
+  const minute = match[5] == null || match[5] === "" ? 0 : Number(match[5]);
+  return finalizeFlexibleDateTimeParts(
+    Number(match[1]), Number(match[2]), Number(match[3]),
+    hour, minute, raw
+  );
+}
+
+function finalizeFlexibleDateTimeParts(year, month, day, hour, minute, raw = "") {
   if (!year || month < 1 || month > 12 || day < 1 || day > 31) {
-    return { dateKey: "", time: "", hour: null, minute: 0, display: raw };
+    return { dateKey: "", time: "", hour: null, minute: 0, raw };
   }
   if (hour != null && (hour < 0 || hour > 23 || minute < 0 || minute > 59)) {
-    return { dateKey: "", time: "", hour: null, minute: 0, display: raw };
+    return { dateKey: "", time: "", hour: null, minute: 0, raw };
   }
   const dateKey = `${year}-${pad2(month)}-${pad2(day)}`;
   const time = hour == null ? "" : `${pad2(hour)}:${pad2(minute || 0)}`;
@@ -3777,7 +4186,8 @@ function parseFlexibleDateTime(value = "") {
     time,
     hour: hour == null ? null : hour,
     minute: hour == null ? 0 : (minute || 0),
-    display: formatDateTimeDisplay(dateKey, time || defaultWorkEndTime())
+    display: formatDateTimeDisplay(dateKey, time || defaultWorkEndTime()),
+    raw
   };
 }
 
@@ -3815,30 +4225,68 @@ function bindFlexibleDateTimeInput(input, { kind = "end" } = {}) {
   });
 }
 
-function openDateTimePickerForInput(inputId) {
+function resolveDateTimePickerKind(inputId = "") {
+  if (inputId === "taskActualStart") return "start";
+  if (inputId === "taskDueDateTime" && isCreateMeetingKind()) return "start";
+  return "end";
+}
+
+function openDateTimePickerForInput(inputId, anchorEl = null) {
   const input = inputId ? document.getElementById(inputId) : null;
   if (!input) return;
+  const kind = resolveDateTimePickerKind(inputId);
   const parsed = parseFlexibleDateTime(input.value || "");
   const seed = parsed.dateKey
-    ? `${parsed.dateKey}T${parsed.time || (inputId === "taskMeetingEndDateTime" ? defaultWorkEndTime() : defaultWorkEndTime())}`
-    : defaultLocalDateTimeSeed(inputId === "taskDueDateTime" && isCreateMeetingKind() ? "start" : "end");
+    ? `${parsed.dateKey}T${parsed.time || (kind === "start" ? defaultWorkStartTime() : defaultWorkEndTime())}`
+    : defaultLocalDateTimeSeed(kind);
+  // Must live inside the field wrap (and thus the open dialog top-layer);
+  // a body-fixed ghost input makes Chromium/Electron drop the popup at (0,0).
+  const wrap = input.closest(".datetime-input-wrap")
+    || (anchorEl instanceof Element ? anchorEl.closest(".datetime-input-wrap") : null)
+    || input.parentElement;
+  if (!wrap) return;
+  wrap.querySelectorAll(".datetime-native-picker-anchor").forEach(node => node.remove());
+
   const picker = document.createElement("input");
   picker.type = "datetime-local";
   picker.step = "60";
   picker.value = seed;
-  picker.style.cssText = "position:fixed;opacity:0;pointer-events:none;width:0;height:0;left:0;top:0;";
-  document.body.appendChild(picker);
+  picker.className = "datetime-native-picker-anchor";
+  picker.setAttribute("aria-hidden", "true");
+  picker.tabIndex = -1;
+  wrap.appendChild(picker);
+
+  let settled = false;
+  const cleanup = () => {
+    if (settled) return;
+    settled = true;
+    picker.remove();
+  };
   const apply = () => {
     if (picker.value) {
       const [dateKey = "", timePart = ""] = picker.value.split("T");
       input.value = formatDateTimeDisplay(dateKey, normalizeTimeInput(timePart));
       input.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    picker.remove();
+    cleanup();
   };
   picker.addEventListener("change", apply, { once: true });
-  picker.addEventListener("blur", () => setTimeout(() => picker.remove(), 0), { once: true });
-  try { picker.showPicker?.(); } catch { picker.click(); }
+  // Delay blur cleanup: showPicker needs a turn to take focus; early remove
+  // tears the popup down / leaves it stranded at the window corner.
+  setTimeout(() => {
+    if (settled) return;
+    picker.addEventListener("blur", () => setTimeout(cleanup, 180), { once: true });
+  }, 120);
+
+  requestAnimationFrame(() => {
+    if (settled || !picker.isConnected) return;
+    try {
+      if (typeof picker.showPicker === "function") picker.showPicker();
+      else picker.click();
+    } catch {
+      try { picker.click(); } catch { cleanup(); }
+    }
+  });
 }
 
 function ensureMeetingEndDefault() {
@@ -4158,7 +4606,20 @@ function openTaskDialog(task = null, options = {}) {
     || options.presetTitle
     || "";
   setTaskDueDateTime(task?.dueDate || "", task?.dueTime || "");
-  el.taskOwner.value = task?.owner || (options.createKind === "meeting" ? "" : "我");
+  el.taskOwner.value = task?.owner || (options.createKind === "meeting" ? "" : getDefaultOwner());
+  if (el.taskCategory) {
+    const meetingCreate = options.createKind === "meeting";
+    const includeMeeting = meetingCreate
+      || Boolean(task && TaskCategoryPolicy?.resolveTaskCategory?.(task) === "meeting");
+    const selected = typeof TaskCategoryPolicy?.normalizeCategory === "function"
+      ? TaskCategoryPolicy.normalizeCategory(
+        task?.category || (meetingCreate ? "meeting" : ""),
+        { meeting: meetingCreate && !task }
+      )
+      : (task?.category || (meetingCreate ? "meeting" : "work"));
+    syncTaskCategoryOptions({ includeMeeting, selected });
+    el.taskCategory.disabled = meetingCreate && !task;
+  }
   const isMonthly = task?.recurrence?.frequency === "monthly" || task?.priority === "monthly_fixed";
   // 「跟踪关注」已从优先级下拉移除；仅关注改由任务状态「待跟踪」/后续窗勾选表达。
   const rawPriority = isMonthly ? "monthly_fixed" : (task?.priority || "general_daily");
@@ -4197,7 +4658,10 @@ function openTaskDialog(task = null, options = {}) {
   el.taskDescription.value = task?.description || "";
   el.taskRecurringUntil.value = task?.recurrence?.until || defaultRecurringUntil(task?.dueDate || state.selectedDate);
   fillParentOptions(task);
-  const parentId = task?.parentId || task?.parentTaskId || task?.parentTask || task?.parent || "";
+  const lockParent = Boolean(options.lockParent && options.parentId && !task);
+  const parentId = task?.parentId || task?.parentTaskId || task?.parentTask || task?.parent
+    || (!task && options.parentId) || "";
+  setTaskParentFieldLocked(false);
   if (parentId) chooseTaskParentOption(parentId);
   else {
     el.taskParent.value = "";
@@ -4215,10 +4679,11 @@ function openTaskDialog(task = null, options = {}) {
       : "背景与说明";
   }
   const dueLabel = el.taskDueDateField?.querySelector("span");
-  if (dueLabel) dueLabel.textContent = (followUpDraft || successorDraft) ? "目标完成日期时间" : "目标日期时间";
+  if (dueLabel) dueLabel.textContent = "目标完成时间";
   el.taskDeliveryField?.classList.remove("follow-up-focus");
-  const titleLabel = el.taskTitleField?.querySelector("span");
-  if (titleLabel) titleLabel.textContent = (followUpDraft || successorDraft) ? "待办名称（可修改）" : "待办名称";
+  if (el.taskTitleCaption) {
+    el.taskTitleCaption.textContent = (followUpDraft || successorDraft) ? "待办名称（可修改）" : "待办名称";
+  }
   updateProgressAvailability();
   updateParentRequirements();
   updateRecurringOptions();
@@ -4227,12 +4692,14 @@ function openTaskDialog(task = null, options = {}) {
   // Keep create/edit focused on input fields: summary cards + subtasks are redundant here.
   el.taskDetailSummary?.classList.add("hidden");
   el.taskSubtasksSection?.classList.add("hidden");
-  if (task || followUpDraft || successorDraft || parentReview || setupIncomplete) {
+  if (task || followUpDraft || successorDraft || parentReview || setupIncomplete || lockParent) {
     el.taskCreateKindField?.classList.add("hidden");
     el.taskEditForm?.classList.remove("create-kind-meeting");
   } else {
     syncTaskCreateKindUi();
   }
+  // Lock after create-kind UI sync so labels/trigger are not overwritten.
+  if (lockParent) setTaskParentFieldLocked(true, parentId);
   el.taskDialogScroll?.scrollTo?.(0, 0);
   el.taskDialog.showModal();
   setTimeout(() => {
@@ -4334,13 +4801,36 @@ function bindTaskParentCombobox() {
   });
 }
 
+function isTaskParentFieldLocked() {
+  return Boolean(state.lockedTaskParentId);
+}
+
+function setTaskParentFieldLocked(locked, parentId = "") {
+  const nextId = locked ? String(parentId || state.lockedTaskParentId || el.taskParent?.value || "") : "";
+  state.lockedTaskParentId = nextId;
+  const on = Boolean(locked && nextId);
+  if (!on) state.lockedTaskParentId = "";
+  el.taskParentField?.classList.toggle("is-locked", on);
+  el.taskParentCombobox?.classList.toggle("is-locked", on);
+  if (el.taskParentTrigger) {
+    el.taskParentTrigger.disabled = on;
+    el.taskParentTrigger.setAttribute("aria-disabled", on ? "true" : "false");
+    el.taskParentTrigger.title = on ? "已从甘特图指定上级，此处不可改选" : "";
+  }
+  if (on) {
+    chooseTaskParentOption(nextId);
+    closeTaskParentPopup();
+  }
+}
+
 function toggleTaskParentPopup() {
+  if (isTaskParentFieldLocked()) return;
   if (el.taskParentPopup?.classList.contains("hidden")) openTaskParentPopup();
   else closeTaskParentPopup();
 }
 
 function openTaskParentPopup() {
-  if (!el.taskParentPopup) return;
+  if (!el.taskParentPopup || isTaskParentFieldLocked()) return;
   el.taskParentPopup.classList.remove("hidden");
   el.taskParentTrigger?.setAttribute("aria-expanded", "true");
   taskParentActiveIndex = 0;
@@ -4414,6 +4904,7 @@ function updateTaskParentActiveOption(options) {
 }
 
 function chooseTaskParentOption(value) {
+  if (isTaskParentFieldLocked() && value !== state.lockedTaskParentId) return;
   const exists = Array.from(el.taskParent.options).some(option => option.value === value);
   if (!exists && value) {
     const tasks = getAllTasks().map(({ task }) => task);
@@ -4585,7 +5076,13 @@ function saveTask() {
     dueDate: dueParts.dueDate,
     dueTime: dueParts.dueTime,
     owner: el.taskOwner.value.trim() || "未指定",
-    parentId: el.taskParent.value,
+    parentId: state.lockedTaskParentId || el.taskParent.value,
+    category: typeof TaskCategoryPolicy?.normalizeCategory === "function"
+      ? TaskCategoryPolicy.normalizeCategory(el.taskCategory?.value, { meeting: false })
+      : (el.taskCategory?.value || "work"),
+    color: typeof TaskCategoryPolicy?.colorForCategory === "function"
+      ? TaskCategoryPolicy.colorForCategory(el.taskCategory?.value || "work")
+      : "sage",
     // 仅关注只改状态；优先级保持用户选择（后续默认继承原任务）
     priority: resolvePersistedPriority(monthlySelected, editing?.task),
     progress: Number(el.taskProgress.value),
@@ -4754,9 +5251,9 @@ function formatDateTime(iso) {
   return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
-function deleteEditingTask() {
-  const found = findTask(state.editingTaskId);
-  if (!found) return;
+function deleteTaskById(taskId, { closeDialog = false } = {}) {
+  const found = findTask(taskId);
+  if (!found) return false;
   const pending = pendingSuccessorRollback?.successorId === found.task.id
     ? pendingSuccessorRollback
     : null;
@@ -4774,11 +5271,34 @@ function deleteEditingTask() {
     if (entry.taskId === found.task.id) entry.taskId = "";
   }));
   saveData();
-  el.taskDialog.close();
+  if (closeDialog && el.taskDialog?.open) el.taskDialog.close();
+  if (state.editingTaskId === taskId) state.editingTaskId = null;
   render();
   showToast(pending
     ? "已取消后续并恢复原任务为未关闭"
     : "待办已删除，原有日程记录已保留");
+  return true;
+}
+
+function confirmDeleteTask(task) {
+  if (!task?.id) return false;
+  const childCount = getChildTasks(task.id).length;
+  const message = childCount
+    ? `确定删除「${task.title}」？\n其下 ${childCount} 个子任务将变为顶层任务；关联日程会保留但取消挂接。`
+    : `确定删除「${task.title}」？\n关联日程会保留但取消挂接。`;
+  if (!window.confirm(message)) return false;
+  return deleteTaskById(task.id, { closeDialog: state.editingTaskId === task.id });
+}
+
+function deleteEditingTask() {
+  const found = findTask(state.editingTaskId);
+  if (!found) return;
+  confirmDeleteTask(found.task);
+}
+
+function openNewChildTaskFromGantt(parentTask) {
+  if (!parentTask?.id) return;
+  openTaskDialog(null, { parentId: parentTask.id, lockParent: true });
 }
 
 function cancelEditingEntry() {
@@ -4964,9 +5484,15 @@ function buildGanttArrangeSections(projects, meetings = []) {
         status: group.status,
         label: group.label,
         rows: group.projects.flatMap(project => {
-          const progress = ProjectSummaryPolicy.projectProgressPercent(project);
+          const progress = resolveGanttRowProgress(project.parent, { isParent: true }).progress;
           if (ProjectCollapsePolicy.shouldRenderSingleRow(project)) {
-            return [{ task: project.parent, rootId: project.parent.id, isParent: false, progress }];
+            const parentHasChildren = getChildTasks(project.parent.id).length > 0;
+            return [{
+              task: project.parent,
+              rootId: project.parent.id,
+              isParent: parentHasChildren,
+              progress: parentHasChildren ? progress : null
+            }];
           }
           const sectionCollapsed = state.projectCollapsedSections.has(project.parent.id);
           const rows = [{
@@ -4984,8 +5510,10 @@ function buildGanttArrangeSections(projects, meetings = []) {
             }).forEach(task => rows.push({
               task,
               rootId: project.parent.id,
-              isParent: false,
-              progress: null
+              isParent: getChildTasks(task.id).length > 0,
+              progress: getChildTasks(task.id).length
+                ? resolveGanttRowProgress(task, { isParent: true }).progress
+                : null
             }));
           }
           return rows;
@@ -5009,20 +5537,20 @@ function buildGanttArrangeSections(projects, meetings = []) {
     });
     return taskSections.filter(section => section.rows.length);
   }
-  const progressByRoot = new Map(
-    projects.map(project => [project.parent.id, ProjectSummaryPolicy.projectProgressPercent(project)])
-  );
-  const decorateRows = rows => (rows || []).map(row => ({
-    ...row,
-    progress: row.kind === "meeting"
-      ? null
-      : (row.isParent ? (progressByRoot.get(row.rootId) ?? null) : null),
-    collapsed: row.kind === "meeting"
-      ? false
-      : (row.isParent
-        ? state.projectCollapsedSections.has(row.task.id)
-        : state.projectCollapsedTasks.has(row.task.id))
-  }));
+  const decorateRows = rows => (rows || []).map(row => {
+    if (row.kind === "meeting") {
+      return { ...row, progress: null, collapsed: false };
+    }
+    const isParent = Boolean(row.isParent || getChildTasks(row.task?.id).length);
+    return {
+      ...row,
+      isParent,
+      progress: isParent ? resolveGanttRowProgress(row.task, { isParent: true }).progress : null,
+      collapsed: isParent
+        ? state.projectCollapsedSections.has(row.task.id) || state.projectCollapsedTasks.has(row.task.id)
+        : state.projectCollapsedTasks.has(row.task.id)
+    };
+  });
   const decorateSection = section => ({
     ...section,
     rows: decorateRows(section.rows),
@@ -5037,6 +5565,8 @@ function buildGanttArrangeSections(projects, meetings = []) {
     shouldRenderSingleRow: project => ProjectCollapsePolicy.shouldRenderSingleRow(project),
     classifyProjectStatus: tasks => ProjectSummaryPolicy.classifyProjectStatus(tasks),
     getChildTasks,
+    resolveCategory: task => TaskCategoryPolicy?.resolveTaskCategory?.(task) || task?.category || "work",
+    categoryLabel: id => TaskCategoryPolicy?.labelForCategory?.(id) || id,
     extraRows: meetingRows
   }).map(decorateSection);
 }
@@ -5302,26 +5832,43 @@ function renderProjectSchedule() {
   headerResize.setAttribute("aria-label", "调整甘特任务栏宽度");
 
   const daysViewport = document.createElement("div");
-  daysViewport.className = "project-gantt-days-viewport";
+  daysViewport.className = "project-gantt-days-viewport has-gantt-nav";
+  const navPrev = document.createElement("button");
+  navPrev.type = "button";
+  navPrev.className = "gantt-axis-nav is-prev";
+  navPrev.title = state.projectScale === "month" ? "上一月" : state.projectScale === "week" ? "上一周" : "前一天";
+  navPrev.setAttribute("aria-label", navPrev.title);
+  navPrev.textContent = "‹";
+  navPrev.addEventListener("click", () => shiftProjectGanttWindow("past"));
+  const navNext = document.createElement("button");
+  navNext.type = "button";
+  navNext.className = "gantt-axis-nav is-next";
+  navNext.title = state.projectScale === "month" ? "下一月" : state.projectScale === "week" ? "下一周" : "后一天";
+  navNext.setAttribute("aria-label", navNext.title);
+  navNext.textContent = "›";
+  navNext.addEventListener("click", () => shiftProjectGanttWindow("future"));
   const daysTrack = document.createElement("div");
-  daysTrack.className = "project-gantt-days-track";
+  daysTrack.className = "project-gantt-days-track is-fill-width";
   el.projectGanttDaysTrack = daysTrack;
   const header = document.createElement("div");
-  header.className = "project-gantt-days";
-  const ganttBucketWidth = state.projectScale === "day" ? 44 : 72;
-  header.style.gridTemplateColumns = `repeat(${buckets.length}, ${ganttBucketWidth}px)`;
+  header.className = "project-gantt-days is-fill-width";
+  const ganttContentWidth = getGanttChartViewportWidth();
+  const ganttBucketWidth = buckets.length ? ganttContentWidth / buckets.length : ganttContentWidth;
+  header.style.gridTemplateColumns = `repeat(${Math.max(1, buckets.length)}, minmax(0, 1fr))`;
   const todayBucketKey = projectBucketKey(toDateKey(new Date()), state.projectScale);
   const todayOffset = taskTimelineOffset(toDateKey(new Date()), buckets, state.projectScale);
   header.innerHTML = `${todayOffset === null ? "" : `<u class="gantt-today-line" style="left:${todayOffset}%" title="今天"></u>`}${buckets.map(bucket => `<span${bucket.key === todayBucketKey ? " class=\"is-today\"" : ""}>${bucket.label}</span>`).join("")}`;
-  const ganttContentWidth = buckets.length * ganttBucketWidth;
-  header.style.width = `${ganttContentWidth}px`;
-  daysTrack.style.width = `${ganttContentWidth}px`;
+  header.style.width = "100%";
+  daysTrack.style.width = "100%";
   daysTrack.appendChild(header);
-  daysViewport.appendChild(daysTrack);
+  daysViewport.append(navPrev, daysTrack, navNext);
   headerSplit.append(labelHeader, headerResize, daysViewport);
 
   const rowsWrap = document.createElement("div");
   rowsWrap.className = "project-gantt-rows-wrap";
+  rowsWrap.addEventListener("scroll", () => {
+    state.projectRowsScrollTop = rowsWrap.scrollTop;
+  }, { passive: true });
 
   const split = document.createElement("div");
   split.className = "project-gantt-split";
@@ -5346,13 +5893,14 @@ function renderProjectSchedule() {
   chartPane.className = "project-gantt-chart-pane";
 
   const chartTrack = document.createElement("div");
-  chartTrack.className = "project-gantt-chart-track";
+  chartTrack.className = "project-gantt-chart-track is-fill-width";
   el.projectGanttChartTrack = chartTrack;
-  chartTrack.style.width = `${ganttContentWidth}px`;
+  chartTrack.style.width = "100%";
+  chartTrack.style.transform = "none";
 
   const body = document.createElement("div");
-  body.className = "project-gantt-body";
-  body.style.width = `${ganttContentWidth}px`;
+  body.className = "project-gantt-body is-fill-width";
+  body.style.width = "100%";
 
   const ganttSections = buildGanttArrangeSections(projects, meetings);
   const appendSectionRows = (rows, labelGroup, chartGroup, indentBase = 0) => {
@@ -5411,7 +5959,7 @@ function renderProjectSchedule() {
       labelGroup.className = `project-gantt-label-group ${group.status || group.key}`;
       const chartGroup = document.createElement("section");
       chartGroup.className = `project-gantt-chart-group ${group.status || group.key}`;
-      chartGroup.style.width = `${ganttContentWidth}px`;
+      chartGroup.style.width = "100%";
       appendSectionRows(rows, labelGroup, chartGroup, silent ? depth : depth + 1);
       labelParent.appendChild(labelGroup);
       chartParent.appendChild(chartGroup);
@@ -5427,48 +5975,22 @@ function renderProjectSchedule() {
   split.appendChild(chartPane);
   rowsWrap.appendChild(split);
 
-  const hscroll = document.createElement("div");
-  hscroll.className = "project-gantt-hscroll";
-  el.projectGanttScroll = hscroll;
-  hscroll.addEventListener("scroll", handleProjectGanttScroll, { passive: true });
-  const hscrollInner = document.createElement("div");
-  hscrollInner.className = "project-gantt-hscroll-inner";
-  hscrollInner.style.width = `${ganttContentWidth}px`;
-  hscroll.appendChild(hscrollInner);
-
+  el.projectGanttScroll = null;
   ganttRoot.appendChild(headerSplit);
   ganttRoot.appendChild(rowsWrap);
-  ganttRoot.appendChild(hscroll);
   el.timeline.appendChild(ganttRoot);
-  bindProjectDrop(body, buckets, ganttBucketWidth);
-  syncProjectGanttChartOffset(state.projectScrollLeft || 0);
-  if (state.projectViewNeedsAnchor) {
-    state.projectViewNeedsAnchor = false;
-    requestAnimationFrame(() => {
-      const currentKey = state.projectScale === "month"
-        ? (state.projectAnchorDate || toDateKey(new Date())).slice(0, 7)
-        : state.projectScale === "week"
-          ? toDateKey(getMonday(fromDateKey(state.projectAnchorDate || toDateKey(new Date()))))
-          : (state.projectAnchorDate || toDateKey(new Date()));
-      const viewportWidth = getProjectGanttScroller().clientWidth || 1;
-      const target = state.projectScale === "month"
-        ? Math.max(0, ProjectViewPolicy.anchorScrollLeft({
-          buckets,
-          anchorKey: currentKey,
-          bucketWidth: ganttBucketWidth
-        }) - Math.round(viewportWidth * 0.24))
-        : ProjectViewPolicy.centeredScrollLeft({
-          buckets,
-          anchorKey: currentKey,
-          bucketWidth: ganttBucketWidth,
-          viewportWidth
-        });
-      setProjectScrollLeft(target);
-    });
-  } else if (state.projectScrollLeft !== null) {
-    const savedScrollLeft = state.projectScrollLeft;
-    requestAnimationFrame(() => setProjectScrollLeft(savedScrollLeft));
-  }
+  state.projectScrollLeft = 0;
+  state.projectViewNeedsAnchor = false;
+  const syncBucketDropWidth = () => {
+    const paneWidth = chartPane.clientWidth || ganttContentWidth;
+    const bucketWidth = buckets.length ? paneWidth / buckets.length : paneWidth;
+    bindProjectDrop(body, buckets, bucketWidth);
+  };
+  syncBucketDropWidth();
+  requestAnimationFrame(() => {
+    syncBucketDropWidth();
+    restoreProjectGanttRowsScroll(state.projectRowsScrollTop);
+  });
 }
 
 function ganttSegmentPolicyArgs(buckets, scale) {
@@ -5511,33 +6033,191 @@ function setProjectScrollLeft(value) {
   syncProjectGanttChartOffset(next);
 }
 
+function getTaskPlanWorkHours(task) {
+  if (!task) return 0;
+  return ScheduleHoursPolicy.workdayPlanHoursBetween?.({
+    startIso: task.createdAtIso || task.startedAt || task.updatedAt || "",
+    dueDate: task.dueDate || "",
+    dueTime: task.dueTime || "",
+    morningStart: state.morningStart,
+    morningEnd: state.morningEnd,
+    afternoonStart: state.afternoonStart,
+    afternoonEnd: state.afternoonEnd,
+    workStartHour: state.workStartHour,
+    workEndHour: state.workEndHour,
+    skipWeekends: true
+  }) || 0;
+}
+
+function getChildInvestedHours(taskId) {
+  return getDescendantTasks(taskId).reduce((sum, child) => sum + getTaskDuration(child.id), 0);
+}
+
+function resolveGanttRowProgress(task, { isParent = false, progress = null } = {}) {
+  if (isParent) {
+    const childInvested = getChildInvestedHours(task.id);
+    const planHours = getTaskPlanWorkHours(task);
+    const nextProgress = progress == null
+      ? ProjectSummaryPolicy.parentPlanProgressPercent({
+        status: task.status,
+        childInvestedHours: childInvested,
+        planHours
+      })
+      : Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
+    return {
+      kind: "parent",
+      progress: nextProgress,
+      childInvested,
+      planHours,
+      investedHours: childInvested,
+      scheduledHours: planHours
+    };
+  }
+  const investedHours = getTaskDuration(task.id);
+  const scheduledHours = getTaskScheduledHours(task.id);
+  const nextProgress = progress == null
+    ? ProjectSummaryPolicy.taskProgressPercent({
+      status: task.status,
+      investedHours,
+      scheduledHours
+    })
+    : Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
+  return {
+    kind: "leaf",
+    progress: nextProgress,
+    investedHours,
+    scheduledHours,
+    notes: getTaskProgressNotes(task.id).map(item => item.note).filter(Boolean)
+  };
+}
+
+function ganttProgressBarText(info = {}) {
+  if (info.kind === "parent") {
+    const invested = trimNumber(info.childInvested || 0);
+    const plan = trimNumber(info.planHours || 0);
+    const pct = Math.max(0, Math.min(100, Math.round(Number(info.progress) || 0)));
+    if (!(Number(info.planHours) > 0 || Number(info.childInvested) > 0 || pct > 0)) {
+      return { short: "", full: "" };
+    }
+    const short = Number(info.planHours) > 0
+      ? `${invested}h/${plan}h · ${pct}%`
+      : `${invested}h · ${pct}%`;
+    const full = Number(info.planHours) > 0
+      ? `子任务已投入 ${invested} 小时 / 计划 ${plan} 工作小时 · 进度 ${pct}%`
+      : `子任务已投入 ${invested} 小时 · 进度 ${pct}%`;
+    return { short, full };
+  }
+  const invested = trimNumber(info.investedHours || 0);
+  const notes = [...new Set((info.notes || []).map(note => String(note || "").trim()).filter(Boolean))];
+  const parts = [];
+  if (Number(info.investedHours) > 0) parts.push(`${invested}h`);
+  parts.push(...notes);
+  const short = parts.join(" · ");
+  const full = [
+    Number(info.investedHours) > 0 ? `已投入 ${invested} 小时` : "",
+    ...notes.map(note => `完成事项：${note}`)
+  ].filter(Boolean).join(" · ");
+  return { short, full };
+}
+
+function fitGanttProgressLabel(el, fullText) {
+  if (!el) return;
+  const text = String(fullText || "");
+  if (!text) {
+    el.remove();
+    return;
+  }
+  const apply = () => {
+    const width = el.clientWidth || 0;
+    if (width < 12) {
+      el.remove();
+      return;
+    }
+    el.textContent = text;
+    if (el.scrollWidth <= width) return;
+    let lo = 0;
+    let hi = text.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      el.textContent = `${text.slice(0, mid)}…`;
+      if (el.scrollWidth <= width) lo = mid;
+      else hi = mid - 1;
+    }
+    if (lo < 1) {
+      el.remove();
+      return;
+    }
+    el.textContent = lo < text.length ? `${text.slice(0, lo)}…` : text;
+    if (el.scrollWidth > width) el.remove();
+  };
+  apply();
+  requestAnimationFrame(apply);
+}
+
+function selectGanttTaskRow(taskId) {
+  const nextId = String(taskId || "");
+  state.selectedGanttTaskId = nextId;
+  el.timeline?.querySelectorAll?.(".project-gantt-row-label.is-selected, .project-gantt-row-chart.is-selected")
+    .forEach(node => node.classList.remove("is-selected"));
+  if (!nextId) return;
+  el.timeline?.querySelectorAll?.(`[data-task-id="${CSS.escape(nextId)}"]`).forEach(node => {
+    if (node.classList.contains("project-gantt-row-label") || node.classList.contains("project-gantt-row-chart")) {
+      node.classList.add("is-selected");
+    }
+  });
+}
+
+/** Prefer fill bar; fall back to invested segments / span so leaf text remains visible. */
+function ganttBarLabelGeometry(actual) {
+  const fill = Number(actual?.span?.fill) || 0;
+  if (actual?.span && fill >= 1.5) {
+    return { left: actual.span.left, width: fill };
+  }
+  if (actual?.segments?.length) {
+    const left = Math.min(...actual.segments.map(segment => Number(segment.left) || 0));
+    const right = Math.max(...actual.segments.map(segment => (Number(segment.left) || 0) + (Number(segment.width) || 0)));
+    if (right - left >= 1.5) return { left, width: right - left };
+  }
+  if (actual?.span && Number(actual.span.width) >= 1.5) {
+    return { left: actual.span.left, width: actual.span.width };
+  }
+  return null;
+}
+
 function createProjectGanttRow(task, buckets, scale = "day", rootId = "", options = {}) {
   const taskTitle = String(task?.title || "").trim();
   if (!TodoListPolicy.hasDisplayTitle(taskTitle)) return null;
-  const actual = taskActualTimelineParts(task, buckets, scale, options);
+  const isParentRow = Boolean(options.isParent || getChildTasks(task.id).length > 0);
+  const progressInfo = resolveGanttRowProgress(task, {
+    isParent: isParentRow,
+    progress: options.progress
+  });
+  const actual = taskActualTimelineParts(task, buckets, scale, {
+    ...options,
+    progress: progressInfo.progress
+  });
   const cutoff = task.dueDate ? taskTimelineOffset(task.dueDate, buckets, scale) : null;
   const showDueFlag = ProjectViewPolicy.shouldShowDueFlag(task.status) && cutoff !== null;
-  const hasChildren = options.isParent || getChildTasks(task.id).length > 0;
+  const hasChildren = isParentRow;
   const collapsed = options.isParent ? Boolean(options.collapsed) : state.projectCollapsedTasks.has(task.id);
-  const progress = options.progress ?? ProjectSummaryPolicy.taskProgressPercent({
-    status: task.status,
-    investedHours: getTaskDuration(task.id),
-    scheduledHours: getTaskScheduledHours(task.id)
-  });
+  const progressText = ganttProgressBarText(progressInfo);
+  const selected = state.selectedGanttTaskId === task.id;
   const labelRow = document.createElement("div");
   const depth = getTaskDepth(task, rootId) + Math.max(0, Number(options.indentBase) || 0);
-  labelRow.className = `project-gantt-row-label ${task.status}${options.isParent ? " is-parent" : ""}`;
+  labelRow.className = `project-gantt-row-label ${task.status}${isParentRow ? " is-parent" : ""}${selected ? " is-selected" : ""}`;
   labelRow.style.setProperty("--task-depth", depth);
   labelRow.dataset.depth = String(depth);
   labelRow.dataset.taskId = task.id;
-  labelRow.title = "拖到其他任务名称上可改挂接；双击编辑；右侧拖到日期可安排投入";
+  labelRow.title = "单击高亮整行；悬停显示＋新建子任务；右键更多操作；拖到其他名称可改挂接；双击编辑；右侧拖到日期可安排投入";
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin">
         ${hasChildren ? `<button class="project-collapse-button task-tree-toggle" type="button">${collapsed ? "▸" : "▾"}</button>` : ""}
         <strong title="${escapeHtml(taskTitle)}">${escapeHtml(taskTitle)}</strong>
+        <button type="button" class="gantt-add-child" title="在此任务下新建子任务" aria-label="在此任务下新建子任务">＋</button>
       </div>`;
   bindGanttLabelReparent(labelRow, task);
   const chartRow = document.createElement("div");
-  chartRow.className = `project-gantt-row-chart ${task.status}${options.isParent ? " is-parent" : ""}`;
+  chartRow.className = `project-gantt-row-chart ${task.status}${isParentRow ? " is-parent" : ""}${selected ? " is-selected" : ""}`;
+  chartRow.dataset.taskId = task.id;
   chartRow.draggable = TaskStatusPolicy.isSchedulableStatus(task.status);
   chartRow.addEventListener("dragstart", event => {
     event.dataTransfer.setData("text/task-id", task.id);
@@ -5545,31 +6225,125 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
     chartRow.classList.add("dragging");
   });
   chartRow.addEventListener("dragend", () => chartRow.classList.remove("dragging"));
+  const hasEntryLabels = actual.segments.some(segment => segment.label);
+  const labelGeometry = progressText.short ? ganttBarLabelGeometry(actual) : null;
+  // Leaf rows: label each invest bar (hours · note). Parents keep plan-% on the span.
+  const showProgressLabel = Boolean(labelGeometry) && (isParentRow || !hasEntryLabels);
   chartRow.innerHTML = `<div class="project-gantt-lane">
       ${actual.span ? `<i class="gantt-span-track" style="left:${actual.span.left}%;width:${actual.span.width}%"></i>
-      <i class="gantt-progress-fill" style="left:${actual.span.left}%;width:${actual.span.fill}%" title="进度 ${progress}%"></i>
-      ${actual.span.fill > 0 && !options.isParent ? `<span class="gantt-progress-pct" style="left:${actual.span.left}%;width:${actual.span.fill}%">${progress}%</span>` : ""}` : ""}
-      ${actual.segments.map(segment => `<i class="gantt-actual-bar" style="left:${segment.left}%;width:${segment.width}%" title="有投入：${escapeHtml(segment.label)}"></i>`).join("")}
+      <i class="gantt-progress-fill" style="left:${actual.span.left}%;width:${actual.span.fill}%" title="${escapeHtml(progressText.full || progressText.short)}"></i>` : ""}
+      ${showProgressLabel ? `<span class="gantt-progress-pct" style="left:${labelGeometry.left}%;width:${labelGeometry.width}%" title="${escapeHtml(progressText.full || progressText.short)}">${escapeHtml(progressText.short)}</span>` : ""}
+      ${actual.segments.map(segment => `<i class="gantt-actual-bar" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label || "有投入")}"></i>
+      ${!isParentRow && segment.label ? `<span class="gantt-progress-pct gantt-entry-label" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label)}">${escapeHtml(segment.label)}</span>` : ""}`).join("")}
       ${actual.start ? `<u class="gantt-start-marker" style="left:${actual.start.offset}%" title="开始：${actual.start.dateKey}"></u>` : ""}
       ${actual.end ? `<u class="gantt-end-marker" style="left:${actual.end.offset}%" title="结束：${actual.end.dateKey}"></u>` : ""}
       ${showDueFlag ? `<u class="gantt-cutoff-flag" style="left:${cutoff}%" title="目标截止：${formatDue(task)}"></u>` : ""}
     </div>`;
+  if (showProgressLabel) {
+    fitGanttProgressLabel(chartRow.querySelector(".gantt-progress-pct:not(.gantt-entry-label)"), progressText.short);
+  }
+  chartRow.querySelectorAll(".gantt-entry-label").forEach(node => fitGanttProgressLabel(node, node.textContent));
   const openTask = () => openTaskDialog(task);
+  const selectRow = event => {
+    if (event.target?.closest?.(".task-tree-toggle, .gantt-add-child")) return;
+    selectGanttTaskRow(task.id);
+  };
   labelRow.querySelector(".task-tree-toggle")?.addEventListener("click", event => {
     event.stopPropagation();
     if (options.isParent) toggleProjectSection(task.id);
     else toggleProjectTask(task.id);
   });
+  labelRow.querySelector(".gantt-add-child")?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    openNewChildTaskFromGantt(task);
+  });
+  labelRow.addEventListener("click", selectRow);
+  chartRow.addEventListener("click", selectRow);
   labelRow.addEventListener("dblclick", openTask);
   chartRow.addEventListener("dblclick", openTask);
+  bindGanttRowContextMenu(labelRow, task);
+  bindGanttRowContextMenu(chartRow, task);
   return { labelRow, chartRow };
+}
+
+let ganttContextMenuEl = null;
+let ganttContextMenuTaskId = "";
+
+function ensureGanttContextMenu() {
+  if (ganttContextMenuEl) return ganttContextMenuEl;
+  ganttContextMenuEl = document.createElement("div");
+  ganttContextMenuEl.id = "ganttContextMenu";
+  ganttContextMenuEl.className = "gantt-context-menu hidden";
+  ganttContextMenuEl.setAttribute("role", "menu");
+  document.body.appendChild(ganttContextMenuEl);
+  ganttContextMenuEl.addEventListener("click", event => {
+    const button = event.target?.closest?.("[data-gantt-action]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const action = button.dataset.ganttAction;
+    const task = findTask(ganttContextMenuTaskId)?.task;
+    hideGanttContextMenu();
+    if (!task) return;
+    if (action === "edit") openTaskDialog(task);
+    else if (action === "add-child") openNewChildTaskFromGantt(task);
+    else if (action === "close") requestTaskCompletion(task);
+    else if (action === "delete") confirmDeleteTask(task);
+  });
+  document.addEventListener("click", event => {
+    if (!ganttContextMenuEl || ganttContextMenuEl.classList.contains("hidden")) return;
+    if (ganttContextMenuEl.contains(event.target)) return;
+    hideGanttContextMenu();
+  }, true);
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") hideGanttContextMenu();
+  });
+  window.addEventListener("scroll", hideGanttContextMenu, true);
+  return ganttContextMenuEl;
+}
+
+function hideGanttContextMenu() {
+  if (!ganttContextMenuEl) return;
+  ganttContextMenuEl.classList.add("hidden");
+  ganttContextMenuTaskId = "";
+}
+
+function showGanttContextMenu(event, task) {
+  if (!task?.id) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const menu = ensureGanttContextMenu();
+  ganttContextMenuTaskId = task.id;
+  const ended = TaskStatusPolicy.isEndedStatus?.(task.status);
+  menu.innerHTML = `
+    <button type="button" role="menuitem" data-gantt-action="edit">编辑</button>
+    <button type="button" role="menuitem" data-gantt-action="add-child">新建子任务</button>
+    <button type="button" role="menuitem" data-gantt-action="close">${ended ? "恢复任务" : "关闭任务"}</button>
+    <button type="button" role="menuitem" data-gantt-action="delete" class="is-danger">删除…</button>`;
+  menu.classList.remove("hidden");
+  const pad = 8;
+  const rect = menu.getBoundingClientRect();
+  const width = rect.width || 160;
+  const height = rect.height || 140;
+  let left = event.clientX;
+  let top = event.clientY;
+  if (left + width > window.innerWidth - pad) left = window.innerWidth - width - pad;
+  if (top + height > window.innerHeight - pad) top = window.innerHeight - height - pad;
+  menu.style.left = `${Math.max(pad, left)}px`;
+  menu.style.top = `${Math.max(pad, top)}px`;
+}
+
+function bindGanttRowContextMenu(row, task) {
+  if (!row || !task?.id) return;
+  row.addEventListener("contextmenu", event => showGanttContextMenu(event, task));
 }
 
 function bindGanttLabelReparent(labelRow, task) {
   if (!labelRow || !task?.id) return;
   labelRow.draggable = true;
   labelRow.addEventListener("dragstart", event => {
-    if (event.target?.closest?.(".task-tree-toggle")) {
+    if (event.target?.closest?.(".task-tree-toggle, .gantt-add-child")) {
       event.preventDefault();
       return;
     }
@@ -5635,16 +6409,9 @@ function reparentTaskOnto(sourceId, parentId) {
 }
 
 function calendarMeetingTimelineParts(meeting, buckets, scale = "day") {
-  const investedDateKeys = meeting.entries
-    .filter(({ dateKey, entry }) => getEntryInvestedHours(dateKey, entry) > 0)
-    .map(({ dateKey }) => dateKey);
-  const segments = mapGanttSegments(
-    ProjectViewPolicy.investmentSegments({
-      investedDateKeys,
-      ...ganttSegmentPolicyArgs(buckets, scale)
-    }),
-    buckets
-  );
+  const invested = (meeting.entries || [])
+    .filter(({ dateKey, entry }) => getEntryInvestedHours(dateKey, entry) > 0);
+  const segments = mapEntryGanttSegments(invested, buckets, scale);
   return { segments };
 }
 
@@ -5663,8 +6430,10 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
   const chartRow = document.createElement("div");
   chartRow.className = "project-gantt-row-chart meeting";
   chartRow.innerHTML = `<div class="project-gantt-lane">
-      ${parts.segments.map(segment => `<i class="gantt-meeting-bar" style="left:${segment.left}%;width:${segment.width}%" title="会议投入：${escapeHtml(segment.label)}"></i>`).join("")}
+      ${parts.segments.map(segment => `<i class="gantt-meeting-bar" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label || "会议投入")}"></i>
+      ${segment.label ? `<span class="gantt-progress-pct gantt-entry-label" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label)}">${escapeHtml(segment.label)}</span>` : ""}`).join("")}
     </div>`;
+  chartRow.querySelectorAll(".gantt-entry-label").forEach(node => fitGanttProgressLabel(node, node.textContent));
   const openMeeting = () => {
     const first = meeting.entries[0];
     if (first) openEntryDialog(first.entry.start, first.entry, first.dateKey);
@@ -5689,6 +6458,11 @@ function closeDialogById(id) {
   const dialog = id ? document.getElementById(id) : null;
   if (!dialog) return false;
   const wasEditingTask = id === "taskDialog";
+  // X dismiss on link-confirm: step back to schedule editor (do not wipe the draft).
+  if (id === "entryLinkConfirmDialog" && pendingEntrySave?.resolve) {
+    cancelPendingEntryLinkConfirm({ closingDialog: dialog });
+    return true;
+  }
   try {
     if (typeof dialog.close === "function") dialog.close("cancel");
   } catch (_) {
@@ -5879,18 +6653,46 @@ function taskTimelineOffset(dateKey, buckets, scale = "day") {
   return buckets.length ? ((index + .5) / buckets.length) * 100 : 0;
 }
 
+function mapEntryGanttSegments(investedItems, buckets, scale = "day") {
+  const entries = investedItems.map(({ dateKey, entry }) => ({
+    dateKey,
+    start: Number(entry.start),
+    end: Number(entry.end),
+    note: String(entry.note || "").trim(),
+    hours: getEntryInvestedHours(dateKey, entry)
+  }));
+  const geometry = ProjectViewPolicy.entryInvestmentSegments({
+    entries,
+    ...ganttSegmentPolicyArgs(buckets, scale),
+    dayStartHour: state.workStartHour,
+    dayEndHour: state.workEndHour
+  });
+  return geometry.map(segment => {
+    const source = entries[segment.entryIndex] || {};
+    const hours = Number(source.hours) || 0;
+    const note = source.note || "";
+    const parts = [];
+    if (hours > 0) parts.push(`${trimNumber(hours)}h`);
+    if (note) parts.push(note);
+    const label = parts.join(" · ") || "有投入";
+    return {
+      left: segment.leftRatio * 100,
+      width: segment.widthRatio * 100,
+      label,
+      full: label,
+      dateKey: segment.dateKey,
+      hours,
+      note
+    };
+  });
+}
+
 function taskActualTimelineParts(task, buckets, scale = "day", options = {}) {
   const toBucket = dateKey => projectBucketKey(dateKey, scale);
-  const investedDateKeys = options.investedDateKeys || getTaskScheduleEntries(task.id)
-    .filter(item => getEntryInvestedHours(item.dateKey, item.entry) > 0)
-    .map(item => item.dateKey);
-  const segments = mapGanttSegments(
-    ProjectViewPolicy.investmentSegments({
-      investedDateKeys,
-      ...ganttSegmentPolicyArgs(buckets, scale)
-    }),
-    buckets
-  );
+  const investedItems = options.investedItems || getTaskScheduleEntries(task.id)
+    .filter(item => getEntryInvestedHours(item.dateKey, item.entry) > 0);
+  const investedDateKeys = options.investedDateKeys || investedItems.map(item => item.dateKey);
+  const segments = mapEntryGanttSegments(investedItems, buckets, scale);
   const isEnded = ["done", "closed"].includes(task.status) || Boolean(task.completedAt);
   const boundary = ProjectViewPolicy.boundaryDateKeys({
     investedDateKeys,
@@ -5938,12 +6740,14 @@ function taskActualTimelineParts(task, buckets, scale = "day", options = {}) {
 }
 
 function toggleProjectSection(projectId) {
+  captureProjectGanttRowsScroll();
   if (state.projectCollapsedSections.has(projectId)) state.projectCollapsedSections.delete(projectId);
   else state.projectCollapsedSections.add(projectId);
   renderSchedule();
 }
 
 function toggleProjectTask(taskId) {
+  captureProjectGanttRowsScroll();
   if (state.projectCollapsedTasks.has(taskId)) state.projectCollapsedTasks.delete(taskId);
   else state.projectCollapsedTasks.add(taskId);
   renderSchedule();
@@ -6031,22 +6835,25 @@ function renderDayTimeline() {
   endRow.innerHTML = `<div class="time-label">${String(endHour).padStart(2, "0")}:00</div><div class="time-slot time-slot-end" aria-hidden="true"></div>`;
   el.timeline.appendChild(endRow);
   const layoutItems = layoutOverlappingEntries(visibleEntries);
-  layoutItems.forEach(({ entry, column, columns }) => {
+  layoutItems.forEach(({ entry, stackIndex, overlapCount }) => {
     const item = document.createElement("article");
     const meta = scheduleEntryDisplayMeta(entry, state.selectedDate);
     const top = (entry.start - hours[0]) * getHourHeight() + 3;
     const height = (entry.end - entry.start) * getHourHeight() - 6;
     const linkedTask = entry.taskId ? findTask(entry.taskId)?.task : null;
+    const entryColor = typeof TaskCategoryPolicy?.resolveEntryColor === "function"
+      ? TaskCategoryPolicy.resolveEntryColor(entry, linkedTask)
+      : (entry.color || "#638576");
     const endedClass = linkedTask && ["done", "closed"].includes(linkedTask.status) ? ` ${linkedTask.status}` : "";
-    item.className = `schedule-entry ${entry.color || "sage"} ${meta.kind}${meta.type === "meeting" ? " meeting" : ""}${endedClass}`;
+    const legacyClass = TaskCategoryPolicy?.legacyColorId?.(entryColor) || "";
+    item.className = `schedule-entry ${legacyClass} ${meta.kind}${meta.type === "meeting" ? " meeting" : ""}${endedClass}`.replace(/\s+/g, " ").trim();
+    if (overlapCount > 1) item.classList.add("is-overlap");
     item.draggable = true;
     item.dataset.entryId = entry.id;
-    if (columns >= 3) item.classList.add("dense");
-    if (columns >= 4) item.classList.add("very-dense");
     item.style.top = `${top}px`;
     item.style.height = `${Math.max(height, 38)}px`;
-    item.style.setProperty("--entry-column", column);
-    item.style.setProperty("--entry-columns", columns);
+    item.style.zIndex = String(3 + stackIndex);
+    applyCategoryColorStyle(item, entryColor);
     item.innerHTML = `<strong><b class="schedule-entry-badge">${escapeHtml(meta.badge)}</b>${escapeHtml(entry.title)}</strong>
       ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}`;
     item.addEventListener("click", () => openEntryDialog(entry.start, entry));
@@ -6072,10 +6879,11 @@ function renderDayTimeline() {
   const logged = allEntries.reduce((sum, entry) => sum + getEntryInvestedHours(state.selectedDate, entry), 0);
   const scheduled = allEntries.reduce((sum, entry) => sum + entry.end - entry.start, 0);
   el.loggedHours.textContent = `${trimNumber(logged)}h`;
-  el.freeHours.textContent = `${trimNumber(Math.max(0, hours.length - scheduled))}h`;
+  el.freeHours.textContent = `${trimNumber(Math.max(0, getConfiguredWorkdayHours() - scheduled))}h`;
 }
 
 function layoutOverlappingEntries(entries) {
+  // Fantastical / Apple Calendar 风格：重叠时段全宽叠放交叠，不左右错开。
   const sorted = [...entries].sort((a, b) => a.start - b.start || a.end - b.end);
   const clusters = [];
   let current = [];
@@ -6092,21 +6900,13 @@ function layoutOverlappingEntries(entries) {
   });
   if (current.length) clusters.push(current);
 
-  return clusters.flatMap(cluster => {
-    const activeColumns = [];
-    let maxColumns = 1;
-    const assigned = cluster.map(entry => {
-      for (let i = activeColumns.length - 1; i >= 0; i--) {
-        if (activeColumns[i] && activeColumns[i].end <= entry.start) activeColumns[i] = null;
-      }
-      let column = activeColumns.findIndex(item => !item);
-      if (column === -1) column = activeColumns.length;
-      activeColumns[column] = entry;
-      maxColumns = Math.max(maxColumns, activeColumns.filter(Boolean).length, column + 1);
-      return { entry, column };
-    });
-    return assigned.map(item => ({ ...item, columns: maxColumns }));
-  });
+  return clusters.flatMap(cluster => cluster.map((entry, stackIndex) => ({
+    entry,
+    column: 0,
+    columns: 1,
+    stackIndex,
+    overlapCount: cluster.length
+  })));
 }
 
 function renderWeekSchedule() {
@@ -6117,7 +6917,7 @@ function renderWeekSchedule() {
   let logged = 0;
   let scheduled = 0;
   let visibleCount = 0;
-  const workHours = Math.max(1, state.workEndHour - state.workStartHour);
+  const workHours = Math.max(0.5, getConfiguredWorkdayHours());
   for (let i = 0; i < 7; i++) {
     const date = addDays(monday, i);
     const key = toDateKey(date);
@@ -6129,10 +6929,11 @@ function renderWeekSchedule() {
     const column = document.createElement("section");
     column.className = `week-schedule-day${key === state.selectedDate ? " selected" : ""}${i >= 5 ? " weekend" : ""}`;
     column.innerHTML = `<h4>${WEEKDAY_NAMES[date.getDay()]} · ${date.getMonth() + 1}/${date.getDate()}</h4>
-      <button type="button" class="week-add-task" data-date="${key}">＋ 新建待办</button>
+      <button type="button" class="week-add-task" data-date="${key}" title="新建任务或会议（在弹窗里选待办类型）">＋ 新建</button>
       ${renderDayOverviewList(overviewItems, "week")}`;
     column.querySelector(".week-add-task").addEventListener("click", event => {
       event.stopPropagation();
+      // 实体创建入口：完整新建窗（待办类型=任务/会议）；日程投入请用时间轴添加
       openTaskDialogForDate(key);
     });
     bindScheduleDrop(column, key, Math.min(Math.max(state.workStartHour, 0), 23));
@@ -6366,7 +7167,14 @@ function renderDayOverviewList(items, mode) {
     ${items.map(item => {
       const ended = item.task && ["done", "closed"].includes(item.task.status);
       const statusClass = ended ? ` ${item.task.status}` : "";
-      return `<div class="${lineClass} ${item.kind}${item.type === "meeting" ? " meeting" : ""}${statusClass}" draggable="${item.type === "task" && item.task && !ended}" data-task-id="${item.task?.id || ""}" data-entry-id="${escapeHtml(item.entryId || "")}" title="${escapeHtml(item.title)}${item.timeText ? ` · ${escapeHtml(item.timeText)}` : ""}">
+      const color = typeof TaskCategoryPolicy?.resolveEntryColor === "function"
+        ? TaskCategoryPolicy.resolveEntryColor(
+          item.type === "meeting" ? { type: "calendar" } : {},
+          item.task || null
+        )
+        : (item.task?.color || (item.type === "meeting" ? "#AA7B39" : "#638576"));
+      const hex = TaskCategoryPolicy?.normalizeColor?.(color) || color;
+      return `<div class="${lineClass} ${item.kind}${item.type === "meeting" ? " meeting" : ""}${statusClass}" style="--chip:${escapeHtml(hex)};border-left-color:${escapeHtml(hex)}" draggable="${item.type === "task" && item.task && !ended}" data-task-id="${item.task?.id || ""}" data-entry-id="${escapeHtml(item.entryId || "")}" title="${escapeHtml(item.title)}${item.timeText ? ` · ${escapeHtml(item.timeText)}` : ""}">
       <b>${overviewItemBadge(item)}</b><span>${escapeHtml(item.title)}</span>${mode === "week" && item.timeText ? `<small>${escapeHtml(item.timeText)}</small>` : ""}
     </div>`;
     }).join("")}
@@ -6570,9 +7378,12 @@ function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
   }
   const fromMemo = isMemoReminderTask(task);
   const workTask = fromMemo ? materializeWorkTodoFromMemo(task, dateKey) : task;
+  const entryColor = typeof TaskCategoryPolicy?.resolveTaskColor === "function"
+    ? TaskCategoryPolicy.resolveTaskColor(workTask)
+    : (workTask.color || "sage");
   getDay(dateKey).entries.push({
     id: crypto.randomUUID(), entryType: "task_work", taskId: workTask.id, title: workTask.title,
-    ...placement, note: "", color: "sage"
+    ...placement, note: "", color: entryColor
   });
   refreshTaskStatusForId(workTask.id);
   saveData();
@@ -6589,9 +7400,17 @@ function materializeWorkTodoFromMemo(memo, dateKey = state.selectedDate) {
     dueDate: dateKey || "",
     dueTime: defaultWorkEndTime()
   });
+  const category = typeof TaskCategoryPolicy?.resolveTaskCategory === "function"
+    ? TaskCategoryPolicy.resolveTaskCategory(memo)
+    : (memo.category || "work");
+  const color = typeof TaskCategoryPolicy?.colorForCategory === "function"
+    ? TaskCategoryPolicy.colorForCategory(category)
+    : (memo.color || "sage");
   const workTodo = {
     id: crypto.randomUUID(),
     ...payload,
+    category,
+    color,
     createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
   };
   getDay(dateKey || state.selectedDate).tasks.push(workTodo);
@@ -6602,13 +7421,55 @@ function materializeWorkTodoFromMemo(memo, dateKey = state.selectedDate) {
   return workTodo;
 }
 
+function syncTaskCategoryOptions({ includeMeeting = false, selected } = {}) {
+  const current = selected
+    || el.taskCategory?.value
+    || (includeMeeting ? "meeting" : "work");
+  fillCategorySelect(el.taskCategory, { selected: current, includeMeeting });
+}
+
+function categoryIdFromColor(color) {
+  const hex = typeof TaskCategoryPolicy?.normalizeColor === "function"
+    ? TaskCategoryPolicy.normalizeColor(color)
+    : color;
+  const match = TaskCategoryPolicy?.listCategories?.().find(item =>
+    TaskCategoryPolicy.normalizeColor(item.color) === hex
+  );
+  return match?.id
+    || TaskCategoryPolicy?.DEFAULT_CATEGORY
+    || "work";
+}
+
+function syncSelectedColorFromCategory() {
+  const category = typeof TaskCategoryPolicy?.normalizeCategory === "function"
+    ? TaskCategoryPolicy.normalizeCategory(el.entryCategory?.value)
+    : (el.entryCategory?.value || "work");
+  state.selectedColor = typeof TaskCategoryPolicy?.colorForCategory === "function"
+    ? TaskCategoryPolicy.colorForCategory(category)
+    : "sage";
+  el.colorPicker?.querySelectorAll("button").forEach(item => {
+    item.classList.toggle("selected", item.dataset.color === state.selectedColor);
+  });
+}
+
+function syncEntryCategoryFromColor(color) {
+  if (!el.entryCategory) return;
+  el.entryCategory.value = categoryIdFromColor(color);
+}
+
 function openEntryDialog(hour, entry = null, dateKey = null) {
   const resolvedDateKey = entry
     ? (dateKey || findEntry(entry.id)?.dateKey || state.selectedDate)
     : (dateKey || state.selectedDate);
   state.editingEntryId = entry?.id || null;
   state.editingEntryDateKey = resolvedDateKey;
-  state.selectedColor = entry?.color || "sage";
+  const linkedTask = entry?.taskId ? findTask(entry.taskId)?.task : null;
+  const category = linkedTask
+    ? (TaskCategoryPolicy?.resolveTaskCategory?.(linkedTask) || "work")
+    : (entry
+      ? (entry.category || categoryIdFromColor(entry.color || "sage"))
+      : (el.entryType?.value === "calendar" ? "meeting" : "work"));
+  state.selectedColor = TaskCategoryPolicy?.colorForCategory?.(category) || entry?.color || "sage";
   el.entryEyebrow.textContent = entry ? "EDIT ENTRY" : "NEW ENTRY";
   el.entryDialogTitle.textContent = entry ? "编辑日程" : "添加日程";
   el.entryTitle.value = entry?.title || "";
@@ -6618,18 +7479,26 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
   el.entryEnd.value = entry?.end ?? Math.min(hour + 1, 22);
   if (el.entryOwner) el.entryOwner.value = entry?.owner || "";
   el.entryNote.value = entry?.note || "";
+  fillCategorySelect(el.entryCategory, { selected: category, includeMeeting: true });
   updateEntryTypeControls();
   el.deleteEntryButton.classList.toggle("hidden", !entry);
-  el.colorPicker.querySelectorAll("button").forEach(item => item.classList.toggle("selected", item.dataset.color === state.selectedColor));
+  el.colorPicker?.querySelectorAll("button").forEach(item => item.classList.toggle("selected", item.dataset.color === state.selectedColor));
   el.entryDialog.showModal();
+  el.entryDialogScroll?.scrollTo?.(0, 0);
   setTimeout(() => el.entryTitle.focus(), 50);
 }
 
 function saveEntry() {
+  syncSelectedColorFromCategory();
+  const category = typeof TaskCategoryPolicy?.normalizeCategory === "function"
+    ? TaskCategoryPolicy.normalizeCategory(el.entryCategory?.value)
+    : (el.entryCategory?.value || "work");
   const payload = {
     title: el.entryTitle.value.trim(), start: Number(el.entryStart.value), end: Number(el.entryEnd.value),
     owner: (el.entryOwner?.value || "").trim().slice(0, 80),
-    note: el.entryNote.value.trim(), color: state.selectedColor,
+    note: el.entryNote.value.trim(),
+    color: state.selectedColor,
+    category,
     entryType: el.entryType.value === "task_work" ? "task_work" : "calendar"
   };
   if (!payload.title || payload.end <= payload.start) return showToast("请检查事项和时间");
@@ -6654,7 +7523,17 @@ function saveEntry() {
 }
 
 function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dateKey = state.editingEntryDateKey || state.selectedDate }) {
-  payload.taskId = taskId;
+  // Hours must land on a leaf. If a parent/container id slipped through, materialize/retarget a child.
+  const linkedTaskId = taskId
+    ? ensureScheduleLinkedLeafTask(taskId, payload, dateKey)
+    : "";
+  payload.taskId = linkedTaskId;
+  const category = typeof TaskCategoryPolicy?.normalizeCategory === "function"
+    ? TaskCategoryPolicy.normalizeCategory(payload.category)
+    : (payload.category || "work");
+  payload.color = typeof TaskCategoryPolicy?.colorForCategory === "function"
+    ? TaskCategoryPolicy.colorForCategory(category)
+    : (payload.color || "sage");
   const day = getDay(dateKey);
   if (state.editingEntryId) {
     if (!existingEntry) {
@@ -6667,27 +7546,87 @@ function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dat
   }
   [previousTaskId, payload.taskId].filter(Boolean).forEach(id => {
     refreshTaskStatusForId(id);
-    if (payload.note) updateTaskRecords(id, task => { task.updatedAt = new Date().toISOString(); });
+    updateTaskRecords(id, task => {
+      if (id === payload.taskId) {
+        task.category = category;
+        task.color = payload.color;
+      }
+      if (payload.note || id === payload.taskId) task.updatedAt = new Date().toISOString();
+    });
   });
   focusLinkedTaskFilter(payload.taskId);
   const wasEditing = Boolean(state.editingEntryId);
   state.editingEntryId = null;
   state.editingEntryDateKey = null;
   saveData(); el.entryDialog.close(); render();
+  requestAnimationFrame(() => {
+    const card = el.taskList?.querySelector(`[data-task-id="${payload.taskId}"]`);
+    card?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  });
   showToast(wasEditing ? "日程已更新" : "日程已添加");
+}
+
+/** If taskId is a parent/container, return (or create) the leaf that should own the schedule hours. */
+function ensureScheduleLinkedLeafTask(taskId, entryPayload, dateKey = state.selectedDate) {
+  const task = findTask(taskId)?.task;
+  if (!task) return taskId;
+  if (!hasChildTasks(task.id)) return taskId;
+  const existingLeaf = findLeafUnderParentByTitle(task.id, entryPayload?.title || "");
+  if (existingLeaf) {
+    showToast(`工时已记在「${existingLeaf.title}」（父级「${task.title}」不可直接记投入）`);
+    return existingLeaf.id;
+  }
+  const leaf = createTaskFromEntryPayload(
+    {
+      title: entryPayload?.title || task.title,
+      end: entryPayload?.end ?? 18,
+      category: entryPayload?.category,
+      color: entryPayload?.color,
+      entryType: "task_work"
+    },
+    dateKey,
+    `从日程挂入父级「${task.title}」下的具体待办。`
+  );
+  leaf.parentId = task.id;
+  showToast(`已在「${task.title}」下创建「${leaf.title}」并关联投入`);
+  return leaf.id;
 }
 
 function resolveCreateUnderExistingParent(entryPayload, parentTitle) {
   const existingParent = findTaskByNormalizedTitle(parentTitle);
   if (!existingParent) return null;
+  if (TodoListPolicy.normalizeTitle(parentTitle) === TodoListPolicy.normalizeTitle(entryPayload.title)) {
+    showToast("父级名称不能与当前事项相同；请改事项名，或直接「作为新任务创建」");
+    return null;
+  }
   const existingLeaf = findLeafUnderParentByTitle(existingParent.id, entryPayload.title);
   if (existingLeaf) {
-    showToast(`已关联到「${existingParent.title}」下的已有子待办，未重复创建`);
+    showToast(`已关联到「${existingParent.title}」下的「${existingLeaf.title}」`);
     return existingLeaf.id;
   }
   const leaf = createParentAndLeafFromEntryPayload(entryPayload, existingParent.title);
-  showToast(`已在父级「${existingParent.title}」下新建子待办并关联`);
+  showToast(`已在「${existingParent.title}」下新建「${leaf.title}」并关联`);
   return leaf.id;
+}
+
+function cancelPendingEntryLinkConfirm({ closingDialog = null } = {}) {
+  const pending = pendingEntrySave;
+  pendingEntrySave = null;
+  const dialog = closingDialog || el.entryLinkConfirmDialog;
+  if (dialog?.open) {
+    try { dialog.close("cancel"); } catch { /* ignore */ }
+    dialog.removeAttribute("open");
+  }
+  if (!pending?.resolve) return;
+  // Abort only this confirm step; keep the schedule dialog open with filled fields.
+  pending.resolve(null);
+  if (el.entryDialog && !el.entryDialog.open) {
+    try { el.entryDialog.showModal(); } catch { /* ignore */ }
+  }
+  showToast("已返回日程，可继续修改挂接");
+  requestAnimationFrame(() => {
+    el.entryTaskTrigger?.focus?.();
+  });
 }
 
 function resolveEntryTaskLinkWithGuard(entryPayload, existingEntry = null) {
@@ -6715,15 +7654,21 @@ function resolveEntryTaskLinkWithGuard(entryPayload, existingEntry = null) {
     }
     return Promise.resolve(selected);
   }
-  if (existingEntry?.taskId) return Promise.resolve(existingEntry.taskId);
+  if (existingEntry?.taskId && selected !== "__create__") return Promise.resolve(existingEntry.taskId);
+
   const leafTasks = uniqueTasks(getAllTasks().map(({ task }) => task)).filter(isWorkLeafTask);
   const similar = TodoListPolicy.findSimilarTasks({
     title: entryPayload.title,
     tasks: leafTasks,
     hasChildTasks: taskId => hasChildTasks(taskId)
   });
+  // 「在已有父级下新建」：必须先选父级，再把当前日程建成其子任务并关联。
+  if (selected === "__create__") {
+    if (similar.length) return promptEntryLinkChoice(entryPayload, similar);
+    return promptEntryCreateUnderParent(entryPayload);
+  }
   if (similar.length) return promptEntryLinkChoice(entryPayload, similar);
-  return promptEntryCreateConfirm(entryPayload);
+  return promptEntryCreateUnderParent(entryPayload);
 }
 
 function promptEntryLinkChoice(entryPayload, similar) {
@@ -6743,19 +7688,117 @@ function promptEntryLinkChoice(entryPayload, similar) {
         resolve(taskId);
       }, { once: true });
     });
-    el.entryLinkConfirmCreate.textContent = "确认新建待办";
+    el.entryLinkConfirmCreate.textContent = "仍要在父级下新建";
     el.entryLinkConfirmDialog.showModal();
   });
 }
 
-function promptEntryCreateConfirm(entryPayload) {
+function getEntryParentCandidates(entryPayload = null) {
+  const entryTitle = TodoListPolicy.normalizeTitle(entryPayload?.title || "");
+  const tasks = uniqueTasks(getAllTasks().map(({ task }) => task));
+  return tasks
+    .filter(task => task && !["done", "closed"].includes(task.status))
+    .filter(task => !isMemoReminderTask(task))
+    .filter(task => !entryTitle || TodoListPolicy.normalizeTitle(task.title) !== entryTitle)
+    .sort((a, b) => {
+      const pathA = TaskOptionPolicy.taskHierarchyPath({ task: a, tasks, separator: " / " }) || a.title || "";
+      const pathB = TaskOptionPolicy.taskHierarchyPath({ task: b, tasks, separator: " / " }) || b.title || "";
+      return String(pathA).localeCompare(String(pathB), "zh");
+    });
+}
+
+function formatParentPickPathHtml(task, tasks) {
+  const titles = [];
+  const byId = new Map(tasks.map(item => [item.id, item]));
+  const seen = new Set();
+  let current = task;
+  while (current && !seen.has(current.id)) {
+    titles.unshift(String(current.title || "未命名任务").trim() || "未命名任务");
+    seen.add(current.id);
+    const parentId = current.parentId || current.parentTaskId || current.parentTask || current.parent || "";
+    current = parentId ? byId.get(parentId) : null;
+  }
+  if (!titles.length) return escapeHtml(String(task?.title || "未命名任务"));
+  // Use spaced "/" so hierarchy reads clearly without mixed font weights/colors.
+  return titles.map(part => escapeHtml(part)).join(" / ");
+}
+
+/** Pick an existing parent, then create the schedule item as its new child leaf. */
+function promptEntryCreateUnderParent(entryPayload) {
   return new Promise(resolve => {
-    pendingEntrySave = { entryPayload, resolve, similar: [] };
-    el.entryLinkConfirmTitle.textContent = "新建待办并关联";
-    el.entryLinkConfirmMessage.textContent = `未找到与「${entryPayload.title}」相似的已有待办。确认后将新建叶子待办并关联到这条日程。`;
-    el.entryLinkConfirmOptions.innerHTML = "";
-    el.entryLinkConfirmCreate.textContent = "确认新建";
+    const parents = getEntryParentCandidates(entryPayload);
+    if (!parents.length) {
+      showToast("还没有可挂入的父级，请改用「新建父级任务并挂入当前事项」");
+      resolve(null);
+      return;
+    }
+    pendingEntrySave = {
+      entryPayload,
+      resolve,
+      similar: [],
+      createMode: "under_parent",
+      selectedParentId: parents[0].id
+    };
+    el.entryLinkConfirmTitle.textContent = "选择父级并新建子任务";
+    el.entryLinkConfirmMessage.textContent = `将把「${entryPayload.title}」作为「所选父级」下的新子任务，并关联当前日程投入。`;
+    el.entryLinkConfirmOptions.innerHTML = `
+      <label class="entry-parent-create-field">
+        <span>按层级搜索任务</span>
+        <input id="entryUnderParentSearch" type="search" autocomplete="off" placeholder="输入名称，如：父任务 / 子任务…" />
+      </label>
+      <div id="entryUnderParentOptions" class="entry-under-parent-options" role="listbox"></div>`;
+    const listEl = el.entryLinkConfirmOptions.querySelector("#entryUnderParentOptions");
+    const searchEl = el.entryLinkConfirmOptions.querySelector("#entryUnderParentSearch");
+    const allTasks = getAllTasks().map(({ task }) => task);
+    const renderParentOptions = (query = "") => {
+      const normalized = TaskOptionPolicy.normalizeSearchText?.(query)
+        || String(query || "").trim().toLowerCase();
+      const keywords = normalized.split(/\s+/).filter(Boolean);
+      const visible = parents.filter(task => {
+        if (!keywords.length) return true;
+        const path = TaskOptionPolicy.taskHierarchyPath?.({
+          task,
+          tasks: allTasks,
+          separator: " / "
+        }) || task.title;
+        const hay = TaskOptionPolicy.normalizeSearchText?.(path)
+          || String(path).toLowerCase();
+        return keywords.every(word => hay.includes(word));
+      });
+      if (!visible.length) {
+        listEl.innerHTML = `<div class="entry-task-no-results">没有匹配的任务，可返回改用「新建父级任务并挂入」</div>`;
+        pendingEntrySave.selectedParentId = "";
+        return;
+      }
+      if (!visible.some(task => task.id === pendingEntrySave.selectedParentId)) {
+        pendingEntrySave.selectedParentId = visible[0].id;
+      }
+      listEl.innerHTML = visible.map(task => {
+        const selected = pendingEntrySave.selectedParentId === task.id;
+        const pathHtml = formatParentPickPathHtml(task, allTasks);
+        const pathText = TaskOptionPolicy.taskHierarchyPath({
+          task,
+          tasks: allTasks,
+          separator: " / "
+        }) || task.title || "";
+        return `<button type="button" class="entry-link-confirm-option" role="option" aria-selected="${selected}" data-task-id="${escapeHtml(task.id)}" title="${escapeHtml(pathText)}">
+          <strong>${pathHtml}</strong>
+        </button>`;
+      }).join("");
+      listEl.querySelectorAll("[data-task-id]").forEach(button => {
+        button.addEventListener("click", () => {
+          pendingEntrySave.selectedParentId = button.dataset.taskId;
+          listEl.querySelectorAll("[data-task-id]").forEach(item => {
+            item.setAttribute("aria-selected", String(item.dataset.taskId === pendingEntrySave.selectedParentId));
+          });
+        });
+      });
+    };
+    searchEl?.addEventListener("input", () => renderParentOptions(searchEl.value));
+    renderParentOptions("");
+    el.entryLinkConfirmCreate.textContent = "在此父级下新建并关联";
     el.entryLinkConfirmDialog.showModal();
+    setTimeout(() => searchEl?.focus(), 0);
   });
 }
 
@@ -6827,6 +7870,10 @@ function syncEntryParentCreateDialog(entryPayload) {
 function focusLinkedTaskFilter(taskId) {
   const linked = findTask(taskId)?.task;
   if (!linked) return;
+  // Always surface the linked leaf in the todo list (not its parent container).
+  state.listKind = "todo";
+  state.showContinueYesterdayOnly = false;
+  state.highlightTaskId = linked.id;
   // Newly created schedule-linked leaves are usually planned/unplanned; keep the
   // default in_progress tab from hiding them right after save.
   if (["done", "closed"].includes(linked.status)) state.filter = "ended";
@@ -6834,14 +7881,20 @@ function focusLinkedTaskFilter(taskId) {
   else if (isUnplannedTask(linked)) state.filter = "unplanned";
   else state.filter = "planned";
   TodoListPolicy.saveFilter(state.filter);
-  state.showContinueYesterdayOnly = false;
+  setTimeout(() => {
+    if (state.highlightTaskId === linked.id) {
+      state.highlightTaskId = "";
+      const card = el.taskList?.querySelector(`[data-task-id="${linked.id}"]`);
+      card?.classList.remove("is-just-linked");
+    }
+  }, 3500);
 }
 
 function fillEntryTaskOptions(entry = null) {
   el.entryTaskLink.innerHTML = "";
-  el.entryTaskLink.add(new Option("搜索并关联待办…", ""));
-  el.entryTaskLink.add(new Option("新建待办并关联", "__create__"));
-  el.entryTaskLink.add(new Option("新建父级并挂入当前事项", "__create_parent__"));
+  el.entryTaskLink.add(new Option("搜索已有任务，或新建并关联…", ""));
+  el.entryTaskLink.add(new Option("在已有父级下新建并关联", "__create__"));
+  el.entryTaskLink.add(new Option("新建父级任务并挂入当前事项", "__create_parent__"));
   getLeafTasksForEntryLink(entry).forEach(task => {
     el.entryTaskLink.add(new Option(task.title, task.id));
   });
@@ -6929,14 +7982,15 @@ function renderEntryTaskOptions(query) {
     return `<button type="button" class="entry-task-option" role="option" aria-selected="${el.entryTaskLink.value === task.id}" data-value="${escapeHtml(task.id)}" title="${escapeHtml(meta.path)}"><strong>${escapeHtml(primary)}</strong><span><b>第${meta.depth}层叶子</b>${meta.parentPath ? ` · 归属 ${escapeHtml(meta.parentPath)}` : ""}</span><small>${escapeHtml(statusLabel(task.status))} · ${task.dueDate ? escapeHtml(task.dueDate.slice(5)) : "未计划"}${el.entryTaskLink.value === task.id ? " · ✓ 已关联" : ""}</small></button>`;
   }).join("");
   const parentTitle = query.trim();
-  const create = `<button type="button" class="entry-task-option create-option" role="option" aria-selected="${el.entryTaskLink.value === "__create__"}" data-value="__create__">＋ 新建「${escapeHtml(entryTitle)}」并关联</button>
-    <button type="button" class="entry-task-option create-option create-parent-option" role="option" aria-selected="${el.entryTaskLink.value === "__create_parent__" && !preferredParents.length}" data-value="__create_parent__">＋ ${parentTitle && !preferredParents.length ? `新建父级「${escapeHtml(parentTitle)}」并挂入当前事项` : "新建父级任务并挂入当前事项"}</button>`;
+  const create = `<button type="button" class="entry-task-option create-option" role="option" aria-selected="${el.entryTaskLink.value === "__create__"}" data-value="__create__" title="在已有父级下，把当前日程建成新的子任务并关联投入">＋ 在已有父级下新建「${escapeHtml(entryTitle)}」并关联</button>
+    <button type="button" class="entry-task-option create-option create-parent-option" role="option" aria-selected="${el.entryTaskLink.value === "__create_parent__" && !preferredParents.length}" data-value="__create_parent__" title="没有合适父级时，先新建父级，再把当前日程挂成其子任务">＋ ${parentTitle && !preferredParents.length ? `新建父级「${escapeHtml(parentTitle)}」并挂入当前事项` : "新建父级任务并挂入当前事项"}</button>`;
   const empty = items
     ? ""
     : `<div class="entry-task-no-results">${matchedParents.length
-      ? "没有同名叶子。可直接点上方父级：在其下新建当前事项（与现有子任务同级）"
-      : "无匹配叶子待办。可选已有叶子关联，或搜索父级名称后挂到该父级下新建"}</div>`;
-  el.entryTaskOptions.innerHTML = parentOptions + (items || empty) + create;
+      ? "没有同名叶子。可点「挂到父级」：在其下新建当前事项（与现有子任务同级）"
+      : "无匹配叶子时：选「在已有父级下新建」，或「新建父级并挂入」"}</div>`;
+  // Create actions stay on top so they are not buried under long search results.
+  el.entryTaskOptions.innerHTML = create + parentOptions + (items || empty);
   const createParentOption = el.entryTaskOptions.querySelector('.create-parent-option[data-value="__create_parent__"]');
   if (createParentOption) createParentOption.dataset.parentTitle = preferredParents.length ? "" : parentTitle;
   const current = [...el.entryTaskOptions.querySelectorAll('[role="option"]')].findIndex(option => option.getAttribute("aria-selected") === "true");
@@ -6961,7 +8015,7 @@ function syncEntryTaskTrigger() {
   const selected = el.entryTaskLink.options[el.entryTaskLink.selectedIndex];
   el.entryTaskTrigger.textContent = selected?.value && selected.value !== ""
     ? selected.textContent
-    : "搜索并关联待办…";
+    : "搜索已有任务，或新建并关联…";
 }
 
 function getCalendarEntriesForDate(dateKey) {
@@ -6990,7 +8044,7 @@ function bindCalendarEntryList(container, dateKey) {
 }
 
 function updateEntryTypeControls() {
-  // Both 会议日程 and 新建待办 can link a todo; meeting link is optional.
+  // Both 会议日程 and 任务处理 can link a task; meeting link is optional.
   el.entryTaskLink.disabled = false;
   el.entryTaskLink.closest("label")?.classList.remove("disabled-field");
   el.entryTaskCombobox?.classList.remove("disabled");
@@ -7113,14 +8167,25 @@ function mergeTaskIntoTarget(sourceId, targetId) {
 
 function createTaskFromEntryPayload(entryPayload, dateKey = state.selectedDate, description = "从当日日程快速创建，可在待办中继续补充。") {
   const now = new Date();
+  const category = typeof TaskCategoryPolicy?.normalizeCategory === "function"
+    ? TaskCategoryPolicy.normalizeCategory(
+      entryPayload.category || categoryIdFromColor(entryPayload.color || "sage"),
+      { meeting: entryPayload.entryType === "calendar" }
+    )
+    : "work";
+  const color = typeof TaskCategoryPolicy?.colorForCategory === "function"
+    ? TaskCategoryPolicy.colorForCategory(category)
+    : (entryPayload.color || "sage");
   const task = {
     id: crypto.randomUUID(),
     title: entryPayload.title,
     dueDate: dateKey,
     dueTime: formatTime(entryPayload.end),
-    owner: "我",
+    owner: getDefaultOwner(),
     parentId: "",
     description,
+    category,
+    color,
     priority: "general_daily",
     progress: 0,
     status: "planned",
@@ -7171,7 +8236,7 @@ function createQuickUnplannedTask(title) {
     title,
     dueDate: "",
     dueTime: "",
-    owner: "我",
+    owner: getDefaultOwner(),
     parentId: "",
     description: "",
     priority: "general_daily",
@@ -7220,33 +8285,103 @@ function fillTimeOptions() {
 }
 
 function fillWorkHourSettingOptions() {
-  if (!el.settingWorkStartHour || !el.settingWorkEndHour) return;
-  el.settingWorkStartHour.innerHTML = "";
-  el.settingWorkEndHour.innerHTML = "";
-  for (let hour = 0; hour <= 23; hour += 1) {
-    el.settingWorkStartHour.add(new Option(`${String(hour).padStart(2, "0")}:00`, String(hour)));
-  }
-  for (let hour = 1; hour <= 24; hour += 1) {
-    el.settingWorkEndHour.add(new Option(`${String(hour).padStart(2, "0")}:00`, String(hour)));
-  }
+  const selects = [
+    el.settingMorningStart,
+    el.settingMorningEnd,
+    el.settingAfternoonStart,
+    el.settingAfternoonEnd
+  ].filter(Boolean);
+  if (!selects.length) return;
+  selects.forEach(select => {
+    select.innerHTML = "";
+    for (let minutes = 0; minutes <= 24 * 60; minutes += 30) {
+      const time = minutes / 60;
+      select.add(new Option(formatTime(time), String(time)));
+    }
+  });
+  selects.forEach(select => {
+    select.addEventListener("change", () => {
+      applyWorkHours(readWorkHourSettingValues());
+      updateWorkHoursSummary();
+    });
+  });
   syncWorkHourSettingControls();
 }
 
+function readWorkHourSettingValues() {
+  return {
+    morningStart: Number(el.settingMorningStart?.value ?? state.morningStart),
+    morningEnd: Number(el.settingMorningEnd?.value ?? state.morningEnd),
+    afternoonStart: Number(el.settingAfternoonStart?.value ?? state.afternoonStart),
+    afternoonEnd: Number(el.settingAfternoonEnd?.value ?? state.afternoonEnd)
+  };
+}
+
 function syncWorkHourSettingControls() {
-  if (!el.settingWorkStartHour || !el.settingWorkEndHour) return;
-  el.settingWorkStartHour.value = String(state.workStartHour);
-  el.settingWorkEndHour.value = String(state.workEndHour);
+  if (el.settingMorningStart) el.settingMorningStart.value = String(state.morningStart);
+  if (el.settingMorningEnd) el.settingMorningEnd.value = String(state.morningEnd);
+  if (el.settingAfternoonStart) el.settingAfternoonStart.value = String(state.afternoonStart);
+  if (el.settingAfternoonEnd) el.settingAfternoonEnd.value = String(state.afternoonEnd);
+  updateWorkHoursSummary();
+}
+
+function updateWorkHoursSummary() {
+  if (!el.settingWorkHoursSummary) return;
+  el.settingWorkHoursSummary.textContent = `日计划可用 ${trimNumber(getConfiguredWorkdayHours())} 小时`;
+}
+
+function getConfiguredWorkdayHours() {
+  return Math.max(
+    0.5,
+    Number(state.workdayHours) ||
+      ScheduleHoursPolicy.normalizeWorkSegments({
+        morningStart: state.morningStart,
+        morningEnd: state.morningEnd,
+        afternoonStart: state.afternoonStart,
+        afternoonEnd: state.afternoonEnd
+      }).workdayHours ||
+      8
+  );
 }
 
 function applyWorkHours(next = {}) {
-  const normalized = ScheduleHoursPolicy.normalizeWorkHours({
-    workStartHour: next.workStartHour ?? state.workStartHour,
-    workEndHour: next.workEndHour ?? state.workEndHour
-  });
+  const hasSplit =
+    next.morningStart != null ||
+    next.morningEnd != null ||
+    next.afternoonStart != null ||
+    next.afternoonEnd != null ||
+    Array.isArray(next.segments);
+  const normalized = ScheduleHoursPolicy.normalizeWorkSegments(
+    hasSplit
+      ? {
+        morningStart: next.morningStart ?? state.morningStart,
+        morningEnd: next.morningEnd ?? state.morningEnd,
+        afternoonStart: next.afternoonStart ?? state.afternoonStart,
+        afternoonEnd: next.afternoonEnd ?? state.afternoonEnd,
+        segments: next.segments
+      }
+      : {
+        workStartHour: next.workStartHour ?? state.workStartHour,
+        workEndHour: next.workEndHour ?? state.workEndHour
+      }
+  );
+  state.morningStart = normalized.morningStart;
+  state.morningEnd = normalized.morningEnd;
+  state.afternoonStart = normalized.afternoonStart;
+  state.afternoonEnd = normalized.afternoonEnd;
   state.workStartHour = normalized.workStartHour;
   state.workEndHour = normalized.workEndHour;
+  state.workdayHours = normalized.workdayHours;
   try {
-    localStorage.setItem(WORK_HOURS_STORAGE_KEY, JSON.stringify(normalized));
+    localStorage.setItem(WORK_HOURS_STORAGE_KEY, JSON.stringify({
+      morningStart: normalized.morningStart,
+      morningEnd: normalized.morningEnd,
+      afternoonStart: normalized.afternoonStart,
+      afternoonEnd: normalized.afternoonEnd,
+      workStartHour: normalized.workStartHour,
+      workEndHour: normalized.workEndHour,
+      workdayHours: normalized.workdayHours
+    }));
   } catch {}
   syncWorkHourSettingControls();
   return normalized;
@@ -7259,14 +8394,33 @@ function applyStoredWorkHours(settings = null) {
   } catch {
     stored = null;
   }
+  const source = settings || stored || {};
+  if (
+    source.morningStart != null ||
+    source.morningEnd != null ||
+    source.afternoonStart != null ||
+    source.afternoonEnd != null
+  ) {
+    applyWorkHours({
+      morningStart: source.morningStart,
+      morningEnd: source.morningEnd,
+      afternoonStart: source.afternoonStart,
+      afternoonEnd: source.afternoonEnd
+    });
+    return;
+  }
   applyWorkHours({
-    workStartHour: settings?.workStartHour ?? stored?.workStartHour ?? state.workStartHour,
-    workEndHour: settings?.workEndHour ?? stored?.workEndHour ?? state.workEndHour
+    workStartHour: source.workStartHour ?? state.workStartHour,
+    workEndHour: source.workEndHour ?? state.workEndHour
   });
 }
 
 function getVisibleTimelineHours(entries = []) {
   return ScheduleHoursPolicy.visibleTimelineHours({
+    morningStart: state.morningStart,
+    morningEnd: state.morningEnd,
+    afternoonStart: state.afternoonStart,
+    afternoonEnd: state.afternoonEnd,
     workStartHour: state.workStartHour,
     workEndHour: state.workEndHour,
     entries
@@ -7599,14 +8753,13 @@ function syncMonthlyRecurringFromPriority() {
 }
 
 function defaultWorkStartTime() {
-  const start = Math.max(0, Math.min(23, Math.floor(Number(state.workStartHour) || ScheduleHoursPolicy?.DEFAULT_WORK_START || 9)));
-  return `${String(start).padStart(2, "0")}:00`;
+  return formatTime(Number(state.morningStart ?? state.workStartHour) || ScheduleHoursPolicy?.DEFAULT_MORNING_START || 8.5) || "08:30";
 }
 
 function defaultWorkEndTime() {
-  const end = Math.max(1, Math.min(24, Math.floor(Number(state.workEndHour) || ScheduleHoursPolicy?.DEFAULT_WORK_END || 18)));
+  const end = Number(state.afternoonEnd ?? state.workEndHour) || ScheduleHoursPolicy?.DEFAULT_AFTERNOON_END || 18;
   if (end >= 24) return "23:59";
-  return `${String(end).padStart(2, "0")}:00`;
+  return formatTime(end) || "18:00";
 }
 
 function defaultDueTime() {
@@ -7727,7 +8880,7 @@ function createDraftChildTasks(parentId, dateKey = state.selectedDate) {
       title,
       dueDate: "",
       dueTime: "",
-      owner: "我",
+      owner: getDefaultOwner(),
       parentId,
       description: "",
       priority: "general_daily",
@@ -7946,12 +9099,29 @@ function updateParentRequirements() {
 function toLocalDateTimeInput(iso) {
   if (!iso) return "";
   const date = new Date(iso);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 16);
+  if (Number.isNaN(date.getTime())) return "";
+  const dateKey = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  const time = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  return formatDateTimeDisplay(dateKey, time);
 }
 
 function fromLocalDateTimeInput(value) {
-  return value ? new Date(value).toISOString() : "";
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const parsed = parseFlexibleDateTime(raw);
+  if (parsed.dateKey) {
+    const time = parsed.time || "00:00";
+    const [year, month, day] = parsed.dateKey.split("-").map(Number);
+    const [hour, minute] = time.split(":").map(Number);
+    const local = new Date(year, month - 1, day, hour || 0, minute || 0, 0, 0);
+    return Number.isNaN(local.getTime()) ? "" : local.toISOString();
+  }
+  // Legacy datetime-local (YYYY-MM-DDTHH:mm) fallback
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw)) {
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+  }
+  return "";
 }
 
 function scheduledDateTimeIso(dateKey, decimalHour) {

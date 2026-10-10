@@ -9,6 +9,7 @@
   const DIMENSIONS = [
     { id: "taskTree", label: "任务项" },
     { id: "taskStatus", label: "任务状态" },
+    { id: "category", label: "分类" },
     { id: "owner", label: "责任人" },
     { id: "priority", label: "优先级" }
   ];
@@ -182,6 +183,13 @@
     })[priority] || priority || "一般日常";
   }
 
+  function categoryBucket(task, helpers = {}) {
+    if (typeof helpers.resolveCategory === "function") {
+      return helpers.resolveCategory(task) || "work";
+    }
+    return String(task?.category || "").trim() || "work";
+  }
+
   function groupKeyForDimension(dimId, row, helpers = {}) {
     if (dimId === "taskStatus") {
       return rowStatusBucket({
@@ -191,13 +199,18 @@
         classifyProjectStatus: helpers.classifyProjectStatus
       });
     }
+    if (dimId === "category") return categoryBucket(row.task, helpers);
     if (dimId === "owner") return ownerBucket(row.task);
     if (dimId === "priority") return priorityBucket(row.task);
     return "all";
   }
 
-  function groupLabelForDimension(dimId, key) {
+  function groupLabelForDimension(dimId, key, helpers = {}) {
     if (dimId === "taskStatus") return statusLabel(key);
+    if (dimId === "category") {
+      if (typeof helpers.categoryLabel === "function") return helpers.categoryLabel(key);
+      return `分类 · ${key}`;
+    }
     if (dimId === "owner") return `责任人 · ${key}`;
     if (dimId === "priority") return priorityLabel(key);
     return key;
@@ -283,7 +296,7 @@
     return [...buckets.keys()]
       .sort((a, b) => compareGroupKeys(dim.id, a, b))
       .map(key => {
-        const label = groupLabelForDimension(dim.id, key);
+        const label = groupLabelForDimension(dim.id, key, helpers);
         const nextPath = path.concat([{ dimId: dim.id, key, label }]);
         const sectionKey = nextPath.map(part => part.key).join("/");
         const bucketRows = buckets.get(key);
@@ -458,7 +471,7 @@
     return [...buckets.keys()]
       .sort((a, b) => compareGroupKeys(dim.id, a, b))
       .map(key => {
-        const label = groupLabelForDimension(dim.id, key);
+        const label = groupLabelForDimension(dim.id, key, helpers);
         const nextPath = path.concat([{ dimId: dim.id, key, label }]);
         const sectionKey = nextPath.map(part => part.key).join("/");
         const bucketUnits = buckets.get(key);
@@ -498,7 +511,7 @@
     return [...buckets.keys()]
       .sort((a, b) => compareGroupKeys(dim.id, a, b))
       .map(key => {
-        const label = groupLabelForDimension(dim.id, key);
+        const label = groupLabelForDimension(dim.id, key, helpers);
         const nextPath = path.concat([{ dimId: dim.id, key, label }]);
         const sectionKey = nextPath.map(part => part.key).join("/");
         if (!rest.length) {
@@ -535,11 +548,13 @@
     shouldRenderSingleRow,
     classifyProjectStatus,
     getChildTasks,
+    resolveCategory,
+    categoryLabel,
     extraRows = []
   } = {}) {
     const normalized = normalizeConfig(config);
     const split = splitArrangeDimensions(normalized);
-    const helpers = { classifyProjectStatus };
+    const helpers = { classifyProjectStatus, resolveCategory, categoryLabel };
     const meetingRows = Array.isArray(extraRows) ? extraRows : [];
 
     if (split.treeOn) {

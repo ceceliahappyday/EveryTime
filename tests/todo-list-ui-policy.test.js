@@ -69,8 +69,8 @@ if (!kindTriggerRule || /border-bottom/.test(kindTriggerRule[0])) {
 if (!/\.task-panel\.density-md \.panel-heading-row[\s\S]*?flex-direction:\s*row/.test(styles)) {
   throw new Error("density-md must keep title and quick-add on one row (scale title, do not stack)");
 }
-if (!html.includes('placeholder="搜索.../@负责人"')) {
-  throw new Error("task search placeholder should hint @负责人 filtering");
+if (!html.includes('placeholder="搜索.../@人员"')) {
+  throw new Error("task search placeholder should hint @人员 filtering");
 }
 if (!/task-list-toolbar[\s\S]*?id="taskSearchWrap"/.test(html) || !/panel-heading-actions[\s\S]*?id="quickTaskForm"/.test(html)) {
   throw new Error("search should sit in the toolbar row; quick-add should sit in the heading side slot");

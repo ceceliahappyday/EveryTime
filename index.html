@@ -115,7 +115,7 @@
         <div class="task-list-toolbar">
           <label class="task-search task-side-control" id="taskSearchWrap">
             <span class="task-side-glyph" aria-hidden="true">⌕</span>
-            <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索.../@人" aria-label="搜索全部待办与会议，或 @责任人 / @参会人" title="在全部待办与会议中搜索；输入 @姓名 可按责任人/参会人过滤" />
+            <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索.../@人员" aria-label="搜索全部待办与会议，或 @人员（责任人/参会人）" title="在全部待办与会议中搜索；输入 @姓名 可按人员过滤" />
           </label>
           <div class="task-side-slot task-continue-slot">
             <button type="button" class="soft-button task-continue-yesterday task-side-control" id="continueYesterdayButton" title="查看昨天有投入可继续的任务，以及昨天的会议">
@@ -209,7 +209,7 @@
     <div class="modal-actions">
       <span></span>
       <button type="button" class="soft-button" id="entryLinkConfirmCancel">返回修改</button>
-      <button type="button" class="primary-button" id="entryLinkConfirmCreate">确认新建待办</button>
+      <button type="button" class="primary-button" id="entryLinkConfirmCreate">确认新建任务</button>
     </div>
   </dialog>
 
@@ -245,7 +245,14 @@
     <div class="task-close-confirm-fields">
       <label>
         <span>完成时间</span>
-        <input type="datetime-local" id="taskCloseCompletedAt" step="60" />
+        <div class="datetime-input-wrap">
+          <input type="text" id="taskCloseCompletedAt" inputmode="numeric" maxlength="20" placeholder="2026/10/10 09:10" autocomplete="off" spellcheck="false" aria-label="完成时间" title="可手写或点日历选择；失焦自动识别" />
+          <button type="button" class="datetime-pick-button" data-datetime-target="taskCloseCompletedAt" aria-label="选择完成时间" title="打开日历选择">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+              <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
+            </svg>
+          </button>
+        </div>
       </label>
       <label>
         <span>完成情况说明（选填）</span>
@@ -294,62 +301,72 @@
         </div>
         <button type="button" class="close-button" data-close-dialog="entryDialog" aria-label="关闭">×</button>
       </div>
+      <div class="modal-scroll" id="entryDialogScroll">
+        <label>
+          <span>事项</span>
+          <input id="entryTitle" maxlength="80" required placeholder="这段时间做什么？" />
+        </label>
 
-      <label>
-        <span>事项</span>
-        <input id="entryTitle" maxlength="80" required placeholder="这段时间做什么？" />
-      </label>
+        <label>
+          <span>日程类型</span>
+          <select id="entryType">
+            <option value="calendar">会议日程</option>
+            <option value="task_work">任务处理</option>
+          </select>
+        </label>
 
-      <label>
-        <span>日程类型</span>
-        <select id="entryType">
-          <option value="calendar">会议日程</option>
-          <option value="task_work">新建待办</option>
-        </select>
-      </label>
-
-      <label>
-        <span>关联待办</span>
-        <select id="entryTaskLink" class="visually-hidden-select" tabindex="-1" aria-hidden="true"></select>
-        <div class="entry-task-combobox" id="entryTaskCombobox">
-          <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">搜索并关联待办…</button>
-          <div class="entry-task-popup hidden" id="entryTaskPopup">
-            <input id="entryTaskSearch" type="search" autocomplete="off" placeholder="搜索任务名称、父级路径或状态…" aria-label="搜索关联待办" aria-controls="entryTaskOptions" />
-            <div id="entryTaskOptions" class="entry-task-options" role="listbox"></div>
+        <label>
+          <span>挂接任务</span>
+          <select id="entryTaskLink" class="visually-hidden-select" tabindex="-1" aria-hidden="true"></select>
+          <div class="entry-task-combobox" id="entryTaskCombobox">
+            <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">搜索已有任务，或新建并关联…</button>
+            <div class="entry-task-popup hidden" id="entryTaskPopup">
+              <input id="entryTaskSearch" type="search" autocomplete="off" placeholder="搜索任务名称、父级路径或状态…" aria-label="搜索挂接任务" aria-controls="entryTaskOptions" />
+              <div id="entryTaskOptions" class="entry-task-options" role="listbox"></div>
+            </div>
           </div>
+        </label>
+
+        <div class="form-row">
+          <label>
+            <span>开始时间</span>
+            <select id="entryStart"></select>
+          </label>
+          <label>
+            <span>结束时间</span>
+            <select id="entryEnd"></select>
+          </label>
         </div>
-      </label>
 
-      <div class="form-row">
         <label>
-          <span>开始时间</span>
-          <select id="entryStart"></select>
+          <span>参会人</span>
+          <input id="entryOwner" maxlength="80" placeholder="例如：我、王芳、李明（多人用逗号分隔）" />
         </label>
+
         <label>
-          <span>结束时间</span>
-          <select id="entryEnd"></select>
+          <span>完成内容 / 进度说明（可选）</span>
+          <textarea id="entryNote" rows="3" maxlength="360" placeholder="空着表示计划投入；填写后会作为这个任务在本时间段的进展记录"></textarea>
         </label>
+
+        <label id="entryCategoryField">
+          <span>分类</span>
+          <select id="entryCategory" aria-label="日程分类">
+            <option value="work" selected>工作</option>
+            <option value="meeting">会议</option>
+            <option value="study">学习</option>
+            <option value="life">生活</option>
+            <option value="other">其他</option>
+          </select>
+        </label>
+        <div class="color-picker hidden" id="colorPicker" aria-hidden="true">
+          <span>颜色</span>
+          <button type="button" class="selected" data-color="sage" aria-label="工作"></button>
+          <button type="button" data-color="blue" aria-label="学习"></button>
+          <button type="button" data-color="amber" aria-label="会议"></button>
+          <button type="button" data-color="rose" aria-label="生活"></button>
+          <button type="button" data-color="violet" aria-label="其他"></button>
+        </div>
       </div>
-
-      <label>
-        <span>参会人</span>
-        <input id="entryOwner" maxlength="80" placeholder="例如：我、王芳、李明（多人用逗号分隔）" />
-      </label>
-
-      <label>
-        <span>完成内容 / 进度说明（可选）</span>
-        <textarea id="entryNote" rows="3" maxlength="360" placeholder="空着表示计划投入；填写后会作为这个任务在本时间段的进展记录"></textarea>
-      </label>
-
-      <div class="color-picker" id="colorPicker">
-        <span>颜色</span>
-        <button type="button" class="selected" data-color="sage" aria-label="鼠尾草绿"></button>
-        <button type="button" data-color="blue" aria-label="蓝色"></button>
-        <button type="button" data-color="amber" aria-label="琥珀色"></button>
-        <button type="button" data-color="rose" aria-label="玫瑰色"></button>
-        <button type="button" data-color="violet" aria-label="紫色"></button>
-      </div>
-
       <div class="modal-actions">
         <button type="button" class="danger-button hidden" id="deleteEntryButton">取消安排</button>
         <span></span>
@@ -379,49 +396,40 @@
           </div>
           <div class="task-ai-dropzone-status hidden" id="taskAiDropzoneStatus" aria-live="polite"></div>
         </div>
-        <label id="taskCreateKindField" class="task-create-kind-field hidden">
-          <span>类型</span>
-          <select id="taskCreateKind" aria-label="新建类型：任务或会议">
-            <option value="task" selected>任务</option>
-            <option value="meeting">会议</option>
-          </select>
-        </label>
-        <label id="taskTitleField"><span>待办名称</span><input id="taskTitleInput" maxlength="80" placeholder="需要完成什么？" /></label>
-        <div class="form-row task-schedule-time-row" id="taskScheduleTimeRow">
-          <label id="taskDueDateField">
-            <span>目标日期时间</span>
-            <div class="datetime-input-wrap">
-              <input type="text" id="taskDueDateTime" inputmode="numeric" maxlength="16" placeholder="2026-09-10 15:00" autocomplete="off" spellcheck="false" aria-label="目标日期时间，可手写或点选" title="可手写，如 2026-9-10 15:00；失焦后自动标准化" />
-              <button type="button" class="datetime-pick-button" data-datetime-target="taskDueDateTime" aria-label="选择日期时间" title="选择日期时间">
-                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
-                </svg>
-              </button>
-            </div>
-          </label>
-          <label class="checkbox-setting task-follow-up-option task-attention-inline" id="taskFollowUpOption" title="勾选后进入待跟踪：只提醒，不排工作投入、不计工时">
-            <input type="checkbox" id="taskFollowUpTracking" />
-            <span id="taskFollowUpTrackingLabel" class="task-attention-label">
-              <b>仅关注</b>
-              <small class="task-attention-hint">只提醒，不排投入</small>
-            </span>
-          </label>
-          <label id="taskMeetingEndField" class="hidden">
-            <span>结束日期时间</span>
-            <div class="datetime-input-wrap">
-              <input type="text" id="taskMeetingEndDateTime" inputmode="numeric" maxlength="16" placeholder="2026-09-10 16:00" autocomplete="off" spellcheck="false" aria-label="会议结束日期时间，可手写或点选" title="可手写，如 2026-9-10 16:00；失焦后自动标准化" />
-              <button type="button" class="datetime-pick-button" data-datetime-target="taskMeetingEndDateTime" aria-label="选择结束日期时间" title="选择结束日期时间">
-                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
-                </svg>
-              </button>
-            </div>
+        <div class="task-title-block" id="taskTitleAttentionRow">
+          <div class="task-title-heading">
+            <span class="task-title-caption" id="taskTitleCaption">待办名称</span>
+            <label class="checkbox-setting task-follow-up-option task-attention-inline" id="taskFollowUpOption" title="勾选后进入待跟踪：只提醒，不排工作投入、不计工时">
+              <input type="checkbox" id="taskFollowUpTracking" />
+              <span id="taskFollowUpTrackingLabel" class="task-attention-label"><b>仅关注</b></span>
+            </label>
+          </div>
+          <label id="taskTitleField" class="task-title-input-field">
+            <input id="taskTitleInput" maxlength="80" placeholder="需要完成什么？" aria-labelledby="taskTitleCaption" />
           </label>
         </div>
-        <div class="form-row">
-          <label><span>责任人</span><input id="taskOwner" maxlength="30" placeholder="例如：我、王芳" /></label>
+        <div class="form-row task-kind-category-row" id="taskKindCategoryRow">
+          <label id="taskCreateKindField" class="task-create-kind-field hidden">
+            <span>待办类型</span>
+            <select id="taskCreateKind" aria-label="新建待办类型：任务或会议">
+              <option value="task" selected>任务</option>
+              <option value="meeting">会议</option>
+            </select>
+          </label>
+          <label id="taskCategoryField">
+            <span>任务类别</span>
+            <select id="taskCategory" aria-label="任务类别">
+              <option value="work" selected>工作</option>
+              <option value="meeting">会议</option>
+              <option value="study">学习</option>
+              <option value="life">生活</option>
+              <option value="other">其他</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row" id="taskPriorityOwnerRow">
           <label>
-            <span>优先级</span>
+            <span>任务级别</span>
             <select id="taskPriority">
               <option value="general_daily" selected>一般日常</option>
               <option value="kpi">KPI</option>
@@ -430,6 +438,7 @@
               <option value="monthly_fixed">每月例行</option>
             </select>
           </label>
+          <label><span>责任人员</span><input id="taskOwner" maxlength="30" placeholder="例如：我、王芳" /></label>
         </div>
         <label id="taskParentField" class="task-parent-field">
           <span>归属上级任务</span>
@@ -442,6 +451,62 @@
             </div>
           </div>
         </label>
+        <div class="form-row task-status-due-row" id="taskScheduleTimeRow">
+          <label id="taskStatusField">
+            <span>任务状态</span>
+            <select id="taskStatus" aria-label="任务状态">
+              <option value="planned">计划中</option>
+              <option value="in_progress" disabled>进行中</option>
+              <option value="done">已完成 / 已关闭</option>
+            </select>
+          </label>
+          <label id="taskDueDateField">
+            <span>目标完成时间</span>
+            <div class="datetime-input-wrap">
+              <input type="text" id="taskDueDateTime" inputmode="numeric" maxlength="20" placeholder="2026/10/10 09:10" autocomplete="off" spellcheck="false" aria-label="目标完成时间" title="可手写或点日历选择；失焦自动识别" />
+              <button type="button" class="datetime-pick-button" data-datetime-target="taskDueDateTime" aria-label="选择目标完成时间" title="打开日历选择">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <label id="taskMeetingEndField" class="hidden">
+            <span>结束日期时间</span>
+            <div class="datetime-input-wrap">
+              <input type="text" id="taskMeetingEndDateTime" inputmode="numeric" maxlength="20" placeholder="2026/10/10 10:10" autocomplete="off" spellcheck="false" aria-label="会议结束日期时间" title="可手写或点日历选择；失焦自动识别" />
+              <button type="button" class="datetime-pick-button" data-datetime-target="taskMeetingEndDateTime" aria-label="选择结束日期时间" title="打开日历选择">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+        </div>
+        <div class="form-row" id="taskActualTimeRow">
+          <label>
+            <span>实际开始时间</span>
+            <div class="datetime-input-wrap">
+              <input type="text" id="taskActualStart" inputmode="numeric" maxlength="20" placeholder="2026/10/10 09:10" autocomplete="off" spellcheck="false" aria-label="实际开始时间" title="可手写或点日历选择；失焦自动识别" />
+              <button type="button" class="datetime-pick-button" data-datetime-target="taskActualStart" aria-label="选择实际开始时间" title="打开日历选择">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <label>
+            <span>实际关闭时间</span>
+            <div class="datetime-input-wrap">
+              <input type="text" id="taskActualEnd" inputmode="numeric" maxlength="20" placeholder="2026/10/10 18:10" autocomplete="off" spellcheck="false" aria-label="实际关闭时间" title="可手写或点日历选择；失焦自动识别" />
+              <button type="button" class="datetime-pick-button" data-datetime-target="taskActualEnd" aria-label="选择实际关闭时间" title="打开日历选择">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+        </div>
         <label class="hidden">
           <span>任务进度</span>
           <div class="progress-input">
@@ -460,18 +525,6 @@
           <input type="checkbox" id="taskMonthlyRecurring" tabindex="-1" />
           <span>这是每月例行任务</span>
         </label>
-        <label>
-          <span>任务状态</span>
-          <select id="taskStatus">
-            <option value="planned">计划中（尚未排入日程）</option>
-            <option value="in_progress" disabled>进行中（已排入日程）</option>
-            <option value="done">已完成 / 已关闭</option>
-          </select>
-        </label>
-        <div class="form-row">
-          <label><span>实际开始时间</span><input type="datetime-local" id="taskActualStart" step="60" /></label>
-          <label><span>实际完成/关闭时间</span><input type="datetime-local" id="taskActualEnd" step="60" /></label>
-        </div>
         <label id="businessBackgroundLabel" class="task-context-field">
           <span>背景与说明</span>
           <textarea id="taskBusinessBackground" rows="3" maxlength="800" placeholder="为什么做这件事？要解决什么问题？补充必要上下文即可。"></textarea>
@@ -565,73 +618,175 @@
   </dialog>
 
   <dialog class="modal settings-modal" id="settingsDialog">
-    <form method="dialog" id="settingsForm">
-      <div class="modal-header">
-        <div><span class="eyebrow">SETTINGS</span><h3>桌面组件设置</h3></div>
-        <button type="button" class="close-button" data-close-dialog="settingsDialog">×</button>
-      </div>
-      <div class="modal-scroll" id="settingsDialogScroll">
-        <div class="settings-list">
-          <label class="checkbox-setting">
-            <input type="checkbox" id="settingAiEnabled" />
-            <span>启用 AI 任务助手（查询本应用数据；投放截图时可创建 1 条待办）</span>
-          </label>
-          <label><span>API Key（仅本机加密保存）</span><input id="settingAiApiKey" type="password" autocomplete="off" placeholder="粘贴 OpenAI / OpenRouter / DeepSeek / Anthropic / Gemini 等 Key" /></label>
-          <label><span>AI 服务商</span><select id="settingAiProvider"></select></label>
-          <label><span>AI 模型</span><select id="settingAiModel"></select></label>
-          <div class="settings-ai-actions">
-            <button type="button" class="soft-button" id="aiDetectModelsButton">识别服务商并加载模型</button>
+    <form method="dialog" id="settingsForm" class="settings-shell">
+      <aside class="settings-nav" aria-label="设置分类">
+        <div class="settings-nav-brand">
+          <div class="settings-nav-mark" aria-hidden="true">今</div>
+          <div>
+            <strong>今日日程</strong>
+            <span>桌面设置</span>
           </div>
-          <p class="form-hint" id="aiKeyStatus">API Key 未配置。截图解析需 vision 模型（如 gpt-4o、gpt-4.1、Claude、Gemini 2.5 Flash）。</p>
-          <label class="checkbox-setting">
-            <input type="checkbox" id="settingGlass" />
-            <span>使用玻璃背景（保存后立即生效，可随时开关）</span>
-          </label>
-          <label class="checkbox-setting">
-            <input type="checkbox" id="settingPinned" />
-            <span>窗口保持置顶</span>
-          </label>
-          <label class="checkbox-setting">
-            <input type="checkbox" id="settingLocked" />
-            <span>默认进入低干扰模式</span>
-          </label>
-          <label class="checkbox-setting">
-            <input type="checkbox" id="settingCompact" />
-            <span>使用紧凑显示</span>
-          </label>
-          <div class="settings-work-hours">
-            <span class="settings-work-hours-label">日视图工作时段</span>
-            <div class="settings-work-hours-row">
-              <label>
-                <span>开始</span>
-                <select id="settingWorkStartHour"></select>
-              </label>
-              <label>
-                <span>结束</span>
-                <select id="settingWorkEndHour"></select>
+        </div>
+        <nav class="settings-nav-list" id="settingsNavList">
+          <button type="button" class="settings-nav-item is-active" data-settings-pane="account">
+            <i aria-hidden="true">◎</i><span>账号设置</span>
+          </button>
+          <button type="button" class="settings-nav-item" data-settings-pane="basic">
+            <i aria-hidden="true">◇</i><span>基本设置</span>
+          </button>
+          <button type="button" class="settings-nav-item" data-settings-pane="ai">
+            <i aria-hidden="true">✦</i><span>AI 助手</span>
+          </button>
+          <button type="button" class="settings-nav-item" data-settings-pane="tasks">
+            <i aria-hidden="true">▣</i><span>任务设置</span>
+          </button>
+          <button type="button" class="settings-nav-item" data-settings-pane="about">
+            <i aria-hidden="true">ⓘ</i><span>关于</span>
+          </button>
+        </nav>
+      </aside>
+      <div class="settings-main">
+        <div class="settings-main-header">
+          <h3 id="settingsPaneTitle">账号设置</h3>
+          <button type="button" class="close-button" data-close-dialog="settingsDialog" aria-label="关闭">×</button>
+        </div>
+        <div class="settings-main-scroll" id="settingsDialogScroll">
+          <section class="settings-panel is-active" data-settings-panel="account">
+            <h4 class="settings-section-title">我是谁</h4>
+            <div class="settings-card">
+              <label class="settings-row settings-row-inline">
+                <span class="settings-row-copy">
+                  <strong>显示名称</strong>
+                  <small>用作新建任务的默认责任人</small>
+                </span>
+                <input id="settingProfileName" type="text" maxlength="40" placeholder="例如：树树" autocomplete="name" />
               </label>
             </div>
-            <p class="form-hint">默认只展开该时段；若某小时已有日程投入，会自动向两侧扩展显示。可选范围覆盖 0:00–24:00。</p>
-          </div>
-          <label class="checkbox-setting">
-            <input type="checkbox" id="settingStartAtLogin" />
-            <span>开机自动启动</span>
-          </label>
+          </section>
+
+          <section class="settings-panel" data-settings-panel="basic">
+            <h4 class="settings-section-title">窗口与显示</h4>
+            <div class="settings-card">
+              <label class="settings-row">
+                <span class="settings-row-copy">
+                  <strong>玻璃背景</strong>
+                </span>
+                <input type="checkbox" id="settingGlass" />
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-copy">
+                  <strong>窗口置顶</strong>
+                </span>
+                <input type="checkbox" id="settingPinned" />
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-copy">
+                  <strong>低干扰模式</strong>
+                  <small>贴在其他窗口下方，不抢前台</small>
+                </span>
+                <input type="checkbox" id="settingLocked" />
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-copy">
+                  <strong>开机自动启动</strong>
+                </span>
+                <input type="checkbox" id="settingStartAtLogin" />
+              </label>
+            </div>
+            <h4 class="settings-section-title">工作时段（可设午休）</h4>
+            <div class="settings-card settings-work-hours">
+              <div class="settings-work-hours-line">
+                <span class="settings-work-hours-period">上午</span>
+                <span class="settings-work-hours-key">开始</span>
+                <select id="settingMorningStart" class="settings-work-hours-select" aria-label="上午开始"></select>
+                <span class="settings-work-hours-key">结束</span>
+                <select id="settingMorningEnd" class="settings-work-hours-select" aria-label="上午结束"></select>
+              </div>
+              <div class="settings-work-hours-line">
+                <span class="settings-work-hours-period">下午</span>
+                <span class="settings-work-hours-key">开始</span>
+                <select id="settingAfternoonStart" class="settings-work-hours-select" aria-label="下午开始"></select>
+                <span class="settings-work-hours-key">结束</span>
+                <select id="settingAfternoonEnd" class="settings-work-hours-select" aria-label="下午结束"></select>
+              </div>
+              <div class="settings-work-hours-footer">
+                <p class="settings-work-hours-summary" id="settingWorkHoursSummary">日计划可用 8 小时</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-panel" data-settings-panel="ai">
+            <h4 class="settings-section-title">AI 任务助手</h4>
+            <div class="settings-card">
+              <label class="settings-row">
+                <span class="settings-row-copy">
+                  <strong>启用 AI 助手</strong>
+                </span>
+                <input type="checkbox" id="settingAiEnabled" />
+              </label>
+              <label class="settings-row settings-row-inline">
+                <span class="settings-row-copy">
+                  <strong>API Key</strong>
+                </span>
+                <input id="settingAiApiKey" type="password" autocomplete="off" placeholder="粘贴 API Key" />
+              </label>
+              <label class="settings-row settings-row-inline">
+                <span class="settings-row-copy"><strong>AI 服务商</strong></span>
+                <select id="settingAiProvider"></select>
+              </label>
+              <label class="settings-row settings-row-inline">
+                <span class="settings-row-copy"><strong>AI 模型</strong></span>
+                <select id="settingAiModel"></select>
+              </label>
+              <div class="settings-row settings-row-actions">
+                <span class="settings-row-copy">
+                  <strong>模型识别</strong>
+                  <small id="aiKeyStatus">API Key 未配置。截图解析需 vision 模型。</small>
+                </span>
+                <button type="button" class="soft-button" id="aiDetectModelsButton">识别并加载</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-panel" data-settings-panel="tasks" aria-labelledby="settingsCategoriesTitle">
+            <div class="settings-section-head">
+              <h4 class="settings-section-title" id="settingsCategoriesTitle">任务分类</h4>
+              <button type="button" class="soft-button" id="addCategoryButton">＋ 新建分类</button>
+            </div>
+            <div class="settings-card settings-categories-card">
+              <div id="settingsCategoryList" class="settings-category-list"></div>
+            </div>
+          </section>
+
+          <section class="settings-panel" data-settings-panel="about">
+            <h4 class="settings-section-title">版本与更新</h4>
+            <div class="settings-card settings-info">
+              <div class="settings-row settings-row-actions">
+                <span class="settings-row-copy">
+                  <strong>当前版本</strong>
+                  <small id="settingsAppVersion">读取中…</small>
+                </span>
+                <button type="button" class="soft-button" id="checkUpdateButton">检查更新</button>
+              </div>
+              <div class="settings-row settings-row-static">
+                <span class="settings-row-copy">
+                  <strong>数据保存位置</strong>
+                  <small id="settingsDataPath">读取中…</small>
+                </span>
+              </div>
+              <div class="settings-row settings-row-static">
+                <span class="settings-row-copy">
+                  <strong>默认导出位置</strong>
+                  <small id="settingsExportPath">读取中…</small>
+                </span>
+              </div>
+            </div>
+          </section>
         </div>
-        <div class="settings-info">
-          <div class="settings-version-row">
-            <div><span>当前版本</span><strong id="settingsAppVersion">读取中…</strong></div>
-            <button type="button" class="soft-button" id="checkUpdateButton">检查更新</button>
-          </div>
-          <div><span>数据保存位置</span><strong id="settingsDataPath">读取中…</strong></div>
-          <div><span>默认导出位置</span><strong id="settingsExportPath">读取中…</strong></div>
-          <p>玻璃背景、置顶、低干扰与紧凑显示在本页切换；左侧「新增待办」用于快速创建。窗口拉窄时进入精简待办条。日历可用键盘 ← → 切换日期/周/月，按 T 回到今天。换电脑请先「导出」JSON，再在新电脑「导入」恢复。</p>
+        <div class="settings-main-footer">
+          <button type="button" class="soft-button" data-close-dialog="settingsDialog">取消</button>
+          <button type="submit" class="primary-button">保存设置</button>
         </div>
-      </div>
-      <div class="modal-actions">
-        <span></span><span></span>
-        <button type="button" class="soft-button" data-close-dialog="settingsDialog">取消</button>
-        <button type="submit" class="primary-button">保存设置</button>
       </div>
     </form>
   </dialog>
@@ -691,6 +846,7 @@
   <script src="project-summary-policy.js"></script>
   <script src="project-collapse-policy.js"></script>
   <script src="gantt-arrange-policy.js"></script>
+  <script src="task-category-policy.js"></script>
   <script src="task-work-policy.js"></script>
   <script src="schedule-hierarchy-repair-policy.js"></script>
   <script src="schedule-meeting-demote-policy.js"></script>

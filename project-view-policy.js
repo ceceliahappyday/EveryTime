@@ -19,20 +19,36 @@
     return Math.max(0, anchorIndex(buckets, anchorKey) * bucketWidth);
   }
 
+  /** Fixed viewport sizes so day/week/month share the same chart width. */
+  function visibleBucketCount(scale) {
+    if (scale === "month") return 3;
+    if (scale === "week") return 4;
+    return 7;
+  }
+
   function futureBucketCount(scale) {
-    if (scale === "month") return 2;
-    if (scale === "week") return 6;
-    return 30;
+    return visibleBucketCount(scale);
   }
 
   function ganttWindowBucketCount(scale) {
-    return futureBucketCount(scale);
+    return visibleBucketCount(scale);
+  }
+
+  function monthKeyFromDateKey(dateKey = "") {
+    return String(dateKey || "").slice(0, 7);
+  }
+
+  function shiftMonthKey(monthKey, delta = 0) {
+    const [year, month] = String(monthKey || "").split("-").map(Number);
+    if (!year || !month) return monthKey;
+    const next = new Date(year, month - 1 + Number(delta || 0), 1);
+    return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
   }
 
   function initialGanttWindow({ scale, centerDateKey, addDays, getMonday, fromDateKey, toDateKey }) {
+    const count = visibleBucketCount(scale);
+    const before = Math.floor((count - 1) / 2);
     if (scale === "day") {
-      const count = futureBucketCount("day");
-      const before = 14;
       const center = fromDateKey(centerDateKey);
       return {
         startKey: toDateKey(addDays(center, -before)),
@@ -40,49 +56,44 @@
       };
     }
     if (scale === "week") {
-      const count = futureBucketCount("week");
-      const before = 3;
       const centerMonday = getMonday(fromDateKey(centerDateKey));
       return {
         startKey: toDateKey(addDays(centerMonday, -before * 7)),
         endKey: toDateKey(addDays(centerMonday, (count - before - 1) * 7))
       };
     }
-    return { startKey: centerDateKey, endKey: centerDateKey };
+    const centerMonth = monthKeyFromDateKey(centerDateKey);
+    return {
+      startKey: shiftMonthKey(centerMonth, -before),
+      endKey: shiftMonthKey(centerMonth, count - before - 1)
+    };
   }
 
-  function extendGanttWindow({ scale, startKey, endKey, direction, addDays, fromDateKey, toDateKey }) {
-    const count = ganttWindowBucketCount(scale);
+  /** Move the fixed window by one bucket (day / week / month). */
+  function shiftGanttWindow({ scale, startKey, endKey, direction, addDays, fromDateKey, toDateKey }) {
+    const step = direction === "past" ? -1 : 1;
     if (scale === "day") {
-      if (direction === "past") {
-        return {
-          startKey: toDateKey(addDays(fromDateKey(startKey), -count)),
-          endKey,
-          addedCount: count
-        };
-      }
       return {
-        startKey,
-        endKey: toDateKey(addDays(fromDateKey(endKey), count)),
-        addedCount: count
+        startKey: toDateKey(addDays(fromDateKey(startKey), step)),
+        endKey: toDateKey(addDays(fromDateKey(endKey), step))
       };
     }
     if (scale === "week") {
-      const days = count * 7;
-      if (direction === "past") {
-        return {
-          startKey: toDateKey(addDays(fromDateKey(startKey), -days)),
-          endKey,
-          addedCount: count
-        };
-      }
       return {
-        startKey,
-        endKey: toDateKey(addDays(fromDateKey(endKey), days)),
-        addedCount: count
+        startKey: toDateKey(addDays(fromDateKey(startKey), step * 7)),
+        endKey: toDateKey(addDays(fromDateKey(endKey), step * 7))
       };
     }
-    return { startKey, endKey, addedCount: 0 };
+    return {
+      startKey: shiftMonthKey(monthKeyFromDateKey(startKey), step),
+      endKey: shiftMonthKey(monthKeyFromDateKey(endKey), step)
+    };
+  }
+
+  /** @deprecated Prefer shiftGanttWindow; kept for older callers. */
+  function extendGanttWindow(args) {
+    const shifted = shiftGanttWindow(args);
+    return { ...shifted, addedCount: 0 };
   }
 
   function centeredScrollLeft({ buckets = [], anchorKey, bucketWidth = 44, viewportWidth = 0 } = {}) {
@@ -189,6 +200,140 @@
     }));
   }
 
+  /** Day column bounds in bucket-index space (not yet divided by bucket count). */
+  function dayBoundsInBucketSpace(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey) {
+    const bucketKey = projectBucketKey(dateKey);
+    const bucketIndex = buckets.findIndex(bucket => bucket.key === bucketKey);
+    if (bucketIndex < 0) return null;
+    if (scale === "day") {
+      return { dayStart: bucketIndex, dayEnd: bucketIndex + 1, bucketIndex };
+    }
+    const date = fromDateKey(dateKey);
+    if (scale === "week") {
+      const monday = getMonday(fromDateKey(bucketKey));
+      const dayOffset = Math.round((date - monday) / 86400000);
+      if (dayOffset < 0 || dayOffset > 6) return null;
+      const unit = 1 / 7;
+      const dayStart = bucketIndex + dayOffset * unit;
+      return { dayStart, dayEnd: dayStart + unit, bucketIndex };
+    }
+    if (scale === "month") {
+      const monthKey = String(bucketKey).slice(0, 7);
+      if (String(dateKey).slice(0, 7) !== monthKey) return null;
+      const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+      const unit = 1 / daysInMonth;
+      const dayStart = bucketIndex + (date.getDate() - 1) * unit;
+      return { dayStart, dayEnd: dayStart + unit, bucketIndex };
+    }
+    return null;
+  }
+
+  function clamp01(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  /**
+   * One coloured bar per schedule entry (never merge same-day slots).
+   * Width scales with duration against the shared day hour window so 1.5h
+   * bars stay longer than 1h bars across rows; same-day slots stay disconnected.
+   */
+  function entryInvestmentSegments({
+    entries = [],
+    buckets = [],
+    projectBucketKey,
+    scale = "day",
+    getMonday,
+    fromDateKey,
+    dayStartHour = 9,
+    dayEndHour = 18
+  } = {}) {
+    if (!buckets.length || !entries.length) return [];
+    let hourLo = Number(dayStartHour);
+    let hourHi = Number(dayEndHour);
+    if (!Number.isFinite(hourLo)) hourLo = 9;
+    if (!Number.isFinite(hourHi)) hourHi = 18;
+    entries.forEach(entry => {
+      const start = Number(entry.start);
+      const end = Number(entry.end);
+      if (Number.isFinite(start)) hourLo = Math.min(hourLo, start);
+      if (Number.isFinite(end)) hourHi = Math.max(hourHi, end);
+    });
+    if (hourHi <= hourLo) hourHi = hourLo + 1;
+    const hourSpan = hourHi - hourLo;
+
+    const raw = entries.map((entry, entryIndex) => {
+      const bounds = dayBoundsInBucketSpace(
+        entry.dateKey,
+        buckets,
+        projectBucketKey,
+        scale,
+        getMonday,
+        fromDateKey
+      );
+      if (!bounds) return null;
+      const startHour = Number(entry.start);
+      const endHour = Number(entry.end);
+      const scheduledHours = Number.isFinite(endHour) && Number.isFinite(startHour)
+        ? Math.max(0, endHour - startHour)
+        : 0;
+      const durationHours = Math.max(
+        0.25,
+        Number(entry.hours) > 0 ? Number(entry.hours) : scheduledHours || 0.25
+      );
+      const leftInDay = clamp01((startHour - hourLo) / hourSpan);
+      let widthInDay = Math.max(0.04, durationHours / hourSpan);
+      if (leftInDay + widthInDay > 1) widthInDay = Math.max(0.04, 1 - leftInDay);
+      const daySpan = bounds.dayEnd - bounds.dayStart;
+      return {
+        entryIndex,
+        dateKey: entry.dateKey,
+        startHour,
+        endHour,
+        durationHours,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+        daySpan,
+        leftRatio: (bounds.dayStart + leftInDay * daySpan) / buckets.length,
+        widthRatio: (widthInDay * daySpan) / buckets.length
+      };
+    }).filter(Boolean);
+
+    const byDay = new Map();
+    raw.forEach(segment => {
+      const key = `${segment.dayStart}`;
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key).push(segment);
+    });
+
+    const gapRatio = 0.004;
+    byDay.forEach(group => {
+      group.sort((a, b) => a.startHour - b.startHour || a.entryIndex - b.entryIndex);
+      for (let index = 1; index < group.length; index += 1) {
+        const prev = group[index - 1];
+        const cur = group[index];
+        const prevEnd = prev.leftRatio + prev.widthRatio;
+        if (cur.leftRatio < prevEnd + gapRatio) {
+          cur.leftRatio = prevEnd + gapRatio;
+        }
+        const dayRight = group[0].dayEnd / buckets.length;
+        if (cur.leftRatio + cur.widthRatio > dayRight) {
+          cur.widthRatio = Math.max(0.01, dayRight - cur.leftRatio);
+        }
+      }
+    });
+
+    return raw
+      .sort((a, b) => a.leftRatio - b.leftRatio || a.entryIndex - b.entryIndex)
+      .map(({ entryIndex, dateKey, startHour, endHour, leftRatio, widthRatio }) => ({
+        entryIndex,
+        dateKey,
+        startHour,
+        endHour,
+        leftRatio,
+        widthRatio
+      }));
+  }
+
   // "start"/"end" pin the marker to the bucket boundary so the pair brackets the whole range.
   function markerRatio({ dateKey, buckets = [], projectBucketKey, edge = "center" } = {}) {
     const index = bucketIndexOf(dateKey, buckets, projectBucketKey);
@@ -262,17 +407,22 @@
     currentBucketKey,
     anchorIndex,
     anchorScrollLeft,
+    visibleBucketCount,
     futureBucketCount,
     ganttWindowBucketCount,
     initialGanttWindow,
+    shiftGanttWindow,
     extendGanttWindow,
     centeredScrollLeft,
     displayMarkerDateKey,
     rangeContainsBucket,
     investmentSegments,
+    entryInvestmentSegments,
     markerRatio,
     boundaryDateKeys,
     progressSpan,
-    shouldShowDueFlag
+    shouldShowDueFlag,
+    monthKeyFromDateKey,
+    shiftMonthKey
   };
 });

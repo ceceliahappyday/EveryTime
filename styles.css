@@ -31,6 +31,8 @@
 .task-trace-list.month::-webkit-scrollbar,
 .modal-scroll::-webkit-scrollbar,
 .entry-task-options::-webkit-scrollbar,
+.entry-under-parent-options::-webkit-scrollbar,
+.entry-link-confirm-options::-webkit-scrollbar,
 .header-more-menu::-webkit-scrollbar,
 .schedule-month-cell.selected .month-task-list::-webkit-scrollbar {
   width: var(--scroll-size);
@@ -45,6 +47,8 @@
 .task-trace-list.month::-webkit-scrollbar-button,
 .modal-scroll::-webkit-scrollbar-button,
 .entry-task-options::-webkit-scrollbar-button,
+.entry-under-parent-options::-webkit-scrollbar-button,
+.entry-link-confirm-options::-webkit-scrollbar-button,
 .header-more-menu::-webkit-scrollbar-button,
 .schedule-month-cell.selected .month-task-list::-webkit-scrollbar-button {
   display: none;
@@ -58,7 +62,9 @@
 .project-gantt-scroll::-webkit-scrollbar-corner,
 .week-schedule-day::-webkit-scrollbar-corner,
 .task-trace-list.month::-webkit-scrollbar-corner,
-.modal-scroll::-webkit-scrollbar-corner {
+.modal-scroll::-webkit-scrollbar-corner,
+.entry-under-parent-options::-webkit-scrollbar-corner,
+.entry-link-confirm-options::-webkit-scrollbar-corner {
   background: transparent;
 }
 .task-list::-webkit-scrollbar-track,
@@ -70,6 +76,8 @@
 .task-trace-list.month::-webkit-scrollbar-track,
 .modal-scroll::-webkit-scrollbar-track,
 .entry-task-options::-webkit-scrollbar-track,
+.entry-under-parent-options::-webkit-scrollbar-track,
+.entry-link-confirm-options::-webkit-scrollbar-track,
 .header-more-menu::-webkit-scrollbar-track,
 .schedule-month-cell.selected .month-task-list::-webkit-scrollbar-track {
   background: var(--scroll-track);
@@ -83,6 +91,8 @@
 .task-trace-list.month::-webkit-scrollbar-thumb,
 .modal-scroll::-webkit-scrollbar-thumb,
 .entry-task-options::-webkit-scrollbar-thumb,
+.entry-under-parent-options::-webkit-scrollbar-thumb,
+.entry-link-confirm-options::-webkit-scrollbar-thumb,
 .header-more-menu::-webkit-scrollbar-thumb,
 .schedule-month-cell.selected .month-task-list::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
@@ -100,7 +110,9 @@
 .project-gantt-scroll.is-scrolling::-webkit-scrollbar-thumb,
 .week-schedule-day:hover::-webkit-scrollbar-thumb,
 .task-trace-list.month:hover::-webkit-scrollbar-thumb,
-.modal-scroll:hover::-webkit-scrollbar-thumb {
+.modal-scroll:hover::-webkit-scrollbar-thumb,
+.entry-under-parent-options:hover::-webkit-scrollbar-thumb,
+.entry-link-confirm-options:hover::-webkit-scrollbar-thumb {
   background: var(--scroll-thumb-strong);
   background-clip: padding-box;
 }
@@ -494,13 +506,7 @@ body.in-desktop .app-shell {
 }
 body.in-desktop:not(.glass-mode) .app-shell { background: rgba(7, 24, 36, .72); }
 body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
-.topbar { -webkit-app-region: drag; }
-.topbar button,
-.topbar input,
-.topbar select,
-.topbar .header-view-switcher,
-.topbar .focus-view-chrome,
-.topbar .window-controls,
+.topbar { -webkit-app-region: no-drag; }
 .resize-edge,
 .resize-handle { -webkit-app-region: no-drag; }
 
@@ -1677,28 +1683,52 @@ body.in-desktop.glass-mode .create-kind-menu-item:focus-visible {
 
 .entry-link-confirm-options {
   display: grid;
-  gap: 8px;
+  gap: 2px;
   margin-bottom: 12px;
 }
 
 .entry-link-confirm-option {
+  display: grid;
+  gap: 2px;
   width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
   text-align: left;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
-  padding: 10px 12px;
   cursor: pointer;
+}
+
+.entry-link-confirm-option:hover,
+.entry-link-confirm-option:focus-visible {
+  background: rgba(101, 180, 177, 0.12);
+  outline: none;
+}
+
+.entry-link-confirm-option[aria-selected="true"],
+.entry-link-confirm-option.active {
+  background: rgba(101, 180, 177, 0.18);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .entry-link-confirm-option strong {
   display: block;
-  margin-bottom: 4px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .entry-link-confirm-option span {
+  overflow: hidden;
   font-size: 11px;
   color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-list {
@@ -1785,6 +1815,15 @@ button.task-group-heading {
   background: rgba(255,255,255,.34);
 }
 .task-card.dragging { opacity: .5; }
+.task-card.is-just-linked {
+  outline: 2px solid rgba(80, 180, 200, 0.85);
+  outline-offset: 1px;
+  animation: task-card-just-linked 1.2s ease-out 1;
+}
+@keyframes task-card-just-linked {
+  from { background: rgba(80, 180, 200, 0.22); }
+  to { background: transparent; }
+}
 .task-check {
   width: 16px;
   height: 16px;
@@ -2302,6 +2341,32 @@ body.gantt-label-resizing * {
 .entry-parent-create-field { display: grid; gap: 6px; text-align: left; }
 .entry-parent-create-field span { color: var(--muted); font-size: 11px; font-weight: 700; }
 .entry-parent-create-field input { width: 100%; }
+.entry-under-parent-options {
+  display: grid;
+  gap: 1px;
+  max-height: min(280px, 42vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin-top: 6px;
+  padding: 2px 0;
+  text-align: left;
+}
+.entry-under-parent-options .entry-link-confirm-option {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 8px;
+}
+.entry-under-parent-options .entry-link-confirm-option strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .entry-parent-reuse-hint {
   min-height: 1.2em;
   color: var(--accent);
@@ -2364,8 +2429,59 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   min-width: 0;
   overflow: hidden;
 }
+.project-gantt-days-viewport.has-gantt-nav {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+.project-gantt-days-viewport.has-gantt-nav .project-gantt-days-track {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.gantt-axis-nav {
+  flex: 0 0 28px;
+  width: 28px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.55);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.gantt-axis-nav:hover,
+.gantt-axis-nav:focus-visible {
+  border-color: var(--accent);
+  background: rgba(101, 180, 177, 0.16);
+  outline: none;
+}
+body.in-desktop.glass-mode .gantt-axis-nav {
+  color: #e8f4ff;
+  border-color: rgba(172, 211, 233, 0.35);
+  background: rgba(0, 0, 0, 0.28);
+}
+body.in-desktop.glass-mode .gantt-axis-nav:hover,
+body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
+  border-color: rgba(143, 224, 215, 0.7);
+  background: rgba(143, 224, 215, 0.14);
+}
 .project-gantt-days-track {
   will-change: transform;
+}
+.project-gantt-days-track.is-fill-width,
+.project-gantt-days.is-fill-width,
+.project-gantt-chart-track.is-fill-width,
+.project-gantt-body.is-fill-width,
+.project-gantt-chart-group {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.project-gantt-days-track.is-fill-width,
+.project-gantt-chart-track.is-fill-width {
+  transform: none !important;
 }
 .project-gantt-rows-wrap {
   flex: 1 1 auto;
@@ -2566,6 +2682,86 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   background: rgba(255,255,255,.54);
   border-color: var(--line-soft);
 }
+.gantt-add-child {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease, background .12s ease, color .12s ease;
+}
+.project-gantt-row-label:hover .gantt-add-child,
+.project-gantt-row-label:focus-within .gantt-add-child {
+  opacity: 1;
+  pointer-events: auto;
+}
+.gantt-add-child:hover,
+.gantt-add-child:focus-visible {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.06);
+  outline: none;
+}
+.gantt-context-menu {
+  position: fixed;
+  z-index: 2147483000;
+  min-width: 148px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-strong, #fff);
+  box-shadow: 0 10px 28px rgba(30, 36, 40, 0.18);
+}
+.gantt-context-menu.hidden { display: none; }
+.gantt-context-menu button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.gantt-context-menu button:hover,
+.gantt-context-menu button:focus-visible {
+  background: rgba(0, 0, 0, 0.06);
+  outline: none;
+}
+.gantt-context-menu button.is-danger {
+  color: var(--danger, #aa4c48);
+}
+body.in-desktop.glass-mode .gantt-add-child:hover,
+body.in-desktop.glass-mode .gantt-add-child:focus-visible {
+  color: #f4fbff;
+  background: rgba(255, 255, 255, 0.1);
+}
+body.in-desktop.glass-mode .gantt-context-menu {
+  border-color: rgba(172, 211, 233, 0.35);
+  background: rgba(12, 24, 36, 0.96);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+body.in-desktop.glass-mode .gantt-context-menu button {
+  color: #e8f4ff;
+}
+body.in-desktop.glass-mode .gantt-context-menu button:hover,
+body.in-desktop.glass-mode .gantt-context-menu button:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+body.in-desktop.glass-mode .gantt-context-menu button.is-danger {
+  color: #ffb4ae;
+}
 .project-gantt-lane {
   position: relative;
   z-index: 1;
@@ -2614,17 +2810,38 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   z-index: 4;
   top: 5px;
   bottom: 5px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 8px;
+  display: block;
+  box-sizing: border-box;
+  padding: 0 4px;
+  overflow: hidden;
   color: #fff;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .02em;
+  line-height: 26px;
+  text-align: center;
+  text-overflow: ellipsis;
   text-shadow: 0 1px 2px rgba(0,0,0,.45);
-  pointer-events: none;
   white-space: nowrap;
+  pointer-events: auto;
+  cursor: default;
+}
+.project-gantt-lane .gantt-entry-label {
+  z-index: 5;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  pointer-events: none;
+}
+.project-gantt-row-label.is-selected,
+.project-gantt-row-chart.is-selected {
+  background: rgba(101, 180, 177, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(101, 180, 177, 0.35);
+}
+body.in-desktop.glass-mode .project-gantt-row-label.is-selected,
+body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
+  background: rgba(143, 224, 215, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(143, 224, 215, 0.42);
 }
 .project-gantt-lane u.gantt-start-marker,
 .project-gantt-lane u.gantt-end-marker,
@@ -2972,6 +3189,10 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
 .week-task-line.planned b { color: #bb8844; }
 .week-task-line.tracking b { color: #7a6a9a; }
 .week-task-line.meeting b { color: #aa7b39; }
+.week-task-line {
+  border-left: 3px solid var(--chip, #638576);
+  padding-left: 5px;
+}
 .week-task-line span {
   min-width: 0;
   overflow: hidden;
@@ -3166,6 +3387,10 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
 .month-task-line.planned b { color: #bb8844; }
 .month-task-line.tracking b { color: #7a6a9a; }
 .month-task-line.meeting b { color: #aa7b39; }
+.month-task-line {
+  border-left: 3px solid var(--chip, #638576);
+  padding-left: 4px;
+}
 .month-task-line span {
   min-width: 0;
   overflow: hidden;
@@ -3347,12 +3572,12 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
 .schedule-entry {
   position: absolute;
   z-index: 3;
+  --entry: #638576;
+  --entry-bg: #e3eee7;
   --entry-left: 76px;
-  --entry-gap: 6px;
-  --entry-column: 0;
-  --entry-columns: 1;
-  left: calc(var(--entry-left) + (100% - var(--entry-left) - 10px) / var(--entry-columns) * var(--entry-column) + var(--entry-gap) / 2);
-  width: calc((100% - var(--entry-left) - 10px) / var(--entry-columns) - var(--entry-gap));
+  left: var(--entry-left);
+  right: 10px;
+  width: auto;
   min-height: 40px;
   padding: 10px 13px;
   overflow: hidden;
@@ -3360,9 +3585,15 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
   border-left: 4px solid var(--entry);
   background: var(--entry-bg);
   cursor: pointer;
-  transition: filter .15s, transform .15s;
+  transition: filter .15s, transform .15s, box-shadow .15s;
 }
-.schedule-entry:hover { z-index: 6; filter: brightness(.98); transform: translateX(1px); }
+/* Fantastical / Apple Calendar：重叠全宽叠放，色块交叠混合，不左右错开 */
+.schedule-entry.is-overlap {
+  background: color-mix(in srgb, var(--entry-bg) 78%, transparent);
+  mix-blend-mode: multiply;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--entry) 22%, transparent);
+}
+.schedule-entry:hover { z-index: 12; filter: brightness(.98); transform: translateX(1px); mix-blend-mode: normal; }
 .schedule-entry strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
 .schedule-entry.done strong,
 .schedule-entry.closed strong {
@@ -3401,47 +3632,181 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
 .task-create-kind-field select {
   width: 100%;
 }
-.task-schedule-time-row {
-  align-items: end;
-}
-#taskEditForm:not(.create-kind-meeting) .task-schedule-time-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-}
-#taskEditForm.create-kind-meeting .task-schedule-time-row {
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
 #taskEditForm.create-kind-meeting .task-attention-inline {
   display: none !important;
 }
-.task-attention-inline {
-  display: inline-flex;
+.task-kind-category-row,
+.task-status-due-row,
+.task-due-attention-row,
+.task-category-due-row,
+.task-schedule-time-row {
   align-items: center;
+  gap: 10px;
+}
+/* 方案1：标题行左「待办名称」右「仅关注」；输入框通栏 */
+#taskEditForm .task-title-block {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+}
+#taskEditForm .task-title-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 22px;
+  margin-bottom: 7px;
+}
+#taskEditForm .task-title-caption {
+  display: block;
+  min-width: 0;
+  line-height: 1.2;
+}
+#taskEditForm .task-title-heading .task-attention-inline {
+  flex: 0 0 auto;
+  margin-top: 0 !important;
+  min-height: 0;
+  padding: 0 !important;
+}
+#taskEditForm.create-kind-meeting .task-title-heading {
+  justify-content: flex-start;
+}
+#taskEditForm .task-kind-category-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+#taskEditForm .task-kind-category-row:not(:has(#taskCreateKindField:not(.hidden))) {
+  grid-template-columns: minmax(0, 1fr);
+}
+#taskEditForm .task-status-due-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+#taskEditForm.create-kind-meeting .task-status-due-row {
+  /* 会议：状态隐藏，开始/结束并排 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+#taskEditForm.create-kind-meeting #taskKindCategoryRow #taskCategoryField {
+  /* 会议创建时类别跟类型走，避免重复占位 */
+  display: none;
+}
+#taskEditForm.create-kind-meeting #taskKindCategoryRow {
+  grid-template-columns: minmax(0, 1fr);
+}
+.task-attention-inline {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
-  margin-top: 0;
+  margin-top: 0 !important;
   min-height: 42px;
-  padding: 0 2px;
+  padding: 0 4px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
   white-space: nowrap;
   cursor: pointer;
+  box-shadow: none !important;
+}
+#taskEditForm #taskParentField {
+  margin-top: 12px;
 }
 .task-attention-label {
-  display: grid;
-  gap: 1px;
+  display: inline-flex;
+  align-items: center;
   line-height: 1.2;
 }
 .task-attention-label b {
   font-size: 12px;
   font-weight: 700;
 }
-.task-attention-inline .task-attention-hint {
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--muted);
+body.in-desktop.glass-mode .task-attention-inline {
+  border: 0 !important;
+  background: transparent !important;
 }
-body.in-desktop.glass-mode .task-attention-inline .task-attention-hint {
-  color: #9eb4c2;
+
+/* 任务表单：短字段标题与控件同一行；名称/背景说明保持上下结构。字段在 .modal-scroll 内 */
+#taskEditForm .form-row {
+  margin-top: 12px;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+#taskEditForm .form-row > label {
+  margin-top: 0;
+  min-width: 0;
+}
+#taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden),
+#taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting),
+#taskEditForm .recurring-options > label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > span,
+#taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > span,
+#taskEditForm .recurring-options > label > span {
+  display: block;
+  flex: 0 0 7em;
+  width: 7em;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+#taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > input,
+#taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > select,
+#taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > .datetime-input-wrap,
+#taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > .entry-task-combobox,
+#taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > .progress-input,
+#taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > input,
+#taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > select,
+#taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > .datetime-input-wrap,
+#taskEditForm .recurring-options > label > input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+/* 短控件统一高度，保证左右列输入框/下拉框视觉一致 */
+#taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > input,
+#taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > select,
+#taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > .datetime-input-wrap > input,
+#taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > input,
+#taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > select,
+#taskEditForm #taskParentTrigger,
+#taskEditForm .entry-task-trigger {
+  box-sizing: border-box;
+  min-height: 42px;
+  height: 42px;
+}
+#taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > select,
+#taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > select {
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 40px;
+}
+#taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > .datetime-input-wrap {
+  height: 42px;
+}
+#taskEditForm #taskTitleField {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0;
+}
+#taskEditForm .task-context-field,
+#taskEditForm label:has(> textarea) {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+}
+#taskEditForm .task-context-field > span,
+#taskEditForm label:has(> textarea) > span {
+  display: block;
+  margin-bottom: 7px;
+  min-width: 0;
+  width: auto;
+}
+#taskEditForm #taskTitleField > input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  height: 42px;
 }
 .datetime-input-wrap {
   position: relative;
@@ -3454,6 +3819,23 @@ body.in-desktop.glass-mode .task-attention-inline .task-attention-hint {
   padding-right: 38px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
+}
+/* Invisible native picker overlay — anchors the calendar under this field */
+.datetime-input-wrap > .datetime-native-picker-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0.001;
+  color: transparent;
+  caret-color: transparent;
+  background: transparent;
+  pointer-events: none;
+  z-index: 2;
 }
 .datetime-pick-button {
   position: absolute;
@@ -3471,6 +3853,7 @@ body.in-desktop.glass-mode .task-attention-inline .task-attention-hint {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  z-index: 3;
 }
 .datetime-pick-button:hover,
 .datetime-pick-button:focus-visible {
@@ -3679,6 +4062,9 @@ body.in-desktop.glass-mode .gantt-field-mark--priority {
   background: rgba(230, 150, 70, 0.24);
   border-color: rgba(240, 180, 100, 0.5);
 }
+#taskEditForm.create-kind-meeting #taskPriorityOwnerRow,
+#taskEditForm.create-kind-meeting #taskActualTimeRow,
+#taskEditForm.create-kind-meeting #taskStatusField,
 #taskEditForm.create-kind-meeting #taskPriority,
 #taskEditForm.create-kind-meeting #taskPriority + *,
 #taskEditForm.create-kind-meeting label:has(#taskPriority),
@@ -3756,6 +4142,41 @@ body.in-desktop.glass-mode .gantt-field-mark--priority {
   flex: 1;
   min-height: 0;
   max-height: none;
+}
+#entryDialog {
+  padding: 0;
+  flex-direction: column;
+}
+#entryDialog[open] {
+  display: flex;
+}
+#entryDialog form {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+#entryDialog .modal-header {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 22px 24px 8px;
+}
+#entryDialog .modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px 24px 16px;
+}
+#entryDialog .modal-actions {
+  flex: 0 0 auto;
+  margin-top: 0;
+  padding: 12px 24px 18px;
+  border-top: 1px solid var(--line-soft);
+  background: #fff;
+  position: relative;
+  z-index: 2;
+}
+body.in-desktop.glass-mode #entryDialog .modal-actions {
+  background: rgba(8, 22, 36, .92);
+  border-top-color: rgba(181, 218, 239, .28);
 }
 /* Leave room under the frameless topbar / drag strip. */
 body.in-desktop .modal {
@@ -3887,6 +4308,23 @@ body.in-desktop:has(dialog[open]) .resize-handle {
 }
 .task-parent-field .entry-task-trigger {
   min-height: 42px;
+}
+/* Match modal field chrome; only interaction is locked, not the paint. */
+#taskDialog .entry-task-trigger,
+#taskEditForm .entry-task-trigger {
+  background: rgba(255, 255, 255, .72);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+body.in-desktop.glass-mode #taskDialog .entry-task-trigger,
+body.in-desktop.glass-mode #taskEditForm .entry-task-trigger {
+  color: #ffffff;
+  background: rgba(0, 0, 0, .28);
+  border-color: rgba(172, 211, 233, .50);
+}
+.task-parent-field.is-locked .entry-task-trigger,
+.entry-task-combobox.is-locked .entry-task-trigger {
+  cursor: default;
 }
 #taskDialog .entry-task-popup {
   z-index: 40;
@@ -4361,6 +4799,32 @@ body.in-desktop.glass-mode .task-merge-message {
   color: #cfe0ea;
   text-shadow: 0 1px 3px rgba(0,0,0,.85);
 }
+body.in-desktop.glass-mode .entry-link-confirm-option {
+  color: #eef6fb;
+  background: transparent;
+}
+body.in-desktop.glass-mode .entry-link-confirm-option span {
+  color: #9fb4c2;
+}
+body.in-desktop.glass-mode .entry-under-parent-options .entry-link-confirm-option {
+  color: #eef6fb;
+}
+body.in-desktop.glass-mode .entry-under-parent-options .entry-link-confirm-option strong {
+  color: inherit;
+  font-weight: 600;
+}
+body.in-desktop.glass-mode .entry-link-confirm-option:hover,
+body.in-desktop.glass-mode .entry-link-confirm-option:focus-visible {
+  background: rgba(143, 224, 215, 0.12);
+}
+body.in-desktop.glass-mode .entry-link-confirm-option[aria-selected="true"],
+body.in-desktop.glass-mode .entry-link-confirm-option.active {
+  background: rgba(143, 224, 215, 0.16);
+  box-shadow: inset 2px 0 0 #8fe0d7;
+}
+body.in-desktop.glass-mode .entry-parent-create-field span {
+  color: #9fb4c2;
+}
 body.in-desktop.glass-mode .task-merge-picker {
   background: rgba(0, 0, 0, .42);
   border-color: rgba(181, 218, 239, .35);
@@ -4615,15 +5079,24 @@ body.in-desktop.glass-mode .schedule-month-item.task-entry {
 body.in-desktop.glass-mode .schedule-entry {
   color: #f3f8fb;
   text-shadow: 0 1px 3px rgba(0,0,0,.72);
+  /* Do not rely on possibly-stale light --entry-bg from pre-glass paint. */
+  background: color-mix(in srgb, var(--entry, #76c4b8) 42%, rgba(8, 18, 28, 0.9));
+  border-left-color: var(--entry, #76c4b8);
 }
 body.in-desktop.glass-mode .schedule-entry.sage { --entry: #76c4b8; --entry-bg: rgba(43,112,106,.46); }
 body.in-desktop.glass-mode .schedule-entry.blue { --entry: #8db9e7; --entry-bg: rgba(40,84,122,.46); }
 body.in-desktop.glass-mode .schedule-entry.amber { --entry: #e0b56a; --entry-bg: rgba(118,78,28,.46); }
 body.in-desktop.glass-mode .schedule-entry.rose { --entry: #e09aa0; --entry-bg: rgba(118,52,58,.46); }
 body.in-desktop.glass-mode .schedule-entry.violet { --entry: #b5a8e0; --entry-bg: rgba(72,60,118,.46); }
+body.in-desktop.glass-mode .schedule-entry.is-overlap {
+  mix-blend-mode: normal;
+  background: color-mix(in srgb, var(--entry, #76c4b8) 34%, rgba(8, 18, 28, 0.78));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--entry, #76c4b8) 35%, transparent);
+}
 body.in-desktop.glass-mode .schedule-entry span,
 body.in-desktop.glass-mode .schedule-entry p,
 body.in-desktop.glass-mode .schedule-entry-type { color: #d5e6ef; }
+body.in-desktop.glass-mode .schedule-entry strong { color: #f3f8fb; }
 body.in-desktop.glass-mode .schedule-entry-badge { color: #72e1c9; }
 body.in-desktop.glass-mode .schedule-entry.planned .schedule-entry-badge { color: #ffd18b; }
 body.in-desktop.glass-mode .schedule-entry.tracking .schedule-entry-badge { color: #cbb6ff; }
@@ -4991,112 +5464,498 @@ body.in-desktop .window-controls {
 .small-modal { width: min(460px, calc(100% - 40px)); }
 .small-modal textarea { width: 100%; }
 .settings-modal {
-  width: min(560px, calc(100% - 40px));
+  width: min(820px, calc(100% - 36px));
+  height: min(640px, calc(100% - 36px));
+  max-height: min(640px, calc(100% - 36px));
   padding: 0;
-  flex-direction: column;
+  overflow: hidden;
 }
 .settings-modal[open] {
   display: flex;
 }
-#settingsDialog form {
+#settingsDialog form.settings-shell,
+.settings-shell {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
   flex: 1;
   min-height: 0;
+  height: 100%;
   max-height: none;
-}
-#settingsDialog .modal-header {
-  flex: 0 0 auto;
   margin: 0;
-  padding: 22px 24px 8px;
 }
-#settingsDialog .modal-scroll {
-  flex: 1 1 auto;
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
   min-height: 0;
-  padding: 4px 24px 12px;
+  padding: 20px 14px 16px;
+  border-right: 1px solid var(--line-soft);
+  background: rgba(0, 0, 0, .04);
 }
-#settingsDialog .modal-actions {
-  flex: 0 0 auto;
-  margin-top: 0;
-  padding: 12px 24px 18px;
-  border-top: 1px solid var(--line-soft);
-  background: #fff;
-  position: relative;
-  z-index: 2;
+.settings-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
 }
-body.in-desktop.glass-mode #settingsDialog .modal-actions {
-  position: relative;
-  bottom: auto;
-  padding: 12px 24px 18px;
-  background: rgba(8, 22, 36, .92);
-  border-top-color: rgba(181, 218, 239, .28);
-}
-.settings-list { display: grid; gap: 10px; }
-.settings-work-hours {
+.settings-nav-mark {
   display: grid;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
+  place-items: center;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
-  background: rgba(255,255,255,.36);
+  background: linear-gradient(160deg, #3d6b5c, #2a4a40);
+  color: #f4fff9;
+  font-size: 15px;
+  font-weight: 800;
 }
-.settings-work-hours-label {
+.settings-nav-brand strong {
+  display: block;
   color: var(--ink);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.2;
 }
-.settings-work-hours-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.settings-nav-brand span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.settings-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
   gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
 }
-.settings-work-hours-row label {
-  display: grid;
-  gap: 6px;
+.settings-nav-item i {
+  width: 1.1em;
+  color: var(--muted);
+  font-style: normal;
+  text-align: center;
 }
-.settings-work-hours .form-hint { margin: 0; }
-.settings-ai-actions { display: flex; gap: 8px; }
-.settings-ai-actions .soft-button { width: auto; }
-.settings-info {
-  display: grid;
-  gap: 10px;
-  margin-top: 18px;
-  padding: 13px;
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  background: rgba(248,247,243,.72);
+.settings-nav-item:hover {
+  background: rgba(60, 102, 85, .08);
 }
-.settings-info div { min-width: 0; }
-.settings-version-row {
+.settings-nav-item.is-active {
+  background: rgba(60, 102, 85, .14);
+  color: #2f6a58;
+}
+.settings-nav-item.is-active i {
+  color: #2f6a58;
+}
+.settings-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: rgba(255, 255, 255, .22);
+}
+.settings-main-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex: 0 0 auto;
+  padding: 18px 22px 10px;
 }
-.settings-version-row > div { flex: 1; min-width: 0; }
-.settings-version-row .soft-button { flex: 0 0 auto; white-space: nowrap; }
-.settings-info span {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .04em;
-}
-.settings-info strong {
-  display: block;
-  overflow: hidden;
+.settings-main-header h3 {
+  margin: 0;
   color: var(--ink);
+  font-size: 18px;
+  font-weight: 750;
+}
+.settings-main-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px 22px 16px;
+  overflow: auto;
+}
+.settings-main-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 12px 22px 16px;
+  border-top: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, .35);
+}
+.settings-panel {
+  display: none;
+}
+.settings-panel.is-active {
+  display: grid;
+  gap: 8px;
+}
+.settings-section-title {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.settings-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.settings-section-head .settings-section-title {
+  margin: 0;
+}
+.settings-section-head .soft-button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.settings-panel-hint {
+  margin: 0;
+}
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: #f7f6f2;
+}
+#settingsDialog .settings-row,
+.settings-modal .settings-row {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 !important;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(70, 78, 72, .08);
+}
+#settingsDialog .settings-row > .settings-row-copy,
+.settings-modal .settings-row > .settings-row-copy {
+  display: grid;
+  margin-bottom: 0;
+}
+.settings-row:last-child {
+  border-bottom: 0;
+}
+.settings-row-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.settings-row-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+.settings-row-copy small {
+  color: var(--muted);
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.35;
+  word-break: break-all;
+}
+.settings-row > input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 18px !important;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.settings-row-stack {
+  align-items: flex-start;
+  flex-direction: column;
+}
+.settings-row-inline {
+  flex-direction: row;
+  align-items: center;
+}
+.settings-row-stack > input,
+.settings-row-stack > select {
+  width: 100%;
+  max-width: 100%;
+}
+#settingsDialog .settings-row-inline > input,
+#settingsDialog .settings-row-inline > select,
+.settings-modal .settings-row-inline > input,
+.settings-modal .settings-row-inline > select {
+  width: min(260px, 48%);
+  flex: 0 0 auto;
+  margin: 0;
+}
+.settings-row-actions {
+  align-items: center;
+}
+.settings-row-actions .soft-button {
+  flex: 0 0 auto;
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
-.settings-info p { margin: 2px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
-
-body.in-desktop.glass-mode .settings-info {
-  background: rgba(0,0,0,.38);
-  border-color: rgba(172,211,233,.36);
+.settings-row-static {
+  cursor: default;
 }
-body.in-desktop.glass-mode .settings-info strong { color: #f3f8fb; }
+.settings-about-note {
+  margin: 0;
+  padding: 14px 16px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.settings-categories-card {
+  padding: 8px;
+}
+.settings-category-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+/* Outlook / OneNote：一行 = 颜色 + 分类名，彼此平行 */
+.settings-category-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: #faf9f6;
+}
+.settings-category-row input[type="text"] {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+}
+.settings-category-row input[type="text"]:focus {
+  border-color: #8da497;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(60,102,85,.08);
+}
+.settings-category-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.95);
+  box-shadow: 0 0 0 1px rgba(70, 78, 72, .35);
+  padding: 0;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.settings-category-swatch:hover {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px rgba(60, 102, 85, .45);
+}
+.settings-category-remove {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.settings-category-remove:hover {
+  color: var(--danger);
+  background: rgba(170, 76, 72, .1);
+}
+.settings-category-remove-spacer {
+  width: 28px;
+  height: 28px;
+}
+/* Excel 式分类色板（挂在 settingsDialog 顶层内，避免被 dialog 挡住） */
+.category-color-palette {
+  position: fixed;
+  z-index: 30;
+  width: 228px;
+  padding: 10px;
+  border: 1px solid rgba(90, 98, 92, .28);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 14px 36px rgba(30, 34, 30, .22);
+  -webkit-app-region: no-drag;
+}
+#settingsDialog .category-color-palette {
+  z-index: 40;
+}
+.category-color-palette-label {
+  margin: 2px 0 6px;
+  color: #6a706a;
+  font-size: 11px;
+  font-weight: 600;
+}
+.category-color-palette-theme {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+.category-color-palette-row {
+  display: grid;
+  grid-template-columns: repeat(10, 18px);
+  gap: 2px;
+  justify-content: start;
+}
+.category-color-palette-standard {
+  margin-bottom: 2px;
+}
+.category-color-palette-cell {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(40, 44, 40, .18);
+  border-radius: 2px;
+  padding: 0;
+  cursor: pointer;
+}
+.category-color-palette-cell.is-light {
+  border-color: rgba(40, 44, 40, .35);
+}
+.category-color-palette-cell:hover {
+  outline: 1px solid rgba(40, 44, 40, .55);
+  outline-offset: 1px;
+}
+.category-color-palette-cell.selected {
+  outline: 2px solid #2f6f66;
+  outline-offset: 1px;
+}
+body.in-desktop.glass-mode .settings-category-row {
+  background: rgba(12, 28, 42, .55);
+  border-color: rgba(181, 218, 239, .22);
+}
+body.in-desktop.glass-mode .settings-category-row input[type="text"] {
+  color: #f1f8fb;
+}
+body.in-desktop.glass-mode .settings-category-row input[type="text"]:focus {
+  background: rgba(8, 22, 36, .72);
+  border-color: rgba(181, 218, 239, .45);
+}
+body.in-desktop.glass-mode .settings-category-swatch {
+  border-color: rgba(8, 22, 36, .55);
+  box-shadow: 0 0 0 1px rgba(210, 230, 240, .35);
+}
+body.in-desktop.glass-mode .category-color-palette {
+  background: rgba(10, 24, 38, .96);
+  border-color: rgba(181, 218, 239, .3);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .45);
+}
+body.in-desktop.glass-mode .category-color-palette-label {
+  color: #b7c7d2;
+}
+body.in-desktop.glass-mode .category-color-palette-cell.selected {
+  outline-color: #72e1c9;
+}
+.settings-work-hours {
+  gap: 0;
+  padding: 4px 0 0;
+}
+.settings-work-hours-line {
+  display: grid;
+  grid-template-columns: minmax(2.2em, 0.7fr) minmax(2em, 0.7fr) minmax(4.8em, 1.4fr) minmax(2em, 0.7fr) minmax(4.8em, 1.4fr);
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(70, 78, 72, .08);
+}
+.settings-work-hours-period,
+.settings-work-hours-key {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  line-height: 1;
+  justify-self: start;
+}
+.settings-work-hours-select,
+#settingsDialog .settings-work-hours-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 6px 8px;
+  justify-self: stretch;
+  font-variant-numeric: tabular-nums;
+}
+.settings-work-hours-footer {
+  display: grid;
+  gap: 4px;
+  padding: 9px 14px 12px;
+}
+.settings-work-hours-summary {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+.settings-work-hours .form-hint { margin: 0; }
+body.in-desktop.glass-mode .settings-nav {
+  background: rgba(0, 0, 0, .28);
+  border-right-color: rgba(181, 218, 239, .22);
+}
+body.in-desktop.glass-mode .settings-nav-brand strong,
+body.in-desktop.glass-mode .settings-main-header h3,
+body.in-desktop.glass-mode .settings-row-copy strong,
+body.in-desktop.glass-mode .settings-work-hours-summary {
+  color: #f3f8fb;
+}
+body.in-desktop.glass-mode .settings-nav-brand span,
+body.in-desktop.glass-mode .settings-section-title,
+body.in-desktop.glass-mode .settings-row-copy small,
+body.in-desktop.glass-mode .settings-about-note,
+body.in-desktop.glass-mode .settings-work-hours-period,
+body.in-desktop.glass-mode .settings-work-hours-key,
+body.in-desktop.glass-mode .settings-work-hours .form-hint {
+  color: #9eb2bf;
+}
+body.in-desktop.glass-mode .settings-nav-item {
+  color: #e7f2f8;
+}
+body.in-desktop.glass-mode .settings-nav-item i {
+  color: #8aa0ae;
+}
+body.in-desktop.glass-mode .settings-nav-item:hover {
+  background: rgba(101, 180, 177, .12);
+}
+body.in-desktop.glass-mode .settings-nav-item.is-active {
+  background: rgba(101, 180, 177, .18);
+  color: #8fe0d7;
+}
+body.in-desktop.glass-mode .settings-nav-item.is-active i {
+  color: #8fe0d7;
+}
+body.in-desktop.glass-mode .settings-main {
+  background: rgba(0, 0, 0, .18);
+}
+body.in-desktop.glass-mode .settings-main-footer {
+  background: rgba(8, 22, 36, .72);
+  border-top-color: rgba(181, 218, 239, .22);
+}
+body.in-desktop.glass-mode .settings-card {
+  background: rgba(0, 0, 0, .36);
+  border-color: rgba(172, 211, 233, .28);
+}
+body.in-desktop.glass-mode .settings-row,
+body.in-desktop.glass-mode .settings-work-hours-line {
+  border-bottom-color: rgba(181, 218, 239, .12);
+}
 
 .toast {
   position: fixed; z-index: 20; left: 50%; bottom: 30px;

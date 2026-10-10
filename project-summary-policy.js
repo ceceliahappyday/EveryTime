@@ -53,6 +53,19 @@
     return Math.round(Math.min(95, (investedHours / scheduledHours) * 100));
   }
 
+  /** Parent plan progress: child invested hours / workday plan hours (create → due). */
+  function parentPlanProgressPercent({
+    status,
+    childInvestedHours = 0,
+    planHours = 0
+  } = {}) {
+    if (["done", "closed", "ended"].includes(status)) return 100;
+    const invested = Number(childInvestedHours) || 0;
+    const plan = Number(planHours) || 0;
+    if (!invested || !plan) return 0;
+    return Math.round(Math.min(95, (invested / plan) * 100));
+  }
+
   function normalizeStatus(status) {
     if (status === "in_progress") return "in_progress";
     if (status === "done" || status === "closed") return "ended";
@@ -78,6 +91,7 @@
     summarizeProject,
     projectProgressPercent,
     taskProgressPercent,
+    parentPlanProgressPercent,
     classifyProjectStatus
   };
 });

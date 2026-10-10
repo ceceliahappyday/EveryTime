@@ -11,14 +11,14 @@ const requiredApp = [
   "extraRows: meetingRows",
   "scheduleOverviewItemsForDate",
   "renderDayOverviewList",
-  "ProjectViewPolicy.investmentSegments",
+  "ProjectViewPolicy.entryInvestmentSegments",
+  "mapEntryGanttSegments",
   "ganttSegmentPolicyArgs",
   "gantt-meeting-bar",
   "legend-meeting",
   "project-gantt-root",
-  "project-gantt-hscroll",
   "project-gantt-chart-track",
-  "syncProjectGanttChartOffset",
+  "shiftProjectGanttWindow",
   "projectGanttChrome",
   "is-title-pin",
   "GANTT_LABEL_WIDTH",
@@ -26,7 +26,23 @@ const requiredApp = [
   "project-gantt-resize-handle",
   "bindGanttLabelReparent",
   "reparentTaskOnto",
-  "dataset.depth"
+  "dataset.depth",
+  "gantt-add-child",
+  "bindGanttRowContextMenu",
+  "showGanttContextMenu",
+  "openNewChildTaskFromGantt",
+  "lockParent: true",
+  "setTaskParentFieldLocked",
+  "lockedTaskParentId",
+  "ganttProgressBarText",
+  "resolveGanttRowProgress",
+  "fitGanttProgressLabel",
+  "ganttBarLabelGeometry",
+  "gantt-axis-nav",
+  "selectGanttTaskRow",
+  "restoreProjectGanttRowsScroll",
+  "confirmDeleteTask",
+  "deleteTaskById"
 ];
 requiredApp.forEach(token => {
   if (!app.includes(token)) throw new Error(`missing gantt visual token in app.js: ${token}`);
@@ -57,7 +73,8 @@ if (app.includes("当天投入")) {
 
 const requiredStyles = [
   ".project-gantt-root",
-  ".project-gantt-hscroll",
+  ".gantt-axis-nav",
+  ".is-fill-width",
   ".project-gantt-label-pane",
   ".project-gantt-chart-track",
   ".project-gantt-lane i.gantt-meeting-bar",
@@ -80,7 +97,13 @@ if (!/height:\s*36px/.test(styles.match(/\.project-gantt-row-label,\s*\.project-
 if (app.includes('|| "未命名会议"') || app.includes("|| '未命名会议'")) {
   throw new Error("empty-title meetings must be filtered out, not renamed");
 }
-if (app.includes('|| "未命名任务"') && app.includes("createProjectGanttRow")) {
+const createGanttRowFn = (() => {
+  const start = app.indexOf("function createProjectGanttRow");
+  if (start < 0) return "";
+  const end = app.indexOf("\nfunction ", start + 1);
+  return end > start ? app.slice(start, end) : app.slice(start);
+})();
+if (/\|\| ["']未命名任务["']/.test(createGanttRowFn)) {
   throw new Error("empty-title gantt tasks must be filtered out, not renamed");
 }
 if (!app.includes("TodoListPolicy.hasDisplayTitle")) {
@@ -88,6 +111,54 @@ if (!app.includes("TodoListPolicy.hasDisplayTitle")) {
 }
 if (!app.includes("if (!pair?.labelRow || !pair?.chartRow) return")) {
   throw new Error("appendGanttRowPair must skip rows without title content");
+}
+if (!styles.includes(".gantt-add-child") || !styles.includes("opacity: 0")) {
+  throw new Error("gantt add-child control must be hover-revealed");
+}
+if (!styles.includes(".gantt-context-menu")) {
+  throw new Error("gantt right-click menu styles are required");
+}
+if (!app.includes("window.confirm(message)")) {
+  throw new Error("gantt/task delete must ask for secondary confirmation");
+}
+if (!app.includes('openTaskDialog(null, { parentId: parentTask.id, lockParent: true })')) {
+  throw new Error("gantt new-child must open dialog with locked parent");
+}
+if (!styles.includes(".task-parent-field.is-locked .entry-task-trigger")) {
+  throw new Error("locked parent field should only change interaction, not form chrome");
+}
+if (!styles.includes("body.in-desktop.glass-mode #taskDialog .entry-task-trigger")) {
+  throw new Error("task dialog parent trigger must match modal input background in glass mode");
+}
+if (!styles.includes("text-align: center") || !styles.includes(".gantt-progress-pct")) {
+  throw new Error("gantt progress labels must stay centered in the bar");
+}
+if (!app.includes("parentPlanProgressPercent") || !app.includes("workdayPlanHoursBetween")) {
+  throw new Error("parent gantt progress must use workday plan hours");
+}
+if (!app.includes("getTaskProgressNotes")) {
+  throw new Error("leaf gantt bars should surface schedule progress notes");
+}
+if (!app.includes("mapEntryGanttSegments") || !app.includes("entryInvestmentSegments")) {
+  throw new Error("gantt actual bars must split per schedule entry");
+}
+if (!app.includes("gantt-entry-label")) {
+  throw new Error("each invest bar should carry its own hours/note label");
+}
+if (app.includes('title="有投入：${escapeHtml(segment.label)}"')) {
+  throw new Error("merged day-label tooltips like 有投入：10/10 must not be used for entry bars");
+}
+if (!styles.includes(".project-gantt-row-label.is-selected")) {
+  throw new Error("selected gantt rows need highlight styles");
+}
+if (!app.includes("restoreProjectGanttRowsScroll(savedRowsTop)")) {
+  throw new Error("shifting gantt window must restore vertical scroll position");
+}
+if (!styles.includes(".gantt-axis-nav") || !styles.includes(".is-fill-width")) {
+  throw new Error("gantt axis arrows and fill-width timeline styles are required");
+}
+if (!app.includes("is-fill-width")) {
+  throw new Error("gantt chart tracks must fill viewport width");
 }
 
 console.log("gantt visual policy tests passed");

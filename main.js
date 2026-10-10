@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage, safeStorage, screen, clipboard } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const { execFileSync } = require("child_process");
+const { execFileSync, spawn } = require("child_process");
 const { autoUpdater } = require("electron-updater");
 const ExcelJS = require("exceljs");
 const StartupPolicy = require("./startup-policy.js");
@@ -14,6 +14,9 @@ let mainWindow;
 let locked = false;
 let glass = false;
 let tray;
+let bottomLayerHelper = null;
+let bottomLayerTimer = null;
+let lockedFocusGuardBound = false;
 let manualUpdateCheck = false;
 let restoredWindowBounds = null;
 const dataFileName = "planner-data.json";
@@ -23,6 +26,8 @@ const appIconPath = path.join(__dirname, "assets", "icons", "app-icon.ico");
 const trayIconPath = path.join(__dirname, "assets", "icons", "app-icon.png");
 const skipStartupRegistration = process.argv.includes("--skip-startup-registration");
 const isDevRuntime = !app.isPackaged;
+const STANDARD_WINDOW_WIDTH = 1380;
+const STANDARD_WINDOW_HEIGHT = 900;
 
 if (process.platform === "win32") {
   app.setAppUserModelId(isDevRuntime ? "com.local.todayDailyPlanner.dev" : "com.local.todayDailyPlanner");
@@ -62,6 +67,59 @@ function notifyMaximizeChanged(maximized = isWindowMaximized()) {
   return !!maximized;
 }
 
+function standardWindowBounds(referenceBounds) {
+  const fallback = {
+    x: 0,
+    y: 0,
+    width: STANDARD_WINDOW_WIDTH,
+    height: STANDARD_WINDOW_HEIGHT
+  };
+  const bounds = referenceBounds
+    || (mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null)
+    || fallback;
+  const workArea = screen.getDisplayMatching(bounds).workArea;
+  const width = Math.max(380, Math.min(STANDARD_WINDOW_WIDTH, workArea.width));
+  const height = Math.max(520, Math.min(STANDARD_WINDOW_HEIGHT, workArea.height));
+  return {
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2),
+    width,
+    height
+  };
+}
+
+function toggleWindowMaximized() {
+  if (!mainWindow || mainWindow.isDestroyed()) return isWindowMaximized();
+  if (isWindowMaximized()) {
+    restoredWindowBounds = null;
+    if (mainWindow.isMaximized()) {
+      try { mainWindow.unmaximize(); } catch {}
+    }
+    mainWindow.setBounds(standardWindowBounds(mainWindow.getBounds()));
+    notifyMaximizeChanged(false);
+    notifyShellLayoutWidth();
+    if (locked) scheduleSendWindowToDesktopLayer();
+    return false;
+  }
+  restoredWindowBounds = { ...mainWindow.getBounds() };
+  const workArea = screen.getDisplayMatching(restoredWindowBounds).workArea;
+  if (typeof mainWindow.maximize === "function") {
+    try { mainWindow.maximize(); } catch {}
+  }
+  if (!mainWindow.isMaximized()) {
+    mainWindow.setBounds({
+      x: workArea.x,
+      y: workArea.y,
+      width: workArea.width,
+      height: workArea.height
+    });
+  }
+  notifyMaximizeChanged(true);
+  notifyShellLayoutWidth();
+  if (locked) scheduleSendWindowToDesktopLayer();
+  return true;
+}
+
 function notifyShellLayoutWidth() {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
   const content = typeof mainWindow.getContentBounds === "function"
@@ -82,8 +140,8 @@ function createWindow() {
     {
       minWidth: 380,
       minHeight: 520,
-      defaultWidth: 1380,
-      defaultHeight: 900,
+      defaultWidth: STANDARD_WINDOW_WIDTH,
+      defaultHeight: STANDARD_WINDOW_HEIGHT,
       preferredDisplay: screen.getPrimaryDisplay()
     }
   );
@@ -165,6 +223,103 @@ function ensureWindowBoundsOnScreen() {
   );
 }
 
+function readNativeHwnd(win) {
+  try {
+    const buf = win.getNativeWindowHandle();
+    if (!buf || !buf.length) return "";
+    if (buf.length >= 8) return buf.readBigUInt64LE(0).toString();
+    return String(buf.readUInt32LE(0));
+  } catch {
+    return "";
+  }
+}
+
+function ensureBottomLayerHelper() {
+  if (process.platform !== "win32") return null;
+  if (bottomLayerHelper && !bottomLayerHelper.killed) return bottomLayerHelper;
+  try {
+    bottomLayerHelper = spawn("powershell.exe", [
+      "-NoProfile",
+      "-STA",
+      "-Command",
+      `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class EveryTimeWinZ {
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+}
+"@
+while ($true) {
+  $line = [Console]::In.ReadLine()
+  if ($null -eq $line) { break }
+  $line = $line.Trim()
+  if ($line -eq "" -or $line -eq "quit") { if ($line -eq "quit") { break } ; continue }
+  try { [void][EveryTimeWinZ]::SetWindowPos([IntPtr]([int64]$line), [IntPtr]1, 0, 0, 0, 0, 0x13) } catch {}
+}
+`
+    ], {
+      stdio: ["pipe", "ignore", "ignore"],
+      windowsHide: true
+    });
+    bottomLayerHelper.on("exit", () => { bottomLayerHelper = null; });
+    bottomLayerHelper.on("error", () => { bottomLayerHelper = null; });
+  } catch {
+    bottomLayerHelper = null;
+  }
+  return bottomLayerHelper;
+}
+
+/** Keep the window under other apps (HWND_BOTTOM) without blocking resize/interaction. */
+function sendWindowToDesktopLayer() {
+  if (!mainWindow || mainWindow.isDestroyed() || process.platform !== "win32") return;
+  const hwnd = readNativeHwnd(mainWindow);
+  if (!hwnd) return;
+  const helper = ensureBottomLayerHelper();
+  if (!helper?.stdin?.writable) return;
+  try { helper.stdin.write(`${hwnd}\n`); } catch {}
+}
+
+function scheduleSendWindowToDesktopLayer() {
+  if (!locked) return;
+  clearTimeout(bottomLayerTimer);
+  bottomLayerTimer = setTimeout(() => {
+    bottomLayerTimer = null;
+    sendWindowToDesktopLayer();
+  }, 30);
+}
+
+function onLockedWindowFocus() {
+  if (!locked || !mainWindow || mainWindow.isDestroyed()) return;
+  // Allow interaction, but never climb above other windows.
+  scheduleSendWindowToDesktopLayer();
+}
+
+function applyLockedDesktopLayer(enabled) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (enabled) {
+    try { mainWindow.setAlwaysOnTop(false); } catch {}
+    if (!lockedFocusGuardBound) {
+      mainWindow.on("focus", onLockedWindowFocus);
+      mainWindow.on("show", onLockedWindowFocus);
+      lockedFocusGuardBound = true;
+    }
+    scheduleSendWindowToDesktopLayer();
+    return;
+  }
+  if (lockedFocusGuardBound) {
+    mainWindow.removeListener("focus", onLockedWindowFocus);
+    mainWindow.removeListener("show", onLockedWindowFocus);
+    lockedFocusGuardBound = false;
+  }
+  clearTimeout(bottomLayerTimer);
+  bottomLayerTimer = null;
+  const settings = loadSettings();
+  try {
+    mainWindow.setAlwaysOnTop(!!settings.pinned, settings.pinned ? "floating" : "normal");
+  } catch {}
+}
+
 function showMainWindow({ relocateToCursor = false } = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -176,6 +331,10 @@ function showMainWindow({ relocateToCursor = false } = {}) {
     ensureWindowBoundsOnScreen();
   }
   mainWindow.show();
+  if (locked) {
+    applyLockedDesktopLayer(true);
+    return;
+  }
   mainWindow.focus();
   if (typeof mainWindow.moveTop === "function") {
     try { mainWindow.moveTop(); } catch {}
@@ -243,42 +402,7 @@ if (singleInstanceLock) app.whenReady().then(() => {
   }));
   ipcMain.handle("window:minimize", () => mainWindow.minimize());
   ipcMain.handle("window:is-maximized", () => isWindowMaximized());
-  ipcMain.handle("window:toggle-maximize", () => {
-    if (!mainWindow || locked) return isWindowMaximized();
-    if (isWindowMaximized()) {
-      const fallback = restoredWindowBounds || {
-        width: 1380,
-        height: 900,
-        x: undefined,
-        y: undefined
-      };
-      restoredWindowBounds = null;
-      if (mainWindow.isMaximized()) mainWindow.unmaximize();
-      mainWindow.setBounds({
-        x: fallback.x ?? mainWindow.getBounds().x,
-        y: fallback.y ?? mainWindow.getBounds().y,
-        width: Math.max(380, fallback.width || 1380),
-        height: Math.max(520, fallback.height || 900)
-      });
-      notifyMaximizeChanged(false);
-      return false;
-    }
-    restoredWindowBounds = { ...mainWindow.getBounds() };
-    const workArea = screen.getDisplayMatching(restoredWindowBounds).workArea;
-    if (typeof mainWindow.maximize === "function") {
-      try { mainWindow.maximize(); } catch {}
-    }
-    if (!mainWindow.isMaximized()) {
-      mainWindow.setBounds({
-        x: workArea.x,
-        y: workArea.y,
-        width: workArea.width,
-        height: workArea.height
-      });
-    }
-    notifyMaximizeChanged(true);
-    return true;
-  });
+  ipcMain.handle("window:toggle-maximize", () => toggleWindowMaximized());
   ipcMain.handle("app:quit", () => {
     app.isQuitting = true;
     app.quit();
@@ -306,7 +430,7 @@ if (singleInstanceLock) app.whenReady().then(() => {
     return true;
   });
   ipcMain.on("window:resize-by", (_event, width, height) => {
-    if (!mainWindow || locked) return;
+    if (!mainWindow) return;
     const bounds = mainWindow.getBounds();
     mainWindow.setBounds({
       x: bounds.x,
@@ -314,9 +438,10 @@ if (singleInstanceLock) app.whenReady().then(() => {
       width: Math.max(380, Math.round(width)),
       height: Math.max(520, Math.round(height))
     });
+    if (locked) scheduleSendWindowToDesktopLayer();
   });
   ipcMain.on("window:set-bounds", (_event, next = {}) => {
-    if (!mainWindow || locked) return;
+    if (!mainWindow) return;
     const bounds = mainWindow.getBounds();
     const width = Math.max(380, Math.round(next.width ?? bounds.width));
     const height = Math.max(520, Math.round(next.height ?? bounds.height));
@@ -329,6 +454,7 @@ if (singleInstanceLock) app.whenReady().then(() => {
     if (!isWindowMaximized()) restoredWindowBounds = null;
     notifyMaximizeChanged();
     notifyShellLayoutWidth();
+    if (locked) scheduleSendWindowToDesktopLayer();
   });
   ipcMain.handle("data:export", async (_event, filename, format, data) => {
     const exportDir = defaultExportDir();
@@ -395,8 +521,13 @@ if (singleInstanceLock) app.whenReady().then(() => {
     return true;
   });
   createWindow();
-  if (settings.pinned) mainWindow.setAlwaysOnTop(true, "floating");
-  if (locked) mainWindow.webContents.once("did-finish-load", () => mainWindow.webContents.send("window:lock-changed", locked));
+  if (settings.pinned && !locked) mainWindow.setAlwaysOnTop(true, "floating");
+  if (locked) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      applyLockedDesktopLayer(true);
+      mainWindow.webContents.send("window:lock-changed", locked);
+    });
+  }
   createTray();
   configureAutoUpdater();
   mainWindow.webContents.once("did-finish-load", () => setTimeout(() => checkForUpdates(false), 1800));
@@ -404,12 +535,20 @@ if (singleInstanceLock) app.whenReady().then(() => {
   screen.on("display-removed", () => ensureWindowBoundsOnScreen());
   screen.on("display-metrics-changed", () => ensureWindowBoundsOnScreen());
   app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());
+  app.on("will-quit", () => {
+    try { bottomLayerHelper?.stdin?.write("quit\n"); } catch {}
+    try { bottomLayerHelper?.kill?.(); } catch {}
+    bottomLayerHelper = null;
+  });
 });
 
 function setLocked(next) {
   locked = next;
   persistPartialSettings({ locked });
-  mainWindow.webContents.send("window:lock-changed", locked);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    applyLockedDesktopLayer(locked);
+    mainWindow.webContents.send("window:lock-changed", locked);
+  }
   showMainWindow();
   return locked;
 }
@@ -497,21 +636,58 @@ function loadInstalledSettingsHint() {
 function loadSettings() {
   const file = settingsPath();
   const installedHint = isDevRuntime ? loadInstalledSettingsHint() : {};
+  const ScheduleHoursPolicy = require("./schedule-hours-policy.js");
+  const defaultHours = ScheduleHoursPolicy.normalizeWorkSegments({});
   const defaults = {
     glass: installedHint.glass !== undefined ? !!installedHint.glass : false,
     pinned: false,
     locked: false,
-    compact: installedHint.compact !== undefined ? !!installedHint.compact : false,
+    compact: false,
+    profileName: "",
     startAtLogin: false,
-    workStartHour: 9,
-    workEndHour: 18,
+    morningStart: defaultHours.morningStart,
+    morningEnd: defaultHours.morningEnd,
+    afternoonStart: defaultHours.afternoonStart,
+    afternoonEnd: defaultHours.afternoonEnd,
+    workStartHour: defaultHours.workStartHour,
+    workEndHour: defaultHours.workEndHour,
+    workdayHours: defaultHours.workdayHours,
     aiEnabled: false,
     aiModel: "gpt-4.1-mini",
     aiProvider: "openai"
   };
   if (!fs.existsSync(file)) return defaults;
   try {
-    return { ...defaults, ...JSON.parse(fs.readFileSync(file, "utf8")) };
+    const loaded = JSON.parse(fs.readFileSync(file, "utf8")) || {};
+    const merged = { ...defaults, ...loaded };
+    const hasSplit =
+      loaded.morningStart != null ||
+      loaded.morningEnd != null ||
+      loaded.afternoonStart != null ||
+      loaded.afternoonEnd != null;
+    const hours = ScheduleHoursPolicy.normalizeWorkSegments(
+      hasSplit
+        ? {
+          morningStart: merged.morningStart,
+          morningEnd: merged.morningEnd,
+          afternoonStart: merged.afternoonStart,
+          afternoonEnd: merged.afternoonEnd
+        }
+        : {
+          workStartHour: merged.workStartHour,
+          workEndHour: merged.workEndHour
+        }
+    );
+    return {
+      ...merged,
+      morningStart: hours.morningStart,
+      morningEnd: hours.morningEnd,
+      afternoonStart: hours.afternoonStart,
+      afternoonEnd: hours.afternoonEnd,
+      workStartHour: hours.workStartHour,
+      workEndHour: hours.workEndHour,
+      workdayHours: hours.workdayHours
+    };
   } catch {
     return defaults;
   }
@@ -703,18 +879,40 @@ async function extractAiTask(payload = {}) {
 
 function saveSettings(nextSettings) {
   const settings = { ...loadSettings(), ...nextSettings };
-  if (nextSettings.workStartHour !== undefined || nextSettings.workEndHour !== undefined) {
-    const start = Math.max(0, Math.min(23, Math.floor(Number(settings.workStartHour) || 9)));
-    let end = Math.max(1, Math.min(24, Math.floor(Number(settings.workEndHour) || 18)));
-    if (end <= start) end = Math.min(24, start + 1);
-    settings.workStartHour = start;
-    settings.workEndHour = end;
+  if (
+    nextSettings.morningStart !== undefined ||
+    nextSettings.morningEnd !== undefined ||
+    nextSettings.afternoonStart !== undefined ||
+    nextSettings.afternoonEnd !== undefined ||
+    nextSettings.workStartHour !== undefined ||
+    nextSettings.workEndHour !== undefined
+  ) {
+    const ScheduleHoursPolicy = require("./schedule-hours-policy.js");
+    const normalized = ScheduleHoursPolicy.normalizeWorkSegments({
+      morningStart: settings.morningStart,
+      morningEnd: settings.morningEnd,
+      afternoonStart: settings.afternoonStart,
+      afternoonEnd: settings.afternoonEnd,
+      workStartHour: settings.workStartHour,
+      workEndHour: settings.workEndHour
+    });
+    settings.morningStart = normalized.morningStart;
+    settings.morningEnd = normalized.morningEnd;
+    settings.afternoonStart = normalized.afternoonStart;
+    settings.afternoonEnd = normalized.afternoonEnd;
+    settings.workStartHour = normalized.workStartHour;
+    settings.workEndHour = normalized.workEndHour;
+    settings.workdayHours = normalized.workdayHours;
   }
   glass = !!settings.glass;
   locked = !!settings.locked;
   if (!skipStartupRegistration) configureLoginItem(settings.startAtLogin);
   if (mainWindow) {
-    mainWindow.setAlwaysOnTop(!!settings.pinned, settings.pinned ? "floating" : "normal");
+    if (locked) applyLockedDesktopLayer(true);
+    else {
+      applyLockedDesktopLayer(false);
+      mainWindow.setAlwaysOnTop(!!settings.pinned, settings.pinned ? "floating" : "normal");
+    }
     mainWindow.webContents.send("window:glass-changed", glass);
     mainWindow.webContents.send("window:lock-changed", locked);
   }

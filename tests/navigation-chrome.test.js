@@ -67,6 +67,21 @@ assert.ok(app.includes("expandWindowForView"));
 assert.ok(app.includes("bindFocusViewMenu"));
 assert.ok(app.includes("toggleMaximize"));
 assert.ok(app.includes("updateMaximizeChrome"));
+assert.match(
+  app,
+  /function bindTopbarWindowChrome/,
+  "topbar double-click must toggle adaptive / standard window size"
+);
+assert.match(
+  app,
+  /addEventListener\("dblclick"/,
+  "topbar chrome must listen for double-click maximize"
+);
+assert.match(
+  main,
+  /function standardWindowBounds|STANDARD_WINDOW_WIDTH\s*=\s*1380/,
+  "restore size must use the standard 1380x900 window"
+);
 assert.ok(html.includes('id="taskPanelToggle"'));
 assert.ok(html.includes("shell-only-focus"));
 assert.ok(html.includes('id="headerMoreButton"'));

@@ -416,8 +416,53 @@ assert.match(
 );
 assert.match(
   html,
-  /id="settingWorkStartHour"/,
-  "settings should expose work-hour start control"
+  /id="settingMorningStart"/,
+  "settings should expose morning work-hour start control"
+);
+assert.match(
+  html,
+  /id="settingAfternoonEnd"/,
+  "settings should expose afternoon work-hour end control"
+);
+assert.match(
+  html,
+  /class="settings-shell"/,
+  "settings dialog should use sidebar + content shell"
+);
+assert.match(
+  html,
+  /data-settings-pane="account"/,
+  "settings nav should include account pane"
+);
+assert.match(
+  html,
+  /data-settings-pane="basic"/,
+  "settings nav should include basic pane"
+);
+assert.match(
+  html,
+  /id="settingProfileName"/,
+  "account settings should expose profile display name"
+);
+assert.doesNotMatch(
+  html,
+  /id="settingCompact"/,
+  "compact display toggle should be removed from settings"
+);
+assert.match(
+  app,
+  /function selectSettingsPane/,
+  "settings should switch panes from the left nav"
+);
+assert.match(
+  fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8"),
+  /sendWindowToDesktopLayer|HWND|SetWindowPos/,
+  "low-interference mode should pin the window under other apps"
+);
+assert.match(
+  fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8"),
+  /ipcMain\.on\("window:resize-by"[\s\S]*if \(!mainWindow\) return/,
+  "low-interference mode must still allow window resize"
 );
 assert.match(
   app,

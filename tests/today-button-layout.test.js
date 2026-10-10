@@ -85,13 +85,13 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.topbar\s*\{\s*-webkit-app-region:\s*drag/s,
-  "topbar must remain the desktop window drag surface"
+  /\.topbar\s*\{\s*-webkit-app-region:\s*no-drag/s,
+  "transparent frameless topbar uses custom JS drag instead of native app-region drag"
 );
-assert.doesNotMatch(
-  styles,
-  /\.topbar \.date-controls,\s*\.topbar \.header-actions|\.topbar button,[^}]*\.topbar \.header-actions/s,
-  "only interactive controls should disable drag, not entire header clusters"
+assert.match(
+  app,
+  /function bindTopbarWindowChrome/,
+  "topbar must bind custom drag and double-click maximize"
 );
 assert.match(
   styles,
