@@ -147,7 +147,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   ].forEach(id => el[id] = document.getElementById(id));
 
   await initPersistentStorage();
+  await loadDesktopProfileName();
   migrateData();
+  const startupOwnerMigrations = applyProfileName(state.profileName, { migrateOwners: true });
   ensureEntryTaskLinks();
   ensureRecurringTasksForVisibleRange();
   persistentWritesEnabled = true;
@@ -163,7 +165,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   bindFocusViewMenu();
   applyTaskPanelWidth(loadTaskPanelWidth());
   bindWorkspaceSplitResize();
-  initDesktop();
+  await initDesktop();
+  if (startupOwnerMigrations > 0) saveData();
   bindUpdateProgress();
   renderAppVersion();
   render();
@@ -184,9 +187,23 @@ async function initPersistentStorage() {
   if (!persisted || typeof persisted !== "object") return;
   const localCount = countPlannerRecords(state.data);
   const persistedCount = countPlannerRecords(persisted);
-  if (persistedCount > localCount) {
+  // Prefer the desktop file when it has equal/more records so a stale
+  // localStorage copy of「我」cannot overwrite an already-migrated disk store.
+  if (persistedCount > localCount || (persistedCount > 0 && persistedCount === localCount)) {
     state.data = persisted;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+  }
+}
+
+async function loadDesktopProfileName() {
+  if (!window.desktopAPI?.getSettings) return "";
+  try {
+    const settings = await window.desktopAPI.getSettings();
+    const name = String(settings?.profileName || "").trim().slice(0, 40);
+    state.profileName = name;
+    return name;
+  } catch {
+    return "";
   }
 }
 
@@ -1295,7 +1312,10 @@ async function initDesktop() {
   const desktopSettings = await window.desktopAPI.getSettings?.();
   document.body.classList.remove("compact");
   localStorage.removeItem("today-planner-compact");
-  if (desktopSettings?.profileName != null) applyProfileName(desktopSettings.profileName, { migrateOwners: false });
+  if (desktopSettings?.profileName != null) {
+    const migrated = applyProfileName(desktopSettings.profileName, { migrateOwners: true });
+    if (migrated > 0) saveData();
+  }
   if (desktopSettings) applyStoredWorkHours(desktopSettings);
   const pinned = await window.desktopAPI.getPinned();
   document.body.classList.toggle("pinned", pinned);
@@ -1517,6 +1537,10 @@ function getDefaultOwner() {
   return name || "我";
 }
 
+function isLegacySelfOwner(owner) {
+  return String(owner || "").trim() === "我";
+}
+
 function applyProfileName(name, { migrateOwners = false } = {}) {
   const next = String(name || "").trim().slice(0, 40);
   state.profileName = next;
@@ -1527,14 +1551,14 @@ function applyProfileName(name, { migrateOwners = false } = {}) {
   if (!migrateOwners || !next || next === "我") return 0;
   let changed = 0;
   getAllTasks().forEach(({ task }) => {
-    if (String(task.owner || "").trim() === "我") {
+    if (isLegacySelfOwner(task.owner)) {
       task.owner = next;
       changed += 1;
     }
   });
   Object.values(state.data || {}).forEach(day => {
     (day.entries || []).forEach(entry => {
-      if (String(entry.owner || "").trim() === "我") {
+      if (isLegacySelfOwner(entry.owner)) {
         entry.owner = next;
         changed += 1;
       }
