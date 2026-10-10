@@ -62,6 +62,10 @@ const state = {
   projectViewNeedsAnchor: false,
   projectCollapsedGroups: new Set(),
   ganttCollapsedGroups: new Set(),
+  ganttArrangeConfig: null,
+  ganttArrangePreview: null,
+  ganttArrangeAbort: null,
+  ganttArrangeKeepOpen: false,
   projectCollapsedSections: new Set(),
   projectCollapsedTasks: new Set(),
   todoCollapsedSections: new Set(),
@@ -85,6 +89,9 @@ let taskListScrollBarTimer;
 let persistentWritesEnabled = false;
 let pendingEntrySave = null;
 let pendingCloseTaskId = null;
+let pendingSuccessorRollback = null;
+let successorDialogCommitted = false;
+let syncingAttentionMode = false;
 let taskListSearchTimer = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -93,21 +100,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     "appVersionBadge",
     "taskPanel", "todayButton", "weekDays", "taskCount", "taskList", "taskListSearch", "taskSearchWrap", "continueYesterdayButton", "unplannedCount", "openCount", "doneCount", "closedCount", "memoCount", "meetingCount", "exportButton",
     "plannedHours", "progressLabel", "progressBar", "scheduleTitle", "loggedHours", "freeHours",
-    "timeline", "timelineWrap", "projectGanttChrome", "quickAddButton", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "workspaceSplitHandle", "viewSwitcher",
+    "timeline", "timelineWrap", "projectGanttChrome", "quickAddButton", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "panelAiImageInput", "workspaceSplitHandle", "viewSwitcher",
     "taskTabs", "meetingTabs", "allCount", "meetingAllCount", "meetingPlannedCount", "meetingDoingCount", "meetingEndedCount",
     "taskViewTitle", "listKindTodo", "listKindMeeting", "listKindMenu", "listKindMenuButton", "listKindMenuLabel", "listKindMenuPanel", "taskDialog", "taskEditForm", "taskDialogEyebrow", "taskDialogTitle",
     "taskDetailSummary", "followUpDraftHint", "taskDialogScroll", "taskDialogCloseButton", "taskDialogCancelButton",
+    "taskCreateKindField", "taskCreateKind",
     "taskTabsWrap", "taskTabsMore", "taskTabsMoreButton", "taskTabsMoreMenu",
-    "taskTitleInput", "taskDueDateTime", "taskOwner", "taskParentField", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
+    "taskTitleInput", "taskDueDateTime", "taskMeetingEndField", "taskMeetingEndDateTime", "taskOwner", "taskParentField", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
     "taskProgress", "taskProgressValue", "taskStatus", "taskMonthlyRecurring", "taskRecurringUntil",
-    "taskFollowUpOption", "taskFollowUpTracking",
+    "taskFollowUpOption", "taskFollowUpTracking", "taskFollowUpTrackingLabel",
     "recurringOptions", "taskActualStart", "taskActualEnd",
     "taskBusinessBackground", "taskProblemReason", "taskDeliveryNote", "businessBackgroundLabel",
     "problemReasonLabel", "taskDescription", "taskTitleField", "taskDueDateField", "taskDeliveryField",
     "taskSubtaskList", "taskSubtaskDraftInput", "taskSubtasksSection",
     "deleteTaskButton", "closeTaskButton", "mergeTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle", "entryType",
     "entryLinkConfirmDialog", "entryLinkConfirmTitle", "entryLinkConfirmMessage", "entryLinkConfirmOptions", "entryLinkConfirmCancel", "entryLinkConfirmCreate",
-    "taskCloseConfirmDialog", "taskCloseConfirmTitle", "taskCloseConfirmMessage", "taskCloseCompletedAt", "taskCloseCompletionNote", "taskCloseOnlyButton", "taskCloseFollowUpButton", "taskCloseSuccessorButton",
+    "taskCloseConfirmDialog", "taskCloseConfirmTitle", "taskCloseConfirmMessage", "taskCloseCompletedAt", "taskCloseCompletionNote", "taskCloseOnlyButton", "taskCloseSuccessorButton",
     "taskMergeDialog", "taskMergeForm", "taskMergeMessage", "taskMergeTarget", "taskMergeSearch", "taskMergeOptions",
     "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryOwner", "entryNote", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
@@ -115,7 +123,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "exportDialog", "exportForm", "exportFormat", "importButton", "minimizeWindow", "maximizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiExportTablesButton", "aiQuickActions",
     "aiChatLog", "aiAttachment", "aiAttachmentPreview", "aiAttachmentClear", "aiImageInput", "aiAttachImageButton", "aiSubmitButton", "aiScreenshotHintButton",
     "taskAiDropzone", "taskAiDropzoneBody", "taskAiDropzoneStatus", "taskAiImageInput", "taskAiPickImageButton",
-    "aiBatchDraftDialog", "aiBatchDraftForm", "aiBatchDraftTitle", "aiBatchDraftHint", "aiBatchDraftList", "aiBatchSharedParent", "aiBatchApplyParentButton", "aiBatchSelectAllButton", "aiBatchCreateButton",
+    "aiBatchDraftDialog", "aiBatchDraftForm", "aiBatchDraftTitle", "aiBatchDraftHint", "aiBatchDraftList", "aiBatchSelectAllButton", "aiBatchCreateButton",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
     "taskPanelToggle",
     "focusViewChrome", "focusViewButton", "focusViewMenu",
@@ -207,6 +215,7 @@ function migrateData() {
       task.recurrenceGroupId ||= "";
       task.followUpFromTaskId ||= "";
       task.memoFromTaskId ||= "";
+      task.setupIncomplete = Boolean(task.setupIncomplete);
       if (task.status === "closed") {
         task.status = "done";
         task.completedAt ||= task.updatedAt || new Date().toISOString();
@@ -285,19 +294,29 @@ function bindEvents() {
     el.exportDialog.close();
     exportAllData(el.exportFormat.value);
   });
-  el.quickAddButton?.addEventListener("click", () => openTaskDialog());
+  el.quickAddButton?.addEventListener("click", () => openNewFromQuickAdd());
   el.quickTaskForm.addEventListener("submit", event => {
     event.preventDefault();
-    openNewTaskFromQuickAdd();
+    openNewFromQuickAdd();
   });
   el.taskAddTrigger?.addEventListener("click", event => {
     event.preventDefault();
-    openNewTaskFromQuickAdd();
+    event.stopPropagation();
+    openNewFromQuickAdd();
   });
   el.quickTaskInput?.addEventListener("keydown", event => {
     if (event.key !== "Enter") return;
     event.preventDefault();
-    openNewTaskFromQuickAdd();
+    openNewFromQuickAdd();
+  });
+  el.taskCreateKind?.addEventListener("change", () => syncTaskCreateKindUi());
+  el.panelAiImageInput?.addEventListener("change", async () => {
+    const file = el.panelAiImageInput.files?.[0];
+    el.panelAiImageInput.value = "";
+    if (file) await extractAndCreateTaskFromImage({ file, source: "task-dialog" });
+  });
+  el.taskPanel?.addEventListener("paste", event => {
+    handlePanelScreenshotPaste(event);
   });
 
   el.viewSwitcher.addEventListener("click", event => {
@@ -383,7 +402,6 @@ function bindEvents() {
       el.taskTabs.querySelectorAll("button").forEach(item => item.classList.toggle("active", item.dataset.filter === "all"));
     }
     renderTasks();
-    if (state.taskView !== "project") renderSchedule();
   });
 
   el.listKindTodo?.addEventListener("click", () => applyListKind("todo"));
@@ -499,6 +517,8 @@ function bindEvents() {
     closeDialogById("taskDialog");
   });
   el.taskDialog?.addEventListener("close", () => {
+    if (!successorDialogCommitted) abandonPendingSuccessorRollback();
+    successorDialogCommitted = false;
     if (suppressParentReviewAdvance) return;
     if (parentReviewAdvanceOnClose) {
       parentReviewAdvanceOnClose = false;
@@ -513,8 +533,8 @@ function bindEvents() {
   el.deleteTaskButton.addEventListener("click", deleteEditingTask);
   el.closeTaskButton.addEventListener("click", closeEditingTask);
   el.taskCloseOnlyButton?.addEventListener("click", () => confirmCloseTaskChoice("only"));
-  el.taskCloseFollowUpButton?.addEventListener("click", () => confirmCloseTaskChoice("tracking"));
   el.taskCloseSuccessorButton?.addEventListener("click", () => confirmCloseTaskChoice("successor"));
+  el.taskFollowUpTracking?.addEventListener("change", () => syncAttentionMode("checkbox"));
   el.taskCloseConfirmDialog?.addEventListener("close", () => {
     const cancelledId = pendingCloseTaskId;
     pendingCloseTaskId = null;
@@ -525,7 +545,10 @@ function bindEvents() {
     }
   });
   el.taskProgress.addEventListener("input", () => el.taskProgressValue.textContent = `${el.taskProgress.value}%`);
-  el.taskStatus.addEventListener("change", updateProgressAvailability);
+  el.taskStatus.addEventListener("change", () => {
+    syncAttentionMode("status");
+    updateProgressAvailability();
+  });
   el.taskParent.addEventListener("change", updateParentRequirements);
   bindTaskParentCombobox();
   el.taskPriority.addEventListener("change", () => {
@@ -538,10 +561,17 @@ function bindEvents() {
     updateProgressAvailability();
   });
   el.taskMonthlyRecurring?.addEventListener("change", updateRecurringOptions);
-  [el.taskDueDateTime, el.taskActualStart, el.taskActualEnd].forEach(enableNativePicker);
-  bindWorkHourDateTimeDefault(el.taskDueDateTime, "end");
+  [el.taskActualStart, el.taskActualEnd].forEach(enableNativePicker);
+  bindFlexibleDateTimeInput(el.taskDueDateTime, { kind: () => (isCreateMeetingKind() ? "start" : "end") });
+  bindFlexibleDateTimeInput(el.taskMeetingEndDateTime, { kind: "end" });
   bindWorkHourDateTimeDefault(el.taskActualStart, "start");
   bindWorkHourDateTimeDefault(el.taskActualEnd, "end");
+  document.querySelectorAll("[data-datetime-target]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      openDateTimePickerForInput(button.dataset.datetimeTarget);
+    });
+  });
   el.taskDueDateTime?.addEventListener("change", () => {
     ensureDueDateTimeUsesWorkEnd();
     const dueDate = getTaskDueParts().dueDate;
@@ -550,6 +580,16 @@ function bindEvents() {
       if (!currentUntil || currentUntil < dueDate.slice(0, 7)) {
         el.taskRecurringUntil.value = defaultRecurringUntil(dueDate);
       }
+    }
+    if (!isCreateMeetingKind() || !el.taskMeetingEndDateTime) return;
+    const startParts = parseDateTimeLocalParts(el.taskDueDateTime.value || "");
+    const endParts = parseDateTimeLocalParts(el.taskMeetingEndDateTime.value || "");
+    if (!startParts.dateKey || startParts.hour == null) return;
+    const endEmpty = !String(el.taskMeetingEndDateTime.value || "").trim();
+    const endInvalid = endParts.dateKey === startParts.dateKey && endParts.hour != null && endParts.hour <= startParts.hour;
+    if (endEmpty || endInvalid) {
+      el.taskMeetingEndDateTime.value = "";
+      ensureMeetingEndDefault();
     }
   });
   el.taskSubtaskDraftInput?.addEventListener("keydown", event => {
@@ -1766,62 +1806,156 @@ function compressImageToDataUrl(fileOrBlob, { maxEdge = 1600, maxBytes = 1.2 * 1
   });
 }
 
+function isSetupIncompleteTask(task) {
+  return Boolean(task?.setupIncomplete);
+}
+
+function promoteSetupIncompleteSections(sections = []) {
+  const incomplete = [];
+  const seen = new Set();
+  sections.forEach(section => {
+    section.tasks = (section.tasks || []).filter(item => {
+      if (!item || item.entryId || item.kind === "meeting") return true;
+      if (!isSetupIncompleteTask(item)) return true;
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        incomplete.push(item);
+      }
+      return false;
+    });
+  });
+  const next = sections.filter(section => section.tasks.length);
+  if (incomplete.length) {
+    incomplete.sort((a, b) => String(b.createdAtIso || "").localeCompare(String(a.createdAtIso || "")));
+    next.unshift({ key: "setupIncomplete", label: "待完善", tasks: incomplete });
+  }
+  return next;
+}
+
+function resolveAiDraftKind(draft = {}) {
+  const raw = String(draft.kind || "").trim().toLowerCase();
+  if (raw === "meeting") return "meeting";
+  if (raw === "task") return "task";
+  if (typeof AiTaskDraftPolicy?.normalizeItemKind === "function") {
+    return AiTaskDraftPolicy.normalizeItemKind(draft, draft.title);
+  }
+  return "task";
+}
+
 function createTaskFromAiDraft(draft = {}, { persist = true } = {}) {
   const now = new Date();
-  const dueDate = String(draft.dueDate || "").trim();
-  const dueTime = String(draft.dueTime || "").trim();
-  const parentId = String(draft.parentId || "").trim();
+  // Screenshot / batch create only commits the title; user fills the rest later.
   const task = {
     id: crypto.randomUUID(),
     title: String(draft.title || "").trim().slice(0, 80),
-    dueDate,
-    dueTime: dueDate ? (dueTime || defaultWorkEndTime()) : "",
-    owner: String(draft.owner || "我").trim().slice(0, 30) || "我",
-    parentId,
+    dueDate: "",
+    dueTime: "",
+    owner: "我",
+    parentId: "",
     description: "",
-    priority: draft.priority || "general_daily",
+    priority: "general_daily",
     progress: 0,
     status: "planned",
     startedAt: "",
     startOverrideAt: "",
     completedAt: "",
-    businessBackground: String(draft.businessBackground || "").trim().slice(0, 800),
+    businessBackground: "",
     problemReason: "",
     deliveryNote: "",
     recurrence: null,
     recurrenceGroupId: "",
     createdFromAiScreenshot: true,
+    setupIncomplete: true,
     createdAtIso: now.toISOString(),
     updatedAt: now.toISOString(),
     createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
   };
   if (!task.title) throw new Error("截图中未能识别出待办名称");
-  if (task.parentId && !findTask(task.parentId)?.task) task.parentId = "";
-  const dayKey = dueDate || state.selectedDate;
-  getDay(dayKey).tasks.unshift(task);
+  getDay(state.selectedDate).tasks.unshift(task);
   if (persist) {
-    state.filter = dueDate ? "planned" : "unplanned";
+    state.listKind = "todo";
+    state.filter = "all";
     TodoListPolicy.saveFilter?.(state.filter);
     saveData();
     render();
   }
-  return task;
+  return { type: "task", task, title: task.title };
 }
 
-function createTasksFromAiDrafts(drafts = []) {
+function createMeetingFromAiDraft(draft = {}, { persist = true } = {}) {
+  const title = String(draft.title || "").trim().slice(0, 80);
+  if (!title) throw new Error("截图中未能识别出会议名称");
+  const dateKey = String(draft.dueDate || "").trim() || state.selectedDate;
+  const workStart = Number(ScheduleHoursPolicy?.DEFAULT_WORK_START ?? 9);
+  const dueTime = String(draft.dueTime || "").trim();
+  let start = workStart;
+  if (dueTime) {
+    const hour = Number(dueTime.slice(0, 2));
+    if (Number.isFinite(hour)) start = Math.max(0, Math.min(21, hour));
+  }
+  const end = Math.min(22, start + 1);
+  const entry = {
+    id: crypto.randomUUID(),
+    title,
+    entryType: "calendar",
+    start,
+    end,
+    owner: String(draft.owner || "").trim().slice(0, 80),
+    note: String(draft.businessBackground || "").trim().slice(0, 800),
+    color: "amber",
+    taskId: "",
+    createdFromAiScreenshot: true
+  };
+  getDay(dateKey).entries.push(entry);
+  if (persist) {
+    state.listKind = "meeting";
+    state.meetingFilter = "all";
+    saveData();
+    render();
+  }
+  return { type: "meeting", entry, dateKey, title };
+}
+
+function createItemsFromAiDrafts(drafts = []) {
   const created = [];
   drafts.forEach(draft => {
     try {
-      created.push(createTaskFromAiDraft(draft, { persist: false }));
+      const kind = resolveAiDraftKind(draft);
+      if (kind === "meeting") created.push(createMeetingFromAiDraft(draft, { persist: false }));
+      else created.push(createTaskFromAiDraft(draft, { persist: false }));
     } catch {}
   });
-  if (!created.length) throw new Error("没有可创建的待办");
-  const hasDue = created.some(task => task.dueDate);
-  state.filter = hasDue ? "planned" : "unplanned";
-  TodoListPolicy.saveFilter?.(state.filter);
+  if (!created.length) throw new Error("没有可创建的事项");
+  const hasTask = created.some(item => item.type === "task");
+  const hasMeeting = created.some(item => item.type === "meeting");
+  if (hasTask && !hasMeeting) {
+    state.listKind = "todo";
+    state.filter = "all";
+    TodoListPolicy.saveFilter?.(state.filter);
+  } else if (hasMeeting && !hasTask) {
+    state.listKind = "meeting";
+    state.meetingFilter = "all";
+  } else {
+    state.listKind = "todo";
+    state.filter = "all";
+    TodoListPolicy.saveFilter?.(state.filter);
+  }
   saveData();
   render();
   return created;
+}
+
+function createTasksFromAiDrafts(drafts = []) {
+  return createItemsFromAiDrafts(drafts);
+}
+
+function summarizeAiCreatedItems(created = []) {
+  const tasks = created.filter(item => item.type === "task");
+  const meetings = created.filter(item => item.type === "meeting");
+  const parts = [];
+  if (tasks.length) parts.push(`${tasks.length} 条待办`);
+  if (meetings.length) parts.push(`${meetings.length} 条会议`);
+  return parts.join("、") || "0 条";
 }
 
 let pendingAiBatchDrafts = [];
@@ -1862,14 +1996,14 @@ function openNextParentReviewTask() {
 }
 
 function priorityOptionsHtml(selected = "general_daily") {
+  const safeSelected = selected === "follow_up" ? "general_daily" : selected;
   return [
     ["general_daily", "一般日常"],
     ["kpi", "KPI"],
-    ["follow_up", "跟踪关注"],
     ["important_urgent", "重要紧急"],
     ["paused", "中止暂停"]
   ].map(([value, label]) =>
-    `<option value="${value}"${value === selected ? " selected" : ""}>${label}</option>`
+    `<option value="${value}"${value === safeSelected ? " selected" : ""}>${label}</option>`
   ).join("");
 }
 
@@ -1930,52 +2064,33 @@ function syncAiBatchSharedParentOptions(preferredIds = []) {
 }
 
 function openAiBatchDraftDialog(drafts = [], source = "task-dialog") {
-  pendingAiBatchDrafts = drafts.map(draft => {
-    const title = String(draft.title || "").trim();
-    const priority = draft.priority || "general_daily";
-    const suggestion = suggestAiBatchParent(title, priority);
-    const parentId = String(draft.parentId || suggestion?.parentId || "").trim();
-    return {
-      ...draft,
-      title,
-      priority,
-      selected: true,
-      parentId,
-      suggestedParentId: suggestion?.parentId || "",
-      suggestedParentHint: suggestion
-        ? `建议：${suggestion.parent?.title || "上级"}（参考历史「${suggestion.sampleTitle || title}」）`
-        : ""
-    };
-  });
+  pendingAiBatchDrafts = drafts.map(draft => ({
+    kind: resolveAiDraftKind(draft),
+    title: String(draft.title || "").trim(),
+    dueDate: draft.dueDate || "",
+    dueTime: draft.dueTime || "",
+    owner: draft.owner || "",
+    businessBackground: draft.businessBackground || "",
+    confidence: draft.confidence,
+    selected: true
+  }));
   pendingAiBatchSource = source;
   if (el.aiBatchDraftTitle) {
     el.aiBatchDraftTitle.textContent = drafts.length > 1
-      ? `确认 ${drafts.length} 条待办`
-      : "确认待办";
+      ? `确认 ${drafts.length} 条事项`
+      : "确认事项";
   }
   if (el.aiBatchDraftHint) {
-    el.aiBatchDraftHint.textContent = drafts.length > 1
-      ? "可勾选、修改并选择上级后一次创建。上级已按历史同类任务预填，可改。"
-      : "可修改并选择上级后创建。上级已按历史同类任务预填，可改。";
+    el.aiBatchDraftHint.textContent = "请核对名称与类型（任务 / 会议）。任务会进待办顶部待完善；会议会写入日程。";
   }
-  const preferredIds = pendingAiBatchDrafts.map(draft => draft.parentId).filter(Boolean);
-  syncAiBatchSharedParentOptions(preferredIds);
   renderAiBatchDraftList();
   el.aiBatchDraftDialog?.showModal();
 }
 
-function draftDueDateTimeValue(draft = {}) {
-  const dueDate = String(draft.dueDate || "").trim();
-  if (!dueDate) return "";
-  const dueTime = String(draft.dueTime || "").trim() || defaultWorkEndTime();
-  return `${dueDate}T${dueTime.length === 5 ? dueTime : String(dueTime).slice(0, 5)}`;
-}
-
 function renderAiBatchDraftList() {
   if (!el.aiBatchDraftList) return;
-  const preferredIds = pendingAiBatchDrafts.map(draft => draft.parentId || draft.suggestedParentId).filter(Boolean);
   el.aiBatchDraftList.innerHTML = pendingAiBatchDrafts.map((draft, index) => `
-    <section class="ai-batch-card" data-index="${index}">
+    <section class="ai-batch-card ai-batch-card-title-only" data-index="${index}">
       <div class="ai-batch-card-top">
         <label class="ai-batch-select">
           <input type="checkbox" data-field="selected" ${draft.selected ? "checked" : ""} />
@@ -1983,71 +2098,16 @@ function renderAiBatchDraftList() {
         </label>
         <span class="form-hint">把握 ${Math.round((Number(draft.confidence) || 0) * 100)}%</span>
       </div>
-      <label><span>待办名称</span><input type="text" data-field="title" maxlength="80" value="${escapeHtml(draft.title || "")}" /></label>
       <label>
-        <span>上级任务</span>
-        <select data-field="parentId">${aiBatchParentOptionsHtml(draft.parentId || "", preferredIds)}</select>
+        <span>类型</span>
+        <select data-field="kind">
+          <option value="task"${draft.kind !== "meeting" ? " selected" : ""}>任务</option>
+          <option value="meeting"${draft.kind === "meeting" ? " selected" : ""}>会议</option>
+        </select>
       </label>
-      ${draft.suggestedParentHint ? `<p class="ai-batch-parent-hint">${escapeHtml(draft.suggestedParentHint)}</p>` : ""}
-      <label>
-        <span>目标日期时间</span>
-        <input type="datetime-local" data-field="dueDateTime" step="60" value="${escapeHtml(draftDueDateTimeValue(draft))}" />
-      </label>
-      <div class="form-row">
-        <label><span>责任人</span><input type="text" data-field="owner" maxlength="30" value="${escapeHtml(draft.owner || "我")}" /></label>
-        <label><span>优先级</span><select data-field="priority">${priorityOptionsHtml(draft.priority || "general_daily")}</select></label>
-      </div>
-      <label><span>背景与说明</span><textarea data-field="businessBackground" maxlength="800">${escapeHtml(draft.businessBackground || "")}</textarea></label>
+      <label><span>名称</span><input type="text" data-field="title" maxlength="80" value="${escapeHtml(draft.title || "")}" /></label>
     </section>
   `).join("");
-  el.aiBatchDraftList.querySelectorAll('input[data-field="dueDateTime"]').forEach(input => {
-    bindWorkHourDateTimeDefault(input, "end");
-  });
-  el.aiBatchDraftList.querySelectorAll('input[data-field="title"]').forEach(input => {
-    input.addEventListener("change", () => refreshAiBatchCardParentSuggestion(input.closest(".ai-batch-card")));
-  });
-  el.aiBatchDraftList.querySelectorAll('select[data-field="priority"]').forEach(select => {
-    select.addEventListener("change", () => refreshAiBatchCardParentSuggestion(select.closest(".ai-batch-card")));
-  });
-}
-
-function refreshAiBatchCardParentSuggestion(card) {
-  if (!card) return;
-  const index = Number(card.dataset.index);
-  const draft = pendingAiBatchDrafts[index];
-  if (!draft) return;
-  const titleInput = card.querySelector('[data-field="title"]');
-  const prioritySelect = card.querySelector('[data-field="priority"]');
-  const parentSelect = card.querySelector('[data-field="parentId"]');
-  if (!titleInput || !parentSelect) return;
-  const title = String(titleInput.value || "").trim();
-  const priority = String(prioritySelect?.value || draft.priority || "general_daily");
-  const suggestion = suggestAiBatchParent(title, priority);
-  const previousSuggested = draft.suggestedParentId || "";
-  const keepManual = parentSelect.value && parentSelect.value !== previousSuggested;
-  draft.title = title;
-  draft.priority = priority;
-  draft.suggestedParentId = suggestion?.parentId || "";
-  draft.suggestedParentHint = suggestion
-    ? `建议：${suggestion.parent?.title || "上级"}（参考历史「${suggestion.sampleTitle || title}」）`
-    : "";
-  if (!keepManual) {
-    draft.parentId = suggestion?.parentId || "";
-    const preferredIds = pendingAiBatchDrafts.map(item => item.parentId || item.suggestedParentId).filter(Boolean);
-    parentSelect.innerHTML = aiBatchParentOptionsHtml(draft.parentId, preferredIds);
-    parentSelect.value = draft.parentId || "";
-  }
-  let hint = card.querySelector(".ai-batch-parent-hint");
-  if (draft.suggestedParentHint) {
-    if (!hint) {
-      hint = document.createElement("p");
-      hint.className = "ai-batch-parent-hint";
-      parentSelect.closest("label")?.after(hint);
-    }
-    hint.textContent = draft.suggestedParentHint;
-  } else if (hint) {
-    hint.remove();
-  }
 }
 
 function collectAiBatchDraftsFromForm() {
@@ -2056,19 +2116,17 @@ function collectAiBatchDraftsFromForm() {
     const read = field => card.querySelector(`[data-field="${field}"]`);
     const selected = Boolean(read("selected")?.checked);
     const title = String(read("title")?.value || "").trim().slice(0, 80);
-    const dueValue = String(read("dueDateTime")?.value || "").trim();
-    const [dueDate = "", timePart = ""] = dueValue.split("T");
-    const dueTime = timePart ? String(timePart).slice(0, 5) : "";
+    const index = Number(card.dataset.index);
+    const base = pendingAiBatchDrafts[index] || {};
     return {
       selected,
+      kind: String(read("kind")?.value || base.kind || "task") === "meeting" ? "meeting" : "task",
       title,
-      dueDate,
-      dueTime,
-      owner: String(read("owner")?.value || "我").trim().slice(0, 30) || "我",
-      priority: String(read("priority")?.value || "general_daily"),
-      parentId: String(read("parentId")?.value || "").trim(),
-      businessBackground: String(read("businessBackground")?.value || "").trim().slice(0, 800),
-      confidence: pendingAiBatchDrafts[Number(card.dataset.index)]?.confidence
+      dueDate: base.dueDate || "",
+      dueTime: base.dueTime || "",
+      owner: base.owner || "",
+      businessBackground: base.businessBackground || "",
+      confidence: base.confidence
     };
   }).filter(item => item.selected && item.title);
 }
@@ -2079,41 +2137,21 @@ function bindAiBatchDraftDialog() {
       input.checked = true;
     });
   });
-  el.aiBatchApplyParentButton?.addEventListener("click", () => {
-    const parentId = String(el.aiBatchSharedParent?.value || "").trim();
-    el.aiBatchDraftList?.querySelectorAll(".ai-batch-card").forEach(card => {
-      if (!card.querySelector('[data-field="selected"]')?.checked) return;
-      const select = card.querySelector('[data-field="parentId"]');
-      if (!select) return;
-      if (![...select.options].some(option => option.value === parentId)) {
-        select.innerHTML = aiBatchParentOptionsHtml(parentId, [parentId]);
-      }
-      select.value = parentId;
-      const index = Number(card.dataset.index);
-      if (pendingAiBatchDrafts[index]) pendingAiBatchDrafts[index].parentId = parentId;
-    });
-    showToast(parentId ? "已将统一上级应用到所选条目" : "已将所选条目设为顶层任务");
-  });
   el.aiBatchDraftForm?.addEventListener("submit", event => {
     event.preventDefault();
     const drafts = collectAiBatchDraftsFromForm();
     if (!drafts.length) {
-      showToast("请至少勾选一条有效待办");
+      showToast("请至少勾选一条有效事项");
       return;
     }
     try {
-      const created = createTasksFromAiDrafts(drafts);
+      const created = createItemsFromAiDrafts(drafts);
       el.aiBatchDraftDialog?.close();
-      const missingParent = created.filter(task => !task.parentId);
-      showToast(created.length > 1 ? `已创建 ${created.length} 条待办` : `已创建「${created[0].title}」`);
+      const summary = summarizeAiCreatedItems(created);
+      showToast(`已创建 ${summary}`);
       if (pendingAiBatchSource === "ai-dialog") {
-        appendAiChat("assistant", missingParent.length
-          ? `已批量创建 ${created.length} 条待办。其中 ${missingParent.length} 条尚未指定上级，将打开以便补充。`
-          : `已批量创建 ${created.length} 条待办，上级已按选择写入。`);
-        el.aiStatus.textContent = created.length > 1 ? `已创建 ${created.length} 条待办。` : "已从截图创建待办。";
-      }
-      if (missingParent.length) {
-        requestAnimationFrame(() => beginParentReviewQueue(missingParent));
+        appendAiChat("assistant", `已从截图创建 ${summary}。任务会置顶待完善；会议已写入对应日期日程。`);
+        el.aiStatus.textContent = `已创建 ${summary}。`;
       }
     } catch (error) {
       showToast(error?.message || "创建失败");
@@ -2134,10 +2172,10 @@ async function extractAndCreateTaskFromImage({ file = null, attachment = null, n
     return null;
   }
   aiExtractBusy = true;
-  if (source === "task-dialog") setTaskAiDropzoneStatus("正在识别截图中的待办…", "busy");
+  if (source === "task-dialog") setTaskAiDropzoneStatus("正在识别截图中的任务/会议…", "busy");
   else {
-    el.aiStatus.textContent = "正在识别截图中的待办…";
-    appendAiChat("user", note ? `${note}\n（附截图）` : "（附截图，请提取待办）");
+    el.aiStatus.textContent = "正在识别截图中的任务/会议…";
+    appendAiChat("user", note ? `${note}\n（附截图）` : "（附截图，请提取任务或会议）");
   }
   try {
     const image = attachment || await readImageAsAttachment(file);
@@ -2150,33 +2188,33 @@ async function extractAndCreateTaskFromImage({ file = null, attachment = null, n
     const drafts = Array.isArray(result?.drafts)
       ? result.drafts
       : (result?.draft ? [result.draft] : (result?.title ? [result] : []));
-    if (!drafts.length) throw new Error("截图中未能识别出待办");
+    if (!drafts.length) throw new Error("截图中未能识别出事项");
     if (el.taskDialog?.open) el.taskDialog.close();
     clearAiAttachment();
     if (source === "ai-dialog") el.aiPrompt.value = "";
     setTaskAiDropzoneStatus("");
     if (drafts.length === 1) {
-      const suggestion = suggestAiBatchParent(drafts[0].title, drafts[0].priority);
-      const task = createTaskFromAiDraft({
-        ...drafts[0],
-        parentId: drafts[0].parentId || suggestion?.parentId || ""
-      });
+      const created = createItemsFromAiDrafts([drafts[0]]);
+      const item = created[0];
       const confidence = Number(drafts[0].confidence);
       const hint = Number.isFinite(confidence) && confidence < 0.55 ? "（把握较低，请核对）" : "";
-      showToast(`已从截图创建「${task.title}」${hint}`);
-      if (source === "ai-dialog") {
-        appendAiChat("assistant", task.parentId
-          ? `已创建待办「${task.title}」，并按历史同类任务写入上级。`
-          : `已创建待办「${task.title}」。尚未匹配到上级，已打开编辑窗以便补充。`);
-        el.aiStatus.textContent = "已从截图创建待办。";
+      if (item.type === "meeting") {
+        showToast(`已创建会议「${item.title}」${hint}`);
+        if (source === "ai-dialog") {
+          appendAiChat("assistant", `已识别为会议并创建「${item.title}」，可在会议清单或日/周/月历中查看。`);
+          el.aiStatus.textContent = "已从截图创建会议。";
+        }
+      } else {
+        showToast(`已创建待办「${item.title}」，请到清单顶部补充信息${hint}`);
+        if (source === "ai-dialog") {
+          appendAiChat("assistant", `已识别为待办并创建「${item.title}」（仅名称）。已置顶并用黄色感叹号标记，点进去即可补充信息。`);
+          el.aiStatus.textContent = "已从截图创建待完善待办。";
+        }
       }
-      if (!task.parentId) {
-        requestAnimationFrame(() => beginParentReviewQueue([task]));
-      }
-      return [task];
+      return created;
     }
     if (source === "ai-dialog") {
-      appendAiChat("assistant", `识别到 ${drafts.length} 条待办，请勾选修改后创建。`);
+      appendAiChat("assistant", `识别到 ${drafts.length} 条事项（含任务/会议），请核对类型与名称后创建。`);
       el.aiStatus.textContent = `识别到 ${drafts.length} 条，请确认后创建。`;
     }
     openAiBatchDraftDialog(drafts, source);
@@ -2280,16 +2318,13 @@ function renderUnifiedTodoList() {
   const query = (state.taskListSearch || el.taskListSearch?.value || "").trim();
   const ownerSearch = TaskOptionPolicy.parseOwnerSearchQuery?.(query) || { ownerTokens: [], textQuery: query };
   const hasListSearch = Boolean(ownerSearch.textQuery || ownerSearch.ownerTokens?.length);
-  let visibleTasks = meetingMode
-    ? []
-    : allLeafTasks.filter(task => matchesUnifiedTaskFilter(task, state.filter));
-  if (hasListSearch && !meetingMode) {
-    const searchPool = state.filter === "memo" ? memoLeafTasks
-      : state.filter === "all" ? allLeafTasks
-        : workLeafTasks;
+  const overlayMode = hasListSearch || state.showContinueYesterdayOnly;
+
+  const searchAllTasks = () => {
+    let hits;
     if (ownerSearch.textQuery) {
-      visibleTasks = TaskOptionPolicy.searchTaskCandidates({
-        tasks: searchPool,
+      hits = TaskOptionPolicy.searchTaskCandidates({
+        tasks: allLeafTasks,
         query: ownerSearch.textQuery,
         selectedId: "",
         includeEnded: true,
@@ -2298,23 +2333,31 @@ function renderUnifiedTodoList() {
         dateText: task => task.dueDate || "未计划"
       }).map(item => item.task);
     } else {
-      // @-only: stay within the current status tab pool, then filter by owner.
-      visibleTasks = searchPool.filter(task => matchesUnifiedTaskFilter(task, state.filter));
+      hits = [...allLeafTasks];
     }
     if (ownerSearch.ownerTokens?.length) {
-      visibleTasks = visibleTasks.filter(task =>
+      hits = hits.filter(task =>
         TaskOptionPolicy.matchesOwnerTokens?.(task.owner, ownerSearch.ownerTokens)
       );
     }
+    return hits;
+  };
+
+  let visibleTasks = meetingMode && !overlayMode
+    ? []
+    : allLeafTasks.filter(task => matchesUnifiedTaskFilter(task, state.filter));
+  if (hasListSearch) {
+    visibleTasks = searchAllTasks();
   }
 
   syncListKindSwitch();
   syncTaskPanelDensity();
   el.taskList.className = "task-list unified-view";
   el.taskList.innerHTML = "";
-  el.taskPanel?.classList.toggle("is-meeting-list", meetingMode);
-  if (el.taskTabs) el.taskTabs.hidden = meetingMode;
-  if (el.meetingTabs) el.meetingTabs.hidden = !meetingMode;
+  el.taskPanel?.classList.toggle("is-meeting-list", meetingMode && !overlayMode);
+  el.taskPanel?.classList.toggle("is-overlay-list", overlayMode);
+  if (el.taskTabs) el.taskTabs.hidden = meetingMode || overlayMode;
+  if (el.meetingTabs) el.meetingTabs.hidden = !meetingMode || overlayMode;
   el.taskTabs?.querySelectorAll("button").forEach(item =>
     item.classList.toggle("active", item.dataset.filter === state.filter)
   );
@@ -2322,7 +2365,7 @@ function renderUnifiedTodoList() {
     item.classList.toggle("active", item.dataset.meetingFilter === state.meetingFilter)
   );
   el.continueYesterdayButton?.classList.toggle("active", state.showContinueYesterdayOnly);
-  if (meetingMode) {
+  if (meetingMode || overlayMode) {
     closeTaskTabsMoreMenu();
     if (el.taskTabsMore) el.taskTabsMore.hidden = true;
   } else {
@@ -2353,12 +2396,58 @@ function renderUnifiedTodoList() {
         return TaskOptionPolicy.matchesOwnerTokens?.(parentOwner, ownerSearch.ownerTokens);
       });
     }
-  } else if (!["all", "in_progress"].includes(state.filter)) {
+  } else if (!["all", "in_progress"].includes(state.filter) && !state.showContinueYesterdayOnly) {
     linkedWorkItems = [];
   }
 
   let sections;
-  if (meetingMode) {
+  if (hasListSearch) {
+    const taskHits = visibleTasks.filter(task => !isMemoReminderTask(task));
+    const memoHits = visibleTasks.filter(belongsInMemoList);
+    const meetingHits = getMeetingListItems({ query });
+    sections = [];
+    if (taskHits.length || linkedWorkItems.length) {
+      sections.push({
+        key: "search-tasks",
+        label: "待办",
+        tasks: [...taskHits, ...linkedWorkItems]
+      });
+    }
+    if (memoHits.length) {
+      sections.push({ key: "search-memo", label: "待跟踪", tasks: memoHits });
+    }
+    if (meetingHits.length) {
+      sections.push({
+        key: "search-meetings",
+        label: `会议（${meetingHits.length}）`,
+        tasks: meetingHits
+      });
+    }
+  } else if (state.showContinueYesterdayOnly) {
+    const groups = TodoListPolicy.buildTodoGroups({
+      tasks: workLeafTasks,
+      selectedDate: state.selectedDate,
+      yesterdayKey,
+      entriesByDate,
+      isOngoingTask,
+      isUnplannedTask,
+      hasChildTasks: taskId => hasChildTasks(taskId),
+      includeSections: true
+    });
+    const continueTasks = [
+      ...(groups.continueYesterday || []),
+      ...linkedWorkItems.filter(item => item.isFromYesterday)
+    ];
+    const yesterdayMeetings = getMeetingListItems({ recentDays: 2, futureDays: 0 })
+      .filter(item => item.dateKey === yesterdayKey);
+    sections = [];
+    if (continueTasks.length) {
+      sections.push({ key: "continueYesterday", label: "继续昨天", tasks: continueTasks });
+    }
+    if (yesterdayMeetings.length) {
+      sections.push({ key: "yesterday-meetings", label: "昨天的会议", tasks: yesterdayMeetings });
+    }
+  } else if (meetingMode) {
     const meetings = getMeetingListItems({ query }).filter(item =>
       state.meetingFilter === "all" || getMeetingPhase(item) === state.meetingFilter
     );
@@ -2377,15 +2466,13 @@ function renderUnifiedTodoList() {
       }]
       : [];
   } else if (state.filter === "memo") {
-    const memos = hasListSearch
-      ? visibleTasks.filter(belongsInMemoList)
-      : TodoListPolicy.sortByCreatedAtDesc(memoLeafTasks);
+    const memos = TodoListPolicy.sortByCreatedAtDesc(memoLeafTasks);
     sections = memos.length
       ? [{ key: "memo", label: "待跟踪", tasks: memos }]
       : [];
   } else {
     const workVisible = visibleTasks.filter(task => !isMemoReminderTask(task));
-    const includeSections = !hasListSearch && (state.filter === "all" || state.filter === "in_progress" || state.filter === "planned" || state.filter === "unplanned");
+    const includeSections = state.filter === "all" || state.filter === "in_progress" || state.filter === "planned" || state.filter === "unplanned";
     const orderedVisible = state.filter === "unplanned"
       ? TodoListPolicy.sortByCreatedAtDesc(workVisible)
       : orderedTasks(workVisible);
@@ -2401,7 +2488,7 @@ function renderUnifiedTodoList() {
     });
 
     sections = TodoListPolicy.flattenGroups(groups).filter(section => section.label || section.tasks.length);
-    if (!hasListSearch && state.filter === "all") {
+    if (state.filter === "all") {
       const remaining = sections.find(section => section.key === "remaining");
       if (remaining?.tasks.length) remaining.label = "其他任务";
       if (memoLeafTasks.length) {
@@ -2416,26 +2503,19 @@ function renderUnifiedTodoList() {
       }
     }
     if (linkedWorkItems.length) {
-      if (hasListSearch) {
-        sections = [{ key: "search", label: "搜索结果", tasks: [...workVisible, ...linkedWorkItems] }];
-      } else {
-        const yesterdayItems = linkedWorkItems.filter(item => item.isFromYesterday);
-        const earlierItems = linkedWorkItems.filter(item => !item.isFromYesterday);
-        const continueYesterday = sections.find(section => section.key === "continueYesterday");
-        const continueToday = sections.find(section => section.key === "continueToday");
-        if (continueYesterday) continueYesterday.tasks.push(...yesterdayItems);
-        else if (yesterdayItems.length) sections.unshift({ key: "continueYesterday", label: "继续昨天", tasks: yesterdayItems });
-        if (continueToday) continueToday.tasks.push(...earlierItems);
-        else if (earlierItems.length) sections.unshift({ key: "continueToday", label: "今日可继续", tasks: earlierItems });
-      }
+      const yesterdayItems = linkedWorkItems.filter(item => item.isFromYesterday);
+      const earlierItems = linkedWorkItems.filter(item => !item.isFromYesterday);
+      const continueYesterday = sections.find(section => section.key === "continueYesterday");
+      const continueToday = sections.find(section => section.key === "continueToday");
+      if (continueYesterday) continueYesterday.tasks.push(...yesterdayItems);
+      else if (yesterdayItems.length) sections.unshift({ key: "continueYesterday", label: "继续昨天", tasks: yesterdayItems });
+      if (continueToday) continueToday.tasks.push(...earlierItems);
+      else if (earlierItems.length) sections.unshift({ key: "continueToday", label: "今日可继续", tasks: earlierItems });
     }
-    if (state.showContinueYesterdayOnly) {
-      sections = [{
-        key: "continueYesterday",
-        label: "继续昨天",
-        tasks: [...groups.continueYesterday, ...linkedWorkItems.filter(item => item.isFromYesterday)]
-      }];
-    }
+  }
+
+  if (!overlayMode && !meetingMode) {
+    sections = promoteSetupIncompleteSections(sections);
   }
 
   const renderedCount = sections.reduce((sum, section) => sum + section.tasks.length, 0);
@@ -2443,14 +2523,15 @@ function renderUnifiedTodoList() {
 
   if (!renderedCount) {
     el.taskList.innerHTML = `<div class="empty-state">${state.showContinueYesterdayOnly
-      ? "昨天没有可继续的任务投入"
+      ? "昨天没有可继续的任务或会议"
       : hasListSearch
-        ? (meetingMode ? "没有匹配的会议" : "没有匹配的待办任务")
+        ? "没有匹配的待办或会议"
         : state.filter === "memo" && !meetingMode
-          ? "暂无待跟踪事项<br>可将优先级设为「跟踪关注」，或关闭任务时选择「关闭并跟踪」"
+          ? "暂无待跟踪事项<br>编辑待办时勾选「仅关注」（只提醒、不排投入），或关闭并新建后续后再勾选"
           : meetingMode
-            ? "当前分类没有会议<br>在右侧日程新建「会议 / 日程」后，会在这里统计投入工时"
+            ? `当前分类没有会议<br><button type="button" class="soft-button empty-create-meeting" id="emptyCreateMeeting">新建会议</button>`
             : "当前分类没有待办任务"}</div>`;
+    el.taskList.querySelector("#emptyCreateMeeting")?.addEventListener("click", () => openNewFromQuickAdd("", { kind: "meeting" }));
     return;
   }
 
@@ -3076,12 +3157,22 @@ function syncTaskPanelDensity() {
     const label = el.continueYesterdayButton.querySelector(".task-side-label");
     if (label) label.textContent = width < 230 ? "昨天" : "继续昨天";
   }
+  syncQuickAddChrome(width);
+}
+
+function syncQuickAddChrome(width = el.taskPanel?.clientWidth || state.taskPanelWidth || TASK_PANEL_WIDTH_DEFAULT) {
+  // Add / search / continue-yesterday stay the same in todo and meeting lists.
   if (el.quickTaskInput && document.activeElement !== el.quickTaskInput) {
-    // Add lives in the narrow heading side slot — keep placeholder short.
     el.quickTaskInput.placeholder = "新增";
+    el.quickTaskInput.setAttribute("aria-label", "新增标题后选择任务或会议");
+  }
+  if (el.taskAddTrigger) {
+    el.taskAddTrigger.title = "新建";
+    el.taskAddTrigger.setAttribute("aria-label", "新建");
   }
   if (el.taskListSearch && !(el.taskListSearch.value || "").trim()) {
-    el.taskListSearch.placeholder = width < 230 ? "搜索.../@" : "搜索.../@负责人";
+    el.taskListSearch.placeholder = width < 230 ? "搜索.../@" : "搜索.../@人";
+    el.taskListSearch.setAttribute("aria-label", "搜索全部待办与会议，或 @责任人 / @参会人");
   }
 }
 
@@ -3274,37 +3365,56 @@ function taskTimelineSpan(task, buckets, scale = "day") {
 }
 
 function createTaskCard(task) {
+  const incomplete = isSetupIncompleteTask(task);
   const visualStatus = isUnplannedTask(task) ? "unplanned" : task.status;
   const priority = task.priority || "general_daily";
-  const statusBadge = TaskStatusPolicy.listSideBadge(task);
-  const showPriority = !statusBadge && priority !== "general_daily";
+  const statusBadge = incomplete ? null : TaskStatusPolicy.listSideBadge(task);
+  const showPriority = !statusBadge && !incomplete && priority !== "general_daily";
   const sideBadge = statusBadge
     || (showPriority
       ? { className: `priority-mark ${priority}`, text: priorityShortLabel(priority), title: priorityLabel(priority) }
       : null);
+  // Badge already shows 跟踪 — don't repeat 「· 跟踪」 in the name.
+  const displayTitle = TaskStatusPolicy.listDisplayTitle?.(task) || String(task.title || "").trim();
   const card = document.createElement("article");
-  card.className = `task-card ${visualStatus}`;
+  card.className = `task-card ${visualStatus}${incomplete ? " setup-incomplete" : ""}`;
   card.dataset.taskId = task.id;
-  card.draggable = visualStatus === "unplanned"
+  card.draggable = !incomplete && (
+    visualStatus === "unplanned"
     || TaskStatusPolicy.isSchedulableStatus(task.status)
-    || isMemoReminderTask(task);
-  if (isMemoReminderTask(task)) card.title = `${task.title}（备忘：拖入日程将新建待办并开始投入）`;
-  else card.title = task.title;
+    || isMemoReminderTask(task)
+  );
+  if (incomplete) card.title = `${displayTitle}（待完善：点击补充上级、时间等信息）`;
+  else if (isMemoReminderTask(task)) card.title = `${displayTitle}（备忘：拖入日程将新建待办并开始投入）`;
+  else card.title = displayTitle;
   if (sideBadge) card.classList.add("has-priority");
-  card.innerHTML = `
-    <button class="task-check" type="button" title="标记完成" aria-label="标记完成"></button>
-    <div class="task-body">
-      <strong>${escapeHtml(task.title)}</strong>
-    </div>
-    ${sideBadge ? `<span class="${sideBadge.className}" title="${escapeHtml(sideBadge.title)}">${escapeHtml(sideBadge.text)}</span>` : ""}`;
+  card.innerHTML = incomplete
+    ? `<button class="task-setup-warning" type="button" title="待完善信息，点击补充" aria-label="待完善信息">
+        <span class="task-setup-warning-mark" aria-hidden="true">!</span>
+      </button>
+      <div class="task-body">
+        <strong>${escapeHtml(displayTitle)}</strong>
+      </div>`
+    : `<button class="task-check" type="button" title="标记完成" aria-label="标记完成"></button>
+      <div class="task-body">
+        <strong>${escapeHtml(displayTitle)}</strong>
+      </div>
+      ${sideBadge ? `<span class="${sideBadge.className}" title="${escapeHtml(sideBadge.title)}">${escapeHtml(sideBadge.text)}</span>` : ""}`;
 
-  card.querySelector(".task-check").addEventListener("click", event => {
-    event.stopPropagation();
-    requestTaskCompletion(task);
-  });
+  if (incomplete) {
+    card.querySelector(".task-setup-warning")?.addEventListener("click", event => {
+      event.stopPropagation();
+      openTaskDialog(task, { mode: "setupIncomplete" });
+    });
+  } else {
+    card.querySelector(".task-check")?.addEventListener("click", event => {
+      event.stopPropagation();
+      requestTaskCompletion(task);
+    });
+  }
   card.addEventListener("click", event => {
-    if (event.target.closest(".task-check")) return;
-    openTaskDialog(task);
+    if (event.target.closest(".task-check, .task-setup-warning")) return;
+    openTaskDialog(task, incomplete ? { mode: "setupIncomplete" } : {});
   });
   card.addEventListener("dragstart", event => {
     card.classList.add("dragging");
@@ -3530,7 +3640,6 @@ function renderMonthCalendar() {
 }
 
 function restoreTaskStatusOptions(task) {
-  const priority = el.taskPriority?.value || task?.priority || "general_daily";
   let currentStatus = task?.status || el.taskStatus?.value || "planned";
   if (currentStatus === "closed") currentStatus = "done";
   // Automatic statuses must stay selectable when they are the current value;
@@ -3538,26 +3647,16 @@ function restoreTaskStatusOptions(task) {
   if (!task?.completedAt && currentStatus === "done" && !TaskStatusPolicy.isEndedStatus(task?.status)) {
     currentStatus = "planned";
   }
-  const isTracking = TaskStatusPolicy.isTrackingStatus(task) || currentStatus === "tracking";
-  const allowTrackingChoice = isTracking || priority === "follow_up";
-
-  if (isTracking && priority !== "follow_up") {
-    el.taskStatus.innerHTML = `
-      <option value="tracking" selected>待跟踪（关注提醒，不计入投入）</option>
-      <option value="done">已完成 / 已关闭</option>`;
-    el.taskStatus.value = currentStatus === "done" ? "done" : "tracking";
-    return;
+  if (currentStatus !== "tracking" && (task?.priority === "follow_up" || el.taskFollowUpTracking?.checked)) {
+    currentStatus = "tracking";
   }
-
-  const trackingOption = allowTrackingChoice
-    ? `<option value="tracking">待跟踪（关注提醒，不计入投入）</option>`
-    : "";
-  const plannedDisabled = currentStatus === "planned" ? "" : " disabled";
+  // 待跟踪不在状态下拉中选择，只通过「仅关注」勾选。
+  const plannedDisabled = (currentStatus === "planned" || currentStatus === "tracking") ? "" : " disabled";
   const progressDisabled = currentStatus === "in_progress" ? "" : " disabled";
   el.taskStatus.innerHTML = `
     <option value="planned"${plannedDisabled}>计划中（尚未排入日程）</option>
     <option value="in_progress"${progressDisabled}>进行中（已排入日程）</option>
-    ${trackingOption}
+    <option value="tracking" hidden>待跟踪</option>
     <option value="done">已完成 / 已关闭</option>`;
 
   if (["planned", "in_progress", "tracking", "done"].includes(currentStatus)) {
@@ -3565,7 +3664,6 @@ function restoreTaskStatusOptions(task) {
   } else {
     el.taskStatus.value = "planned";
   }
-  // If the browser still cannot honor a disabled value, keep the automatic status visible.
   if (el.taskStatus.value !== currentStatus && (currentStatus === "planned" || currentStatus === "in_progress")) {
     const option = el.taskStatus.querySelector(`option[value="${currentStatus}"]`);
     if (option) option.disabled = false;
@@ -3573,13 +3671,195 @@ function restoreTaskStatusOptions(task) {
   }
 }
 
-function openNewTaskFromQuickAdd() {
-  const title = el.quickTaskInput?.value.trim() || "";
+function handlePanelScreenshotPaste(event) {
+  const items = [...(event.clipboardData?.items || [])];
+  const imageItem = items.find(item => item.type?.startsWith("image/"));
+  if (!imageItem) return;
+  // Don't steal paste from AI chat / dialogs that handle images themselves.
+  if (el.aiDialog?.open || el.taskDialog?.open || el.entryDialog?.open) return;
+  const file = imageItem.getAsFile();
+  if (!file) return;
+  event.preventDefault();
+  extractAndCreateTaskFromImage({ file, source: "task-dialog" });
+}
+
+function openNewFromQuickAdd(presetTitle = "", { kind = "task" } = {}) {
+  const title = String(presetTitle || el.quickTaskInput?.value || "").trim();
   if (el.quickTaskInput) el.quickTaskInput.value = "";
-  openTaskDialog(null);
-  if (title && el.taskTitleInput) {
-    el.taskTitleInput.value = title;
+  openTaskDialog(null, {
+    createKind: kind === "meeting" ? "meeting" : "task",
+    presetTitle: title
+  });
+}
+
+function openNewMeetingFromQuickAdd(presetTitle = "") {
+  openNewFromQuickAdd(presetTitle, { kind: "meeting" });
+}
+
+function openNewTaskFromQuickAdd(presetTitle = "") {
+  openNewFromQuickAdd(presetTitle, { kind: "task" });
+}
+
+function isCreateMeetingKind() {
+  return !state.editingTaskId && el.taskCreateKind?.value === "meeting";
+}
+
+function syncTaskCreateKindUi() {
+  const creating = !state.editingTaskId;
+  const meeting = creating && el.taskCreateKind?.value === "meeting";
+  el.taskCreateKindField?.classList.toggle("hidden", !creating);
+  el.taskMeetingEndField?.classList.toggle("hidden", !meeting);
+  el.taskEditForm?.classList.toggle("create-kind-meeting", meeting);
+  el.taskFollowUpOption?.classList.toggle("hidden", meeting);
+  if (!creating) {
+    el.taskMeetingEndField?.classList.add("hidden");
+    el.taskFollowUpOption?.classList.remove("hidden");
+    return;
   }
+  if (el.taskDialogEyebrow) el.taskDialogEyebrow.textContent = meeting ? "NEW MEETING" : "NEW TASK";
+  if (el.taskDialogTitle) el.taskDialogTitle.textContent = meeting ? "新建会议" : "新建待办";
+  const titleLabel = el.taskTitleField?.querySelector("span");
+  if (titleLabel) titleLabel.textContent = meeting ? "会议名称" : "待办名称";
+  if (el.taskTitleInput) {
+    el.taskTitleInput.placeholder = meeting ? "会议主题是什么？" : "需要完成什么？";
+  }
+  const dueLabel = el.taskDueDateField?.querySelector("span");
+  if (dueLabel) dueLabel.textContent = meeting ? "开始日期时间" : "目标日期时间";
+  if (meeting) ensureMeetingEndDefault();
+  const ownerLabel = el.taskOwner?.closest("label")?.querySelector("span");
+  if (ownerLabel) ownerLabel.textContent = meeting ? "参会人" : "责任人";
+  if (el.taskOwner) {
+    el.taskOwner.maxLength = meeting ? 80 : 30;
+    el.taskOwner.placeholder = meeting ? "例如：我、王芳、李明（多人用逗号分隔）" : "例如：我、王芳";
+  }
+  const parentLabel = el.taskParentField?.querySelector(":scope > span");
+  if (parentLabel) parentLabel.textContent = meeting ? "关联待办" : "归属上级任务";
+  if (el.taskParentTrigger) {
+    el.taskParentTrigger.textContent = meeting ? "搜索并关联待办（可选）…" : "搜索并选择上级任务…";
+  }
+  const bgLabel = el.businessBackgroundLabel?.querySelector("span");
+  if (bgLabel) bgLabel.textContent = meeting ? "会议说明（可选）" : "背景与说明";
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function formatDateTimeDisplay(dateKey = "", time = "") {
+  if (!dateKey) return "";
+  const safeTime = normalizeTimeInput(time) || defaultWorkEndTime();
+  return `${String(dateKey).replace(/\//g, "-")} ${safeTime}`;
+}
+
+function parseFlexibleDateTime(value = "") {
+  const raw = String(value || "").trim().replace(/\s+/g, " ");
+  if (!raw) return { dateKey: "", time: "", hour: null, minute: 0, display: "" };
+  let match = raw.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:[T\s]+(\d{1,2})(?::(\d{1,2}))?)?$/);
+  if (!match) {
+    match = raw.match(/^(\d{4})(\d{2})(\d{2})(?:\s*(\d{1,2})(?::?(\d{2}))?)?$/);
+  }
+  if (!match) return { dateKey: "", time: "", hour: null, minute: 0, display: raw };
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = match[4] == null || match[4] === "" ? null : Number(match[4]);
+  const minute = match[5] == null || match[5] === "" ? (hour == null ? 0 : 0) : Number(match[5]);
+  if (!year || month < 1 || month > 12 || day < 1 || day > 31) {
+    return { dateKey: "", time: "", hour: null, minute: 0, display: raw };
+  }
+  if (hour != null && (hour < 0 || hour > 23 || minute < 0 || minute > 59)) {
+    return { dateKey: "", time: "", hour: null, minute: 0, display: raw };
+  }
+  const dateKey = `${year}-${pad2(month)}-${pad2(day)}`;
+  const time = hour == null ? "" : `${pad2(hour)}:${pad2(minute || 0)}`;
+  return {
+    dateKey,
+    time,
+    hour: hour == null ? null : hour,
+    minute: hour == null ? 0 : (minute || 0),
+    display: formatDateTimeDisplay(dateKey, time || defaultWorkEndTime())
+  };
+}
+
+function parseDateTimeLocalParts(value = "") {
+  const parsed = parseFlexibleDateTime(value);
+  return {
+    dateKey: parsed.dateKey || "",
+    hour: parsed.hour,
+    minute: parsed.minute || 0
+  };
+}
+
+function normalizeDateTimeInputValue(input, { defaultKind = "end", fillTime = true } = {}) {
+  if (!input) return null;
+  const parsed = parseFlexibleDateTime(input.value || "");
+  if (!parsed.dateKey) return null;
+  const time = parsed.time || (fillTime ? (defaultKind === "start" ? defaultWorkStartTime() : defaultWorkEndTime()) : "");
+  input.value = formatDateTimeDisplay(parsed.dateKey, time);
+  return { dateKey: parsed.dateKey, time, hour: parsed.hour, minute: parsed.minute };
+}
+
+function bindFlexibleDateTimeInput(input, { kind = "end" } = {}) {
+  if (!input || input.dataset.flexibleDateTimeBound === "1") return;
+  input.dataset.flexibleDateTimeBound = "1";
+  const resolveKind = () => (typeof kind === "function" ? kind() : kind);
+  input.addEventListener("blur", () => {
+    if (!String(input.value || "").trim()) return;
+    normalizeDateTimeInputValue(input, { defaultKind: resolveKind(), fillTime: true });
+  });
+  input.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    normalizeDateTimeInputValue(input, { defaultKind: resolveKind(), fillTime: true });
+    input.blur();
+  });
+}
+
+function openDateTimePickerForInput(inputId) {
+  const input = inputId ? document.getElementById(inputId) : null;
+  if (!input) return;
+  const parsed = parseFlexibleDateTime(input.value || "");
+  const seed = parsed.dateKey
+    ? `${parsed.dateKey}T${parsed.time || (inputId === "taskMeetingEndDateTime" ? defaultWorkEndTime() : defaultWorkEndTime())}`
+    : defaultLocalDateTimeSeed(inputId === "taskDueDateTime" && isCreateMeetingKind() ? "start" : "end");
+  const picker = document.createElement("input");
+  picker.type = "datetime-local";
+  picker.step = "60";
+  picker.value = seed;
+  picker.style.cssText = "position:fixed;opacity:0;pointer-events:none;width:0;height:0;left:0;top:0;";
+  document.body.appendChild(picker);
+  const apply = () => {
+    if (picker.value) {
+      const [dateKey = "", timePart = ""] = picker.value.split("T");
+      input.value = formatDateTimeDisplay(dateKey, normalizeTimeInput(timePart));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    picker.remove();
+  };
+  picker.addEventListener("change", apply, { once: true });
+  picker.addEventListener("blur", () => setTimeout(() => picker.remove(), 0), { once: true });
+  try { picker.showPicker?.(); } catch { picker.click(); }
+}
+
+function ensureMeetingEndDefault() {
+  if (!el.taskMeetingEndDateTime) return;
+  let startParts = parseDateTimeLocalParts(el.taskDueDateTime?.value || "");
+  if (!startParts.dateKey || startParts.hour == null) {
+    const dateKey = state.selectedDate || toDateKey(new Date());
+    const workStart = Number(ScheduleHoursPolicy?.DEFAULT_WORK_START ?? 9);
+    const hour = Math.min(21, Math.max(workStart, new Date().getHours()));
+    if (!String(el.taskDueDateTime?.value || "").trim()) {
+      el.taskDueDateTime.value = formatDateTimeDisplay(dateKey, `${pad2(hour)}:00`);
+    }
+    startParts = parseDateTimeLocalParts(el.taskDueDateTime?.value || "");
+  }
+  if (!startParts.dateKey || startParts.hour == null) return;
+  if (String(el.taskMeetingEndDateTime.value || "").trim()) return;
+  const endHour = Math.min(22, startParts.hour + 1);
+  el.taskMeetingEndDateTime.value = formatDateTimeDisplay(
+    startParts.dateKey,
+    `${pad2(endHour)}:${pad2(startParts.minute || 0)}`
+  );
 }
 
 function applyTaskFilter(filter) {
@@ -3595,8 +3875,8 @@ function applyTaskFilter(filter) {
   el.taskTabsMoreMenu?.querySelectorAll("button[data-filter]").forEach(item => {
     item.classList.toggle("active", item.dataset.filter === filter);
   });
+  // Left status tabs only reshape the todo list; day/week/month calendars stay unfiltered.
   renderTasks();
-  if (state.taskView !== "project") renderSchedule();
   adaptTaskTabsOverflow();
 }
 
@@ -3681,12 +3961,12 @@ function syncListKindSwitch() {
   syncListKindMenu();
   el.taskPanel?.classList.toggle("is-meeting-list", meeting);
   if (el.taskListSearch) {
-    el.taskListSearch.placeholder = "搜索…";
     el.taskListSearch.setAttribute(
       "aria-label",
       meeting ? "搜索会议标题，或 @参会人" : "搜索待办标题，或 @责任人"
     );
   }
+  syncQuickAddChrome();
 }
 
 function closeTaskTabsMoreMenu() {
@@ -3812,6 +4092,7 @@ function openTaskDialog(task = null, options = {}) {
   const followUpDraft = options.mode === "followUp";
   const successorDraft = options.mode === "successor";
   const parentReview = options.mode === "parentReview";
+  const setupIncomplete = options.mode === "setupIncomplete" || isSetupIncompleteTask(task);
   if (parentReview) {
     parentReviewAdvanceOnClose = true;
   } else if (followUpDraft || successorDraft) {
@@ -3822,7 +4103,7 @@ function openTaskDialog(task = null, options = {}) {
     parentReviewResumeTaskId = null;
     parentReviewPausedForFollowUp = false;
   }
-  el.taskEditForm?.classList.toggle("follow-up-draft", followUpDraft || successorDraft || parentReview);
+  el.taskEditForm?.classList.toggle("follow-up-draft", followUpDraft || successorDraft || parentReview || setupIncomplete);
   if (el.followUpDraftHint) {
     if (parentReview) {
       const left = Number(options.queueLeft) || 0;
@@ -3830,48 +4111,83 @@ function openTaskDialog(task = null, options = {}) {
         ? `请补充上级任务（也可继续完善其余字段）。保存或关闭后将打开下一条，还剩 ${left} 条。`
         : "请补充上级任务（也可继续完善其余字段）。这是批量创建的最后一条。";
       el.followUpDraftHint.classList.remove("hidden");
+    } else if (setupIncomplete) {
+      el.followUpDraftHint.textContent = "截图识别只创建了名称。请补充上级、目标时间等信息后保存，黄色感叹号会消失。";
+      el.followUpDraftHint.classList.remove("hidden");
     } else if (followUpDraft) {
       el.followUpDraftHint.textContent = "请确认待办名称与目标完成日期，并补充背景说明。上级任务已与关闭任务保持一致。";
       el.followUpDraftHint.classList.remove("hidden");
     } else if (successorDraft) {
-      el.followUpDraftHint.textContent = "已按关闭任务生成后续待办：上级与来源一致，开始时间为关闭时刻。请确认名称与目标日期。";
+      el.followUpDraftHint.textContent = "已继承原任务的优先级与上级。默认是一般后续任务；若只需提醒、不排投入，请勾选「仅关注」。";
       el.followUpDraftHint.classList.remove("hidden");
     } else {
       el.followUpDraftHint.classList.add("hidden");
     }
   }
   el.taskTitleField?.classList.toggle("follow-up-focus", followUpDraft || successorDraft);
-  el.taskDueDateField?.classList.toggle("follow-up-focus", followUpDraft || successorDraft);
+  el.taskDueDateField?.classList.toggle("follow-up-focus", followUpDraft || successorDraft || setupIncomplete);
   el.businessBackgroundLabel?.classList.toggle("follow-up-focus", followUpDraft || successorDraft);
-  el.taskParentField?.classList.toggle("follow-up-focus", parentReview);
-  el.taskParentCombobox?.classList.toggle("follow-up-focus", parentReview);
+  el.taskParentField?.classList.toggle("follow-up-focus", parentReview || setupIncomplete || followUpDraft || successorDraft);
+  el.taskParentCombobox?.classList.toggle("follow-up-focus", parentReview || setupIncomplete || followUpDraft || successorDraft);
   el.taskDialogEyebrow.textContent = followUpDraft
     ? "FOLLOW-UP"
     : successorDraft
       ? "SUCCESSOR"
       : parentReview
         ? "补充上级"
-        : (task ? "EDIT TASK" : "NEW TASK");
+        : setupIncomplete
+          ? "待完善"
+          : (task ? "EDIT TASK" : "NEW TASK");
   el.taskDialogTitle.textContent = followUpDraft
     ? "完善备忘提醒"
     : successorDraft
       ? "完善后续任务"
       : parentReview
         ? "补充上级任务"
-        : (task ? "编辑待办" : "新建待办");
-  el.taskAiDropzone?.classList.toggle("hidden", Boolean(task) || followUpDraft || successorDraft || parentReview);
+        : setupIncomplete
+          ? "完善待办信息"
+          : (task ? "编辑待办" : "新建待办");
+  el.taskAiDropzone?.classList.toggle("hidden", Boolean(task) || followUpDraft || successorDraft || parentReview || setupIncomplete);
   setTaskAiDropzoneStatus("");
-  el.taskTitleInput.value = task?.title || "";
+  if (el.taskCreateKind) {
+    el.taskCreateKind.value = options.createKind === "meeting" ? "meeting" : "task";
+  }
+  if (el.taskMeetingEndDateTime) el.taskMeetingEndDateTime.value = "";
+  el.taskTitleInput.value = TaskStatusPolicy.listDisplayTitle?.(task?.title || options.presetTitle || "")
+    || task?.title
+    || options.presetTitle
+    || "";
   setTaskDueDateTime(task?.dueDate || "", task?.dueTime || "");
-  el.taskOwner.value = task?.owner || "我";
+  el.taskOwner.value = task?.owner || (options.createKind === "meeting" ? "" : "我");
   const isMonthly = task?.recurrence?.frequency === "monthly" || task?.priority === "monthly_fixed";
-  el.taskPriority.value = isMonthly ? "monthly_fixed" : (task?.priority || "general_daily");
+  // 「跟踪关注」已从优先级下拉移除；仅关注改由任务状态「待跟踪」/后续窗勾选表达。
+  const rawPriority = isMonthly ? "monthly_fixed" : (task?.priority || "general_daily");
+  el.taskPriority.value = rawPriority === "follow_up" ? "general_daily" : rawPriority;
   syncMonthlyRecurringFromPriority();
   el.taskProgress.value = task?.progress || 0;
   el.taskProgressValue.textContent = `${task?.progress || 0}%`;
   if (task?.id) refreshTaskStatusForId(task.id);
   const statusTask = task?.id ? (findTask(task.id)?.task || task) : task;
-  restoreTaskStatusOptions(statusTask);
+  const meetingCreate = options.createKind === "meeting" || el.taskCreateKind?.value === "meeting";
+  // 仅关注 = 待跟踪的唯一入口（任务表单显示；会议隐藏）
+  el.taskFollowUpOption?.classList.toggle("hidden", meetingCreate);
+  if (el.taskFollowUpTracking) {
+    if (followUpDraft) {
+      el.taskFollowUpTracking.checked = true;
+    } else if (successorDraft) {
+      // 后续默认一般任务：继承原优先级/上级；需要备忘时再勾选
+      el.taskFollowUpTracking.checked = TaskStatusPolicy.isTrackingStatus(task);
+    } else {
+      el.taskFollowUpTracking.checked = TaskStatusPolicy.isTrackingStatus(statusTask)
+        || statusTask?.priority === "follow_up";
+    }
+  }
+  const statusForUi = (TaskStatusPolicy.isTrackingStatus(statusTask) || statusTask?.priority === "follow_up"
+    || Boolean(el.taskFollowUpTracking?.checked))
+    ? { ...statusTask, status: TaskStatusPolicy.TRACKING_STATUS }
+    : statusTask;
+  restoreTaskStatusOptions(statusForUi);
+  if (!meetingCreate) syncAttentionMode("checkbox");
   el.taskActualStart.value = toLocalDateTimeInput(statusTask?.startOverrideAt || statusTask?.startedAt);
   el.taskActualEnd.value = toLocalDateTimeInput(statusTask?.completedAt);
   // UI merges background / reason / description; originals stay in data until user saves.
@@ -3881,7 +4197,7 @@ function openTaskDialog(task = null, options = {}) {
   el.taskDescription.value = task?.description || "";
   el.taskRecurringUntil.value = task?.recurrence?.until || defaultRecurringUntil(task?.dueDate || state.selectedDate);
   fillParentOptions(task);
-  const parentId = task?.parentId || "";
+  const parentId = task?.parentId || task?.parentTaskId || task?.parentTask || task?.parent || "";
   if (parentId) chooseTaskParentOption(parentId);
   else {
     el.taskParent.value = "";
@@ -3891,9 +4207,8 @@ function openTaskDialog(task = null, options = {}) {
   el.mergeTaskButton?.classList.toggle("hidden", !task);
   el.closeTaskButton.classList.toggle("hidden", !task || followUpDraft || successorDraft);
   el.closeTaskButton.textContent = task && TaskStatusPolicy.isEndedStatus(task.status) ? "恢复任务" : "关闭任务";
-  // Follow-up choice lives on the close-confirm dialog (关闭并跟踪), not a buried checkbox.
-  el.taskFollowUpOption?.classList.add("hidden");
-  if (el.taskFollowUpTracking) el.taskFollowUpTracking.checked = false;
+  // Re-apply parent after status/priority sync (combobox trigger can reset during option rebuild).
+  if (parentId) chooseTaskParentOption(parentId);
   if (el.businessBackgroundLabel?.querySelector("span")) {
     el.businessBackgroundLabel.querySelector("span").textContent = (followUpDraft || successorDraft)
       ? "背景与说明（来自已关闭任务）"
@@ -3912,6 +4227,12 @@ function openTaskDialog(task = null, options = {}) {
   // Keep create/edit focused on input fields: summary cards + subtasks are redundant here.
   el.taskDetailSummary?.classList.add("hidden");
   el.taskSubtasksSection?.classList.add("hidden");
+  if (task || followUpDraft || successorDraft || parentReview || setupIncomplete) {
+    el.taskCreateKindField?.classList.add("hidden");
+    el.taskEditForm?.classList.remove("create-kind-meeting");
+  } else {
+    syncTaskCreateKindUi();
+  }
   el.taskDialogScroll?.scrollTo?.(0, 0);
   el.taskDialog.showModal();
   setTimeout(() => {
@@ -4110,21 +4431,165 @@ function chooseTaskParentOption(value) {
   updateParentRequirements();
 }
 
+function isAttentionModeUi() {
+  return !el.taskFollowUpOption?.classList.contains("hidden");
+}
+
+/**
+ * 「仅关注」= 只提醒、不排工作投入（底层 status=tracking）。
+ * 不在任务状态下拉里选手动「待跟踪」，避免与勾选重复。
+ */
+function syncAttentionMode(source = "checkbox") {
+  if (syncingAttentionMode) return;
+  syncingAttentionMode = true;
+  try {
+    const attentionUi = isAttentionModeUi();
+    let attentionOnly = Boolean(el.taskFollowUpTracking?.checked);
+    if (source === "status" && attentionUi) {
+      attentionOnly = el.taskStatus?.value === TaskStatusPolicy.TRACKING_STATUS;
+      if (el.taskFollowUpTracking) el.taskFollowUpTracking.checked = attentionOnly;
+    }
+
+    if (attentionOnly) {
+      if (el.taskFollowUpTracking && attentionUi) el.taskFollowUpTracking.checked = true;
+      restoreTaskStatusOptions({ status: TaskStatusPolicy.TRACKING_STATUS });
+      if (el.taskStatus) el.taskStatus.value = TaskStatusPolicy.TRACKING_STATUS;
+    } else {
+      if (el.taskFollowUpTracking && attentionUi) el.taskFollowUpTracking.checked = false;
+      const nextStatus = el.taskStatus?.value === TaskStatusPolicy.TRACKING_STATUS
+        ? "planned"
+        : (el.taskStatus?.value || "planned");
+      restoreTaskStatusOptions({ status: nextStatus });
+      if (el.taskStatus && (el.taskStatus.value === TaskStatusPolicy.TRACKING_STATUS || !el.taskStatus.value)) {
+        el.taskStatus.value = "planned";
+      }
+    }
+    updateProgressAvailability();
+  } finally {
+    syncingAttentionMode = false;
+  }
+}
+
+function syncAttentionOnlyChoice() {
+  syncAttentionMode("checkbox");
+}
+
+function removeTaskRecordById(taskId) {
+  if (!taskId) return false;
+  let removed = false;
+  Object.keys(state.data || {}).forEach(dateKey => {
+    const day = state.data[dateKey];
+    if (!day?.tasks?.length) return;
+    const next = day.tasks.filter(task => task.id !== taskId);
+    if (next.length !== day.tasks.length) {
+      day.tasks = next;
+      removed = true;
+    }
+  });
+  return removed;
+}
+
+function restoreTaskFromCloseSnapshot(sourceId, snapshot = {}) {
+  if (!sourceId) return;
+  updateTaskRecords(sourceId, record => {
+    if (Object.prototype.hasOwnProperty.call(snapshot, "status")) record.status = snapshot.status;
+    if (Object.prototype.hasOwnProperty.call(snapshot, "completedAt")) record.completedAt = snapshot.completedAt;
+    if (Object.prototype.hasOwnProperty.call(snapshot, "progress")) record.progress = snapshot.progress;
+    if (Object.prototype.hasOwnProperty.call(snapshot, "deliveryNote")) record.deliveryNote = snapshot.deliveryNote;
+    if (Object.prototype.hasOwnProperty.call(snapshot, "startedAt")) record.startedAt = snapshot.startedAt;
+    record.updatedAt = new Date().toISOString();
+  });
+}
+
+function abandonPendingSuccessorRollback() {
+  const pending = pendingSuccessorRollback;
+  if (!pending?.sourceId || !pending?.successorId) {
+    pendingSuccessorRollback = null;
+    return;
+  }
+  pendingSuccessorRollback = null;
+  parentReviewPausedForFollowUp = false;
+  restoreTaskFromCloseSnapshot(pending.sourceId, pending.snapshot || {});
+  removeTaskRecordById(pending.successorId);
+  saveData();
+  render();
+  showToast("已取消关闭并新建后续，原任务保持未关闭");
+}
+
+function saveMeetingFromCreateDialog() {
+  el.taskEditForm.querySelectorAll(".field-error").forEach(field => field.classList.remove("field-error"));
+  const title = el.taskTitleInput.value.trim();
+  if (!title) return showTaskFieldError(el.taskTitleInput, "请填写会议名称");
+  ensureMeetingEndDefault();
+  const startParts = parseDateTimeLocalParts(el.taskDueDateTime?.value || "");
+  const endParts = parseDateTimeLocalParts(el.taskMeetingEndDateTime?.value || "");
+  if (!startParts.dateKey || startParts.hour == null) {
+    return showTaskFieldError(el.taskDueDateTime, "请填写开始日期时间");
+  }
+  if (!endParts.dateKey || endParts.hour == null) {
+    return showTaskFieldError(el.taskMeetingEndDateTime, "请填写结束日期时间");
+  }
+  if (endParts.dateKey !== startParts.dateKey) {
+    return showTaskFieldError(el.taskMeetingEndDateTime, "会议开始与结束需在同一天");
+  }
+  const start = Math.max(0, Math.min(21, startParts.hour));
+  let end = Math.max(0, Math.min(22, endParts.hour));
+  if (endParts.minute > 0 && end < 22) end = Math.min(22, end + 1);
+  if (end <= start) return showTaskFieldError(el.taskMeetingEndDateTime, "结束时间必须晚于开始时间");
+  const dateKey = startParts.dateKey || state.selectedDate;
+  const taskId = String(el.taskParent?.value || "").trim();
+  if (taskId) {
+    const linked = findTask(taskId)?.task;
+    if (!linked || !TodoListPolicy.canLinkEntryToTask(linked, hasChildTasks)) {
+      return showTaskFieldError(el.taskParentTrigger || el.taskParent, "只能关联叶子待办");
+    }
+  }
+  const entry = {
+    id: crypto.randomUUID(),
+    title: title.slice(0, 80),
+    entryType: "calendar",
+    start,
+    end,
+    owner: (el.taskOwner?.value || "").trim().slice(0, 80),
+    note: (el.taskBusinessBackground?.value || "").trim().slice(0, 800),
+    color: "amber",
+    taskId
+  };
+  getDay(dateKey).entries.push(entry);
+  if (taskId) {
+    refreshTaskStatusForId(taskId);
+    if (entry.note) updateTaskRecords(taskId, task => { task.updatedAt = new Date().toISOString(); });
+    focusLinkedTaskFilter(taskId);
+  }
+  state.listKind = "meeting";
+  state.meetingFilter = "all";
+  state.taskSubtaskDrafts = [];
+  saveData();
+  el.taskDialog.close();
+  render();
+  showToast("会议已添加");
+}
+
 function saveTask() {
   el.taskEditForm.querySelectorAll(".field-error").forEach(field => field.classList.remove("field-error"));
+  if (isCreateMeetingKind()) return saveMeetingFromCreateDialog();
+  if (isAttentionModeUi()) syncAttentionMode("checkbox");
   syncMonthlyRecurringFromPriority();
   const editing = state.editingTaskId ? findTask(state.editingTaskId) : null;
   const monthlySelected = isMonthlyPrioritySelected();
   const dueParts = getTaskDueParts();
+  const attentionOnly = isAttentionModeUi() && Boolean(el.taskFollowUpTracking?.checked);
   const payload = {
-    title: el.taskTitleInput.value.trim(),
+    title: TaskStatusPolicy.stripTrackingTitleSuffix?.(el.taskTitleInput.value.trim())
+      || el.taskTitleInput.value.trim(),
     dueDate: dueParts.dueDate,
     dueTime: dueParts.dueTime,
     owner: el.taskOwner.value.trim() || "未指定",
     parentId: el.taskParent.value,
+    // 仅关注只改状态；优先级保持用户选择（后续默认继承原任务）
     priority: resolvePersistedPriority(monthlySelected, editing?.task),
     progress: Number(el.taskProgress.value),
-    status: el.taskStatus.value,
+    status: attentionOnly ? TaskStatusPolicy.TRACKING_STATUS : el.taskStatus.value,
     startedAt: fromLocalDateTimeInput(el.taskActualStart.value),
     startOverrideAt: fromLocalDateTimeInput(el.taskActualStart.value),
     completedAt: fromLocalDateTimeInput(el.taskActualEnd.value),
@@ -4159,10 +4624,9 @@ function saveTask() {
     payload.status = "done";
     payload.progress = 100;
   } else if (!TaskStatusPolicy.isEndedStatus(payload.status)) {
-    const editingTask = editing?.task || null;
-    const choseTracking = payload.status === TaskStatusPolicy.TRACKING_STATUS
-      || (TaskStatusPolicy.isTrackingStatus(editingTask) && !payload.completedAt);
-    if (choseTracking) {
+    // Do not keep forcing tracking just because the stored task was tracking —
+    // user may convert 仅关注 → 一般任务 in this save.
+    if (attentionOnly || payload.status === TaskStatusPolicy.TRACKING_STATUS) {
       payload.status = TaskStatusPolicy.TRACKING_STATUS;
     } else {
       payload.status = getAutomaticTaskStatusForPayload(state.editingTaskId, payload);
@@ -4184,6 +4648,7 @@ function saveTask() {
     if (!found) return;
     if (!["done", "closed"].includes(payload.status)) payload.completedAt = "";
     Object.assign(found.task, payload);
+    found.task.setupIncomplete = false;
     found.task.updatedAt = new Date().toISOString();
     const targetTaskDate = payload.dueDate || found.dateKey || state.selectedDate;
     if (found.dateKey !== targetTaskDate) {
@@ -4198,6 +4663,10 @@ function saveTask() {
   }
   createDraftChildTasks(parentIdForChildren, payload.dueDate || state.selectedDate);
   state.taskSubtaskDrafts = [];
+  if (pendingSuccessorRollback && state.editingTaskId === pendingSuccessorRollback.successorId) {
+    successorDialogCommitted = true;
+    pendingSuccessorRollback = null;
+  }
   saveData();
   el.taskDialog.close();
   render();
@@ -4288,6 +4757,15 @@ function formatDateTime(iso) {
 function deleteEditingTask() {
   const found = findTask(state.editingTaskId);
   if (!found) return;
+  const pending = pendingSuccessorRollback?.successorId === found.task.id
+    ? pendingSuccessorRollback
+    : null;
+  if (pending) {
+    successorDialogCommitted = true;
+    pendingSuccessorRollback = null;
+    parentReviewPausedForFollowUp = false;
+    restoreTaskFromCloseSnapshot(pending.sourceId, pending.snapshot || {});
+  }
   getAllTasks().forEach(({ task }) => {
     if (task.parentId === found.task.id) task.parentId = "";
   });
@@ -4298,7 +4776,9 @@ function deleteEditingTask() {
   saveData();
   el.taskDialog.close();
   render();
-  showToast("待办已删除，原有日程记录已保留");
+  showToast(pending
+    ? "已取消后续并恢复原任务为未关闭"
+    : "待办已删除，原有日程记录已保留");
 }
 
 function cancelEditingEntry() {
@@ -4379,16 +4859,368 @@ function appendGanttRowPair(labelContainer, chartContainer, pair) {
 
 function appendGanttGroupHeading(labelContainer, chartContainer, group, onToggle) {
   const collapsed = state.ganttCollapsedGroups.has(group.status);
+  const depth = Math.max(0, Number(group.depth) || 0);
   const heading = document.createElement("button");
   heading.className = "project-gantt-group-heading";
   heading.type = "button";
-  heading.innerHTML = `<strong><i>${collapsed ? "▸" : "▾"}</i>${group.label}</strong><span>${group.count} 项</span>`;
+  heading.style.setProperty("--group-depth", String(depth));
+  heading.dataset.depth = String(depth);
+  heading.innerHTML = `<strong><i>${collapsed ? "▸" : "▾"}</i>${escapeHtml(group.label)}</strong><span>${group.count} 项</span>`;
   heading.addEventListener("click", onToggle);
   labelContainer.appendChild(heading);
   const spacer = document.createElement("div");
   spacer.className = "project-gantt-group-chart-spacer";
+  spacer.style.setProperty("--group-depth", String(depth));
+  spacer.dataset.depth = String(depth);
   chartContainer.appendChild(spacer);
   return !collapsed;
+}
+
+function getSavedGanttArrangeConfig() {
+  if (!state.ganttArrangeConfig) {
+    state.ganttArrangeConfig = typeof GanttArrangePolicy?.loadConfig === "function"
+      ? GanttArrangePolicy.loadConfig()
+      : null;
+  }
+  return state.ganttArrangeConfig || GanttArrangePolicy?.defaultConfig?.() || {
+    dimensions: [
+      { id: "taskTree", enabled: true },
+      { id: "taskStatus", enabled: true },
+      { id: "owner", enabled: false },
+      { id: "priority", enabled: false }
+    ],
+    treeDepth: null
+  };
+}
+
+function getGanttArrangeConfig() {
+  if (state.ganttArrangePreview) {
+    return typeof GanttArrangePolicy?.normalizeConfig === "function"
+      ? GanttArrangePolicy.normalizeConfig(state.ganttArrangePreview)
+      : state.ganttArrangePreview;
+  }
+  return getSavedGanttArrangeConfig();
+}
+
+function saveGanttArrangeConfig(config) {
+  state.ganttArrangePreview = null;
+  state.ganttArrangeConfig = typeof GanttArrangePolicy?.saveConfig === "function"
+    ? GanttArrangePolicy.saveConfig(config)
+    : config;
+  return state.ganttArrangeConfig;
+}
+
+function meetingPhaseBucket(meeting) {
+  const now = new Date();
+  const phases = (meeting?.entries || []).map(({ dateKey, entry }) => getMeetingPhase({
+    dateKey,
+    start: entry?.start,
+    end: entry?.end
+  }, now));
+  if (phases.includes("in_progress")) return "in_progress";
+  if (phases.length && phases.every(phase => phase === "ended")) return "ended";
+  if (phases.includes("planned")) return "planned";
+  return "planned";
+}
+
+function buildMeetingArrangeRows(meetings = []) {
+  return meetings.map(meeting => {
+    const owners = [...new Set(
+      (meeting.entries || [])
+        .map(({ entry }) => String(entry?.owner || "").trim())
+        .filter(Boolean)
+    )];
+    const phase = meetingPhaseBucket(meeting);
+    const status = phase === "ended" ? "done" : phase;
+    return {
+      kind: "meeting",
+      meeting,
+      task: {
+        id: `meeting:${TodoListPolicy.normalizeTitle(meeting.title)}`,
+        title: meeting.title,
+        status,
+        owner: owners[0] || "未指定",
+        priority: "general_daily"
+      },
+      rootId: "",
+      isParent: false,
+      depth: 0,
+      projectStatus: phase,
+      projectStatusLabel: "",
+      descendantTasks: [],
+      progress: null,
+      collapsed: false
+    };
+  });
+}
+
+function buildGanttArrangeSections(projects, meetings = []) {
+  const meetingRows = buildMeetingArrangeRows(meetings);
+  if (typeof GanttArrangePolicy?.buildSections !== "function") {
+    const taskSections = projectStatusGroups(projects)
+      .filter(group => group.projects.length)
+      .map(group => ({
+        key: group.status,
+        status: group.status,
+        label: group.label,
+        rows: group.projects.flatMap(project => {
+          const progress = ProjectSummaryPolicy.projectProgressPercent(project);
+          if (ProjectCollapsePolicy.shouldRenderSingleRow(project)) {
+            return [{ task: project.parent, rootId: project.parent.id, isParent: false, progress }];
+          }
+          const sectionCollapsed = state.projectCollapsedSections.has(project.parent.id);
+          const rows = [{
+            task: project.parent,
+            rootId: project.parent.id,
+            isParent: true,
+            progress,
+            collapsed: sectionCollapsed,
+            projectStatusLabel: projectStatusLabel(project.status)
+          }];
+          if (!sectionCollapsed) {
+            ProjectCollapsePolicy.visibleTreeItems({
+              tasks: project.children,
+              collapsedIds: state.projectCollapsedTasks
+            }).forEach(task => rows.push({
+              task,
+              rootId: project.parent.id,
+              isParent: false,
+              progress: null
+            }));
+          }
+          return rows;
+        })
+      }));
+    if (!meetingRows.length) return taskSections;
+    const byStatus = new Map(taskSections.map(section => [section.status, section]));
+    meetingRows.forEach(row => {
+      const key = row.projectStatus || "planned";
+      if (!byStatus.has(key)) {
+        const section = {
+          key,
+          status: key,
+          label: GanttArrangePolicy?.statusLabel?.(key) || key,
+          rows: []
+        };
+        byStatus.set(key, section);
+        taskSections.push(section);
+      }
+      byStatus.get(key).rows.push(row);
+    });
+    return taskSections.filter(section => section.rows.length);
+  }
+  const progressByRoot = new Map(
+    projects.map(project => [project.parent.id, ProjectSummaryPolicy.projectProgressPercent(project)])
+  );
+  const decorateRows = rows => (rows || []).map(row => ({
+    ...row,
+    progress: row.kind === "meeting"
+      ? null
+      : (row.isParent ? (progressByRoot.get(row.rootId) ?? null) : null),
+    collapsed: row.kind === "meeting"
+      ? false
+      : (row.isParent
+        ? state.projectCollapsedSections.has(row.task.id)
+        : state.projectCollapsedTasks.has(row.task.id))
+  }));
+  const decorateSection = section => ({
+    ...section,
+    rows: decorateRows(section.rows),
+    children: (section.children || []).map(decorateSection)
+  });
+  return GanttArrangePolicy.buildSections({
+    projects,
+    config: getGanttArrangeConfig(),
+    collapsedSections: state.projectCollapsedSections,
+    collapsedTasks: state.projectCollapsedTasks,
+    visibleTreeItems: args => ProjectCollapsePolicy.visibleTreeItems(args),
+    shouldRenderSingleRow: project => ProjectCollapsePolicy.shouldRenderSingleRow(project),
+    classifyProjectStatus: tasks => ProjectSummaryPolicy.classifyProjectStatus(tasks),
+    getChildTasks,
+    extraRows: meetingRows
+  }).map(decorateSection);
+}
+
+function bindGanttArrangePanel(toolbar) {
+  if (state.ganttArrangeAbort) state.ganttArrangeAbort.abort();
+  state.ganttArrangeAbort = new AbortController();
+  const { signal } = state.ganttArrangeAbort;
+  // 面板曾挂到 body，重绘时可能留下无监听的孤儿层
+  document.querySelectorAll("body > .gantt-arrange-panel").forEach(node => node.remove());
+  const wrap = document.createElement("div");
+  wrap.className = "gantt-arrange-wrap";
+  const keepOpen = Boolean(state.ganttArrangeKeepOpen);
+  state.ganttArrangeKeepOpen = false;
+  const initial = keepOpen && state.ganttArrangePreview
+    ? state.ganttArrangePreview
+    : getSavedGanttArrangeConfig();
+  wrap.innerHTML = `
+    <button type="button" class="gantt-arrange-button" aria-expanded="false" aria-haspopup="true">排列</button>
+    <div class="gantt-arrange-panel" hidden>
+      <strong>显示字段（可勾选 / 调整顺序）</strong>
+      <ul class="gantt-arrange-list"></ul>
+      <label class="gantt-arrange-depth">展开深度
+        <select data-arrange-depth>
+          <option value="all">全部</option>
+          <option value="0">仅顶层</option>
+          <option value="1">到第 1 层</option>
+          <option value="2">到第 2 层</option>
+          <option value="3">到第 3 层</option>
+        </select>
+      </label>
+      <div class="gantt-arrange-actions">
+        <button type="button" class="soft-button" data-arrange-reset>恢复默认</button>
+        <button type="button" class="primary-button" data-arrange-apply>应用</button>
+      </div>
+    </div>`;
+  const button = wrap.querySelector(".gantt-arrange-button");
+  const panel = wrap.querySelector(".gantt-arrange-panel");
+  const list = wrap.querySelector(".gantt-arrange-list");
+  const depthSelect = panel.querySelector("[data-arrange-depth]");
+  const resetButton = panel.querySelector("[data-arrange-reset]");
+  const applyButton = panel.querySelector("[data-arrange-apply]");
+  let draft = GanttArrangePolicy.normalizeConfig(initial);
+
+  const renderList = () => {
+    list.innerHTML = draft.dimensions.map((dim, index) => {
+      const meta = GanttArrangePolicy.dimensionMeta(dim.id);
+      return `<li data-dim-id="${dim.id}">
+        <label><input type="checkbox" data-dim-enabled ${dim.enabled ? "checked" : ""}/> ${escapeHtml(meta.label)}</label>
+        <span class="gantt-arrange-move">
+          <button type="button" data-move="-1" ${index === 0 ? "disabled" : ""} aria-label="上移">↑</button>
+          <button type="button" data-move="1" ${index === draft.dimensions.length - 1 ? "disabled" : ""} aria-label="下移">↓</button>
+        </span>
+      </li>`;
+    }).join("");
+    depthSelect.value = draft.treeDepth == null ? "all" : String(draft.treeDepth);
+  };
+  renderList();
+
+  const positionPanel = () => {
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(340, Math.max(280, window.innerWidth - 24));
+    let left = Math.round(rect.left);
+    left = Math.min(left, Math.max(8, window.innerWidth - width - 8));
+    let top = Math.round(rect.bottom + 6);
+    panel.style.position = "fixed";
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+    panel.style.width = `${width}px`;
+    panel.style.right = "auto";
+    panel.style.zIndex = "6000";
+    requestAnimationFrame(() => {
+      const panelRect = panel.getBoundingClientRect();
+      if (panelRect.bottom > window.innerHeight - 8) {
+        panel.style.top = `${Math.max(8, Math.round(rect.top - panelRect.height - 6))}px`;
+      }
+    });
+  };
+  const closePanel = () => {
+    panel.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    if (panel.parentElement === document.body && wrap) wrap.appendChild(panel);
+  };
+  const showPanel = () => {
+    document.body.appendChild(panel);
+    panel.hidden = false;
+    positionPanel();
+    button.setAttribute("aria-expanded", "true");
+  };
+  const previewDraft = () => {
+    state.ganttArrangePreview = GanttArrangePolicy.normalizeConfig(draft);
+    state.ganttArrangeKeepOpen = true;
+    renderSchedule();
+  };
+  const discardAndClose = () => {
+    const hadPreview = Boolean(state.ganttArrangePreview);
+    state.ganttArrangePreview = null;
+    state.ganttArrangeKeepOpen = false;
+    draft = GanttArrangePolicy.normalizeConfig(getSavedGanttArrangeConfig());
+    renderList();
+    closePanel();
+    if (hadPreview) renderSchedule();
+  };
+  const openPanel = () => {
+    state.ganttArrangePreview = null;
+    draft = GanttArrangePolicy.normalizeConfig(getSavedGanttArrangeConfig());
+    renderList();
+    showPanel();
+  };
+  const applyDraft = () => {
+    state.ganttArrangeKeepOpen = false;
+    saveGanttArrangeConfig(draft);
+    closePanel();
+    renderSchedule();
+  };
+
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    if (panel.hidden) openPanel();
+    else discardAndClose();
+  });
+  document.addEventListener("pointerdown", event => {
+    if (panel.hidden) return;
+    if (wrap.contains(event.target) || panel.contains(event.target)) return;
+    discardAndClose();
+  }, { signal });
+  window.addEventListener("keydown", event => {
+    if (panel.hidden || event.key !== "Escape") return;
+    event.preventDefault();
+    discardAndClose();
+  }, { signal });
+  window.addEventListener("resize", () => {
+    if (!panel.hidden) positionPanel();
+  }, { signal });
+  list.addEventListener("click", event => {
+    const moveBtn = event.target.closest("[data-move]");
+    if (!moveBtn) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const item = moveBtn.closest("[data-dim-id]");
+    const id = item?.dataset.dimId;
+    const delta = Number(moveBtn.dataset.move);
+    const index = draft.dimensions.findIndex(dim => dim.id === id);
+    const next = index + delta;
+    if (index < 0 || next < 0 || next >= draft.dimensions.length) return;
+    const copy = draft.dimensions.slice();
+    const [row] = copy.splice(index, 1);
+    copy.splice(next, 0, row);
+    draft = { ...draft, dimensions: copy };
+    renderList();
+    previewDraft();
+  });
+  list.addEventListener("change", event => {
+    const input = event.target.closest("[data-dim-enabled]");
+    if (!input) return;
+    const id = input.closest("[data-dim-id]")?.dataset.dimId;
+    draft = {
+      ...draft,
+      dimensions: draft.dimensions.map(dim => dim.id === id ? { ...dim, enabled: input.checked } : dim)
+    };
+    previewDraft();
+  });
+  depthSelect.addEventListener("change", () => {
+    draft = {
+      ...draft,
+      treeDepth: depthSelect.value === "all" ? null : Number(depthSelect.value)
+    };
+    previewDraft();
+  });
+  resetButton?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    draft = GanttArrangePolicy.defaultConfig();
+    applyDraft();
+  });
+  applyButton?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    applyDraft();
+  });
+  panel.addEventListener("pointerdown", event => event.stopPropagation());
+  panel.addEventListener("click", event => event.stopPropagation());
+  toolbar.querySelector(".project-gantt-toolbar-main")?.appendChild(wrap);
+  if (keepOpen) requestAnimationFrame(() => showPanel());
 }
 
 function renderProjectSchedule() {
@@ -4445,6 +5277,7 @@ function renderProjectSchedule() {
       renderSchedule();
     });
   });
+  bindGanttArrangePanel(toolbar);
   el.projectGanttChrome.innerHTML = "";
   el.projectGanttChrome.appendChild(toolbar);
   el.projectGanttChrome.classList.remove("hidden");
@@ -4521,65 +5354,71 @@ function renderProjectSchedule() {
   body.className = "project-gantt-body";
   body.style.width = `${ganttContentWidth}px`;
 
-  projectStatusGroups(projects).forEach(group => {
-    if (!group.projects.length) return;
-    const expanded = appendGanttGroupHeading(labelBody, body, {
-      status: group.status,
-      label: group.label,
-      count: group.projects.length
-    }, () => toggleGanttGroup(group.status));
-    if (!expanded) return;
-    const labelGroup = document.createElement("div");
-    labelGroup.className = `project-gantt-label-group ${group.status}`;
-    const chartGroup = document.createElement("section");
-    chartGroup.className = `project-gantt-chart-group ${group.status}`;
-    chartGroup.style.width = `${ganttContentWidth}px`;
-    group.projects.forEach(project => {
-      const progress = ProjectSummaryPolicy.projectProgressPercent(project);
-      if (ProjectCollapsePolicy.shouldRenderSingleRow(project)) {
-        appendGanttRowPair(labelGroup, chartGroup, createProjectGanttRow(project.parent, buckets, state.projectScale));
+  const ganttSections = buildGanttArrangeSections(projects, meetings);
+  const appendSectionRows = (rows, labelGroup, chartGroup, indentBase = 0) => {
+    (rows || []).forEach(row => {
+      if (row.kind === "meeting") {
+        appendGanttRowPair(
+          labelGroup,
+          chartGroup,
+          createCalendarGanttRow(row.meeting, buckets, state.projectScale, { indentBase })
+        );
         return;
       }
-      const sectionCollapsed = state.projectCollapsedSections.has(project.parent.id);
-      const parentInvested = [project.parent, ...project.children].flatMap(task =>
-        getTaskScheduleEntries(task.id)
-          .filter(item => getEntryInvestedHours(item.dateKey, item.entry) > 0)
-          .map(item => item.dateKey)
-      );
-      appendGanttRowPair(labelGroup, chartGroup, createProjectGanttRow(project.parent, buckets, state.projectScale, project.parent.id, {
-        progress,
-        investedDateKeys: parentInvested,
-        isParent: true,
-        collapsed: sectionCollapsed
-      }));
-      if (!sectionCollapsed) {
-        ProjectCollapsePolicy.visibleTreeItems({
-          tasks: project.children,
-          collapsedIds: state.projectCollapsedTasks
-        }).forEach(task => appendGanttRowPair(labelGroup, chartGroup, createProjectGanttRow(task, buckets, state.projectScale, project.parent.id)));
-      }
+      const investedDateKeys = row.isParent
+        ? [row.task, ...(row.descendantTasks || [])].flatMap(task =>
+          getTaskScheduleEntries(task.id)
+            .filter(item => getEntryInvestedHours(item.dateKey, item.entry) > 0)
+            .map(item => item.dateKey)
+        )
+        : undefined;
+      appendGanttRowPair(labelGroup, chartGroup, createProjectGanttRow(
+        row.task,
+        buckets,
+        state.projectScale,
+        row.rootId || row.task.id,
+        {
+          progress: row.progress,
+          investedDateKeys,
+          isParent: Boolean(row.isParent),
+          collapsed: Boolean(row.collapsed),
+          indentBase
+        }
+      ));
     });
-    labelBody.appendChild(labelGroup);
-    body.appendChild(chartGroup);
-  });
-
-  if (meetings.length) {
-    const expanded = appendGanttGroupHeading(labelBody, body, {
-      status: "meetings",
-      label: "会议 / 日程",
-      count: meetings.length
-    }, () => toggleGanttGroup("meetings"));
-    if (expanded) {
-      const labelGroup = document.createElement("div");
-      labelGroup.className = "project-gantt-label-group meetings";
-      const chartGroup = document.createElement("section");
-      chartGroup.className = "project-gantt-chart-group meetings";
-      chartGroup.style.width = `${ganttContentWidth}px`;
-      meetings.forEach(meeting => appendGanttRowPair(labelGroup, chartGroup, createCalendarGanttRow(meeting, buckets, state.projectScale)));
-      labelBody.appendChild(labelGroup);
-      body.appendChild(chartGroup);
+  };
+  const renderArrangeSection = (group, labelParent, chartParent) => {
+    const children = Array.isArray(group.children) ? group.children : [];
+    const rows = Array.isArray(group.rows) ? group.rows : [];
+    const count = typeof GanttArrangePolicy?.countSectionRows === "function"
+      ? GanttArrangePolicy.countSectionRows(group)
+      : (rows.length + children.reduce((sum, child) => sum + (child.rows?.length || 0), 0));
+    if (!count) return;
+    const depth = Math.max(0, Number(group.depth) || 0);
+    const silent = Boolean(group.silent) || !String(group.label || "").trim();
+    let expanded = true;
+    if (!silent) {
+      expanded = appendGanttGroupHeading(labelParent, chartParent, {
+        status: group.status || group.key,
+        label: group.label,
+        count,
+        depth
+      }, () => toggleGanttGroup(group.status || group.key));
     }
-  }
+    if (!expanded) return;
+    if (rows.length) {
+      const labelGroup = document.createElement("div");
+      labelGroup.className = `project-gantt-label-group ${group.status || group.key}`;
+      const chartGroup = document.createElement("section");
+      chartGroup.className = `project-gantt-chart-group ${group.status || group.key}`;
+      chartGroup.style.width = `${ganttContentWidth}px`;
+      appendSectionRows(rows, labelGroup, chartGroup, silent ? depth : depth + 1);
+      labelParent.appendChild(labelGroup);
+      chartParent.appendChild(chartGroup);
+    }
+    children.forEach(child => renderArrangeSection(child, labelParent, chartParent));
+  };
+  ganttSections.forEach(group => renderArrangeSection(group, labelBody, body));
 
   chartTrack.appendChild(body);
   chartPane.appendChild(chartTrack);
@@ -4686,7 +5525,7 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
     scheduledHours: getTaskScheduledHours(task.id)
   });
   const labelRow = document.createElement("div");
-  const depth = getTaskDepth(task, rootId);
+  const depth = getTaskDepth(task, rootId) + Math.max(0, Number(options.indentBase) || 0);
   labelRow.className = `project-gantt-row-label ${task.status}${options.isParent ? " is-parent" : ""}`;
   labelRow.style.setProperty("--task-depth", depth);
   labelRow.dataset.depth = String(depth);
@@ -4809,12 +5648,15 @@ function calendarMeetingTimelineParts(meeting, buckets, scale = "day") {
   return { segments };
 }
 
-function createCalendarGanttRow(meeting, buckets, scale = "day") {
+function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
   const meetingTitle = String(meeting?.title || "").trim();
   if (!TodoListPolicy.hasDisplayTitle(meetingTitle)) return null;
   const parts = calendarMeetingTimelineParts(meeting, buckets, scale);
   const labelRow = document.createElement("div");
+  const depth = Math.max(0, Number(options.indentBase) || 0);
   labelRow.className = "project-gantt-row-label meeting";
+  labelRow.style.setProperty("--task-depth", depth);
+  labelRow.dataset.depth = String(depth);
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin is-meeting">
       <strong title="${escapeHtml(meetingTitle)}">${escapeHtml(meetingTitle)}</strong>
     </div>`;
@@ -4889,7 +5731,7 @@ function requestTaskCompletion(task) {
   pendingCloseTaskId = task.id;
   if (el.taskCloseConfirmTitle) el.taskCloseConfirmTitle.textContent = "关闭任务";
   if (el.taskCloseConfirmMessage) {
-    el.taskCloseConfirmMessage.textContent = `「${task.title}」请确认完成时间与完成情况。「关闭并跟踪」会新建备忘提醒（不计入投入）；「关闭并新建后续」会新建正式后续待办，上级与本任务一致，开始时间为完成时刻。`;
+    el.taskCloseConfirmMessage.textContent = `「${task.title}」请确认完成时间与完成情况。「关闭并新建后续」会继承原优先级与上级；若只需提醒、不排投入，再勾选「仅关注」。`;
   }
   if (el.taskCloseCompletedAt) {
     el.taskCloseCompletedAt.value = toLocalDateTimeInput(new Date().toISOString());
@@ -4971,6 +5813,13 @@ function toggleTaskCompletion(task, options = {}) {
   const completionNote = hasCompletionNote
     ? String(options.completionNote || "").trim().slice(0, 500)
     : null;
+  const sourceSnapshot = closing ? {
+    status: task.status,
+    completedAt: task.completedAt || "",
+    progress: task.progress || 0,
+    deliveryNote: task.deliveryNote || "",
+    startedAt: task.startedAt || ""
+  } : null;
   updateTaskRecords(task.id, record => {
     record.status = nextStatus;
     record.completedAt = closing ? completedAt : "";
@@ -4997,13 +5846,28 @@ function toggleTaskCompletion(task, options = {}) {
   render();
   if (closing && followUpTask) {
     if (pendingParentReviewQueue.length) parentReviewPausedForFollowUp = true;
-    showToast("任务已关闭，请完善备忘提醒的关注时间");
+    successorDialogCommitted = false;
+    pendingSuccessorRollback = {
+      sourceId: task.id,
+      successorId: followUpTask.id,
+      snapshot: sourceSnapshot,
+      mode: "followUp"
+    };
+    showToast("请完善备忘提醒；取消将恢复原任务为未关闭");
     requestAnimationFrame(() => openTaskDialog(followUpTask, { mode: "followUp" }));
   } else if (closing && successorTask) {
     if (pendingParentReviewQueue.length) parentReviewPausedForFollowUp = true;
-    showToast("任务已关闭，请完善后续任务");
+    successorDialogCommitted = false;
+    pendingSuccessorRollback = {
+      sourceId: task.id,
+      successorId: successorTask.id,
+      snapshot: sourceSnapshot,
+      mode: "successor"
+    };
+    showToast("请完善后续任务；取消将恢复原任务为未关闭");
     requestAnimationFrame(() => openTaskDialog(successorTask, { mode: "successor" }));
   } else {
+    pendingSuccessorRollback = null;
     showToast(closing ? "任务已关闭" : "任务已恢复");
   }
 }
@@ -5100,19 +5964,33 @@ function getTaskDepth(task, rootId = "") {
   return depth;
 }
 
-function dayTimelineEntryMatchesFilter(entry, filter = state.filter) {
-  if (!filter || filter === "all") return true;
-  if (entry.entryType === "calendar" || !entry.taskId) return true;
+function scheduleEntryDisplayMeta(entry, dateKey = state.selectedDate) {
+  if (entry.entryType === "calendar" || !entry.taskId) {
+    const kind = getEntryInvestedHours(dateKey, entry) > 0 ? "actual" : "planned";
+    return {
+      type: "meeting",
+      kind,
+      badge: TaskStatusPolicy.scheduleOverviewBadge({ type: "meeting", kind })
+    };
+  }
   const task = findTask(entry.taskId)?.task;
-  if (!task) return false;
-  return matchesUnifiedTaskFilter(task, filter);
+  const kind = TaskStatusPolicy.scheduleOverviewKind({
+    taskStatus: task?.status || "",
+    investedHours: getEntryInvestedHours(dateKey, entry)
+  });
+  return {
+    type: "task",
+    kind,
+    badge: TaskStatusPolicy.scheduleOverviewBadge({ type: "task", kind })
+  };
 }
 
 function renderDayTimeline() {
   const day = getDay();
   const allEntries = day.entries || [];
   const hours = getVisibleTimelineHours(allEntries);
-  const visibleEntries = allEntries.filter(entry => dayTimelineEntryMatchesFilter(entry));
+  // Day/week/month calendars always show every entry; left list filters do not apply.
+  const visibleEntries = allEntries;
   el.timeline.innerHTML = "";
   el.timeline.style.minHeight = `calc(var(--hour-height) * ${hours.length})`;
   hours.forEach(hour => {
@@ -5155,9 +6033,12 @@ function renderDayTimeline() {
   const layoutItems = layoutOverlappingEntries(visibleEntries);
   layoutItems.forEach(({ entry, column, columns }) => {
     const item = document.createElement("article");
+    const meta = scheduleEntryDisplayMeta(entry, state.selectedDate);
     const top = (entry.start - hours[0]) * getHourHeight() + 3;
     const height = (entry.end - entry.start) * getHourHeight() - 6;
-    item.className = `schedule-entry ${entry.color || "sage"}`;
+    const linkedTask = entry.taskId ? findTask(entry.taskId)?.task : null;
+    const endedClass = linkedTask && ["done", "closed"].includes(linkedTask.status) ? ` ${linkedTask.status}` : "";
+    item.className = `schedule-entry ${entry.color || "sage"} ${meta.kind}${meta.type === "meeting" ? " meeting" : ""}${endedClass}`;
     item.draggable = true;
     item.dataset.entryId = entry.id;
     if (columns >= 3) item.classList.add("dense");
@@ -5166,7 +6047,7 @@ function renderDayTimeline() {
     item.style.height = `${Math.max(height, 38)}px`;
     item.style.setProperty("--entry-column", column);
     item.style.setProperty("--entry-columns", columns);
-    item.innerHTML = `<strong>${escapeHtml(entry.title)} <small class="schedule-entry-type">${entry.taskId ? "任务投入" : "会议 / 日程"}</small></strong>
+    item.innerHTML = `<strong><b class="schedule-entry-badge">${escapeHtml(meta.badge)}</b>${escapeHtml(entry.title)}</strong>
       ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}`;
     item.addEventListener("click", () => openEntryDialog(entry.start, entry));
     item.addEventListener("dragstart", event => {
@@ -5353,9 +6234,10 @@ function renderMonthSchedule() {
 }
 
 function dueTasksForDate(dateKey) {
+  // Keep ended tasks visible (strikethrough) on week/month/day calendars.
   return getAllTasks()
     .map(({ task }) => task)
-    .filter(task => task.dueDate === dateKey && !["done", "closed"].includes(task.status) && !isHiddenFutureRecurringInstance(task));
+    .filter(task => task.dueDate === dateKey && !isHiddenFutureRecurringInstance(task));
 }
 
 function completedTasksForDate(dateKey) {
@@ -5428,7 +6310,7 @@ function scheduleOverviewItemsForDate(dateKey) {
       existing.title = itemTitle;
     }
   });
-  dueTasksForDate(dateKey).filter(task => task.dueTime && TodoListPolicy.hasDisplayTitle(task.title)).forEach(task => {
+  dueTasksForDate(dateKey).filter(task => TodoListPolicy.hasDisplayTitle(task.title)).forEach(task => {
     if (taskItems.has(task.id)) return;
     taskItems.set(task.id, {
       type: "task",
@@ -5440,20 +6322,26 @@ function scheduleOverviewItemsForDate(dateKey) {
       dueTime: task.dueTime || ""
     });
   });
+  completedTasksForDate(dateKey).forEach(task => {
+    if (taskItems.has(task.id) || !TodoListPolicy.hasDisplayTitle(task.title)) return;
+    taskItems.set(task.id, {
+      type: "task",
+      title: String(task.title).trim(),
+      kind: TaskStatusPolicy.scheduleOverviewKind({ taskStatus: task.status, investedHours: 0 }),
+      task,
+      entryId: "",
+      start: 98,
+      dueTime: ""
+    });
+  });
   const items = [...taskItems.values(), ...meetingItems].sort((a, b) =>
     `${String(a.start).padStart(5, "0")} ${a.title}`.localeCompare(`${String(b.start).padStart(5, "0")} ${b.title}`)
   );
   items.forEach(item => {
     item.timeText = WeekEntryPolicy.formatScheduleTimeRange(item, formatTime);
   });
-  return items.filter(item => scheduleOverviewItemMatchesFilter(item));
-}
-
-function scheduleOverviewItemMatchesFilter(item, filter = state.filter) {
-  if (!filter || filter === "all") return true;
-  if (item.type === "meeting") return true;
-  if (!item.task) return false;
-  return matchesUnifiedTaskFilter(item.task, filter);
+  // Keep every todo + meeting visible on calendars; left status tabs do not filter here.
+  return items;
 }
 
 function scheduleTimeDecimal(value, fallback = 99) {
@@ -5475,9 +6363,13 @@ function renderDayOverviewList(items, mode) {
   const lineClass = mode === "week" ? "week-task-line" : "month-task-line";
   const listClass = mode === "week" ? "week-task-list" : "month-task-list";
   return `<div class="${listClass}">
-    ${items.map(item => `<div class="${lineClass} ${item.kind}${item.type === "meeting" ? " meeting" : ""}" draggable="${item.type === "task" && item.task && !["done", "closed"].includes(item.task.status)}" data-task-id="${item.task?.id || ""}" data-entry-id="${escapeHtml(item.entryId || "")}" title="${escapeHtml(item.title)}${item.timeText ? ` · ${escapeHtml(item.timeText)}` : ""}">
+    ${items.map(item => {
+      const ended = item.task && ["done", "closed"].includes(item.task.status);
+      const statusClass = ended ? ` ${item.task.status}` : "";
+      return `<div class="${lineClass} ${item.kind}${item.type === "meeting" ? " meeting" : ""}${statusClass}" draggable="${item.type === "task" && item.task && !ended}" data-task-id="${item.task?.id || ""}" data-entry-id="${escapeHtml(item.entryId || "")}" title="${escapeHtml(item.title)}${item.timeText ? ` · ${escapeHtml(item.timeText)}` : ""}">
       <b>${overviewItemBadge(item)}</b><span>${escapeHtml(item.title)}</span>${mode === "week" && item.timeText ? `<small>${escapeHtml(item.timeText)}</small>` : ""}
-    </div>`).join("")}
+    </div>`;
+    }).join("")}
   </div>`;
 }
 
@@ -5749,7 +6641,9 @@ function saveEntry() {
     return;
   }
   const previousTaskId = existingEntry?.taskId || "";
-  if (payload.entryType !== "task_work") {
+  const linkSelected = String(el.entryTaskLink?.value || "").trim();
+  // Meetings stay in the meeting list, but may optionally link a todo so hours count as task investment.
+  if (payload.entryType === "calendar" && !linkSelected) {
     finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId: "", dateKey });
     return;
   }
@@ -6096,13 +6990,11 @@ function bindCalendarEntryList(container, dateKey) {
 }
 
 function updateEntryTypeControls() {
-  const taskWork = el.entryType.value === "task_work";
-  el.entryTaskLink.disabled = !taskWork;
-  el.entryTaskLink.closest("label")?.classList.toggle("disabled-field", !taskWork);
-  el.entryTaskCombobox.classList.toggle("disabled", !taskWork);
-  el.entryTaskTrigger.disabled = !taskWork;
-  if (!taskWork) el.entryTaskLink.value = "";
-  else if (!el.entryTaskLink.value) el.entryTaskLink.value = "";
+  // Both 会议日程 and 新建待办 can link a todo; meeting link is optional.
+  el.entryTaskLink.disabled = false;
+  el.entryTaskLink.closest("label")?.classList.remove("disabled-field");
+  el.entryTaskCombobox?.classList.remove("disabled");
+  if (el.entryTaskTrigger) el.entryTaskTrigger.disabled = false;
   syncEntryTaskTrigger();
 }
 
@@ -6728,10 +7620,9 @@ function normalizeTimeInput(time) {
 }
 
 function getTaskDueParts() {
-  const value = String(el.taskDueDateTime?.value || "").trim();
-  if (!value) return { dueDate: "", dueTime: "" };
-  const [dueDate = "", timePart = ""] = value.split("T");
-  return { dueDate, dueTime: normalizeTimeInput(timePart) };
+  const parsed = parseFlexibleDateTime(el.taskDueDateTime?.value || "");
+  if (!parsed.dateKey) return { dueDate: "", dueTime: "" };
+  return { dueDate: parsed.dateKey, dueTime: parsed.time || "" };
 }
 
 function setTaskDueDateTime(dueDate, dueTime = "") {
@@ -6740,7 +7631,7 @@ function setTaskDueDateTime(dueDate, dueTime = "") {
     el.taskDueDateTime.value = "";
     return;
   }
-  el.taskDueDateTime.value = `${dueDate}T${normalizeTimeInput(dueTime) || defaultWorkEndTime()}`;
+  el.taskDueDateTime.value = formatDateTimeDisplay(dueDate, normalizeTimeInput(dueTime) || defaultWorkEndTime());
 }
 
 function defaultLocalDateTimeSeed(kind = "end") {
@@ -6751,9 +7642,15 @@ function defaultLocalDateTimeSeed(kind = "end") {
 
 function ensureDueDateTimeUsesWorkEnd(force = false) {
   if (!el.taskDueDateTime) return;
-  const { dueDate, dueTime } = getTaskDueParts();
-  if (!dueDate) return;
-  if (force || !dueTime) setTaskDueDateTime(dueDate, defaultWorkEndTime());
+  const parsed = parseFlexibleDateTime(el.taskDueDateTime.value || "");
+  if (!parsed.dateKey) return;
+  if (isCreateMeetingKind()) {
+    const time = parsed.time || defaultWorkStartTime();
+    el.taskDueDateTime.value = formatDateTimeDisplay(parsed.dateKey, time);
+    return;
+  }
+  if (force || !parsed.time) setTaskDueDateTime(parsed.dateKey, defaultWorkEndTime());
+  else el.taskDueDateTime.value = formatDateTimeDisplay(parsed.dateKey, parsed.time);
 }
 
 function bindWorkHourDateTimeDefault(input, kind = "end") {
@@ -6761,7 +7658,9 @@ function bindWorkHourDateTimeDefault(input, kind = "end") {
   input.dataset.workHourDefaultBound = "1";
   const seedIfEmpty = () => {
     if (input.value) return;
-    input.value = defaultLocalDateTimeSeed(kind);
+    const [dateKey = "", time = ""] = defaultLocalDateTimeSeed(kind).split("T");
+    if (input.type === "datetime-local") input.value = `${dateKey}T${time}`;
+    else input.value = formatDateTimeDisplay(dateKey, time);
   };
   // Seed only when opening the picker, not on keyboard focus/tab.
   input.addEventListener("pointerdown", seedIfEmpty);

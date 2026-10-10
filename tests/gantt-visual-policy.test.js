@@ -7,6 +7,8 @@ const requiredApp = [
   "calendarMeetingTimelineParts",
   "createCalendarGanttRow",
   "getCalendarMeetingSummaries",
+  "buildMeetingArrangeRows",
+  "extraRows: meetingRows",
   "scheduleOverviewItemsForDate",
   "renderDayOverviewList",
   "ProjectViewPolicy.investmentSegments",
@@ -60,7 +62,9 @@ const requiredStyles = [
   ".project-gantt-chart-track",
   ".project-gantt-lane i.gantt-meeting-bar",
   ".gantt-legend i.legend-meeting",
-  "#3db56a"
+  "#2fbf6b",
+  'content: "✓"',
+  'content: "!"'
 ];
 requiredStyles.forEach(token => {
   if (!styles.includes(token)) throw new Error(`missing gantt visual style: ${token}`);

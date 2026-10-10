@@ -101,11 +101,12 @@
               </div>
               <div class="panel-heading-actions task-side-slot">
                 <form class="quick-add quick-task-form" id="quickTaskForm">
-                  <button type="button" id="taskAddTrigger" class="quick-add-new-btn" title="新建事项" aria-label="新建事项">
+                  <button type="button" id="taskAddTrigger" class="quick-add-new-btn" title="新建" aria-label="新建">
                     <span class="quick-add-new-plus" aria-hidden="true">+</span>
                   </button>
-                  <input id="quickTaskInput" maxlength="80" placeholder="新增" autocomplete="off" aria-label="新增事项" />
+                  <input id="quickTaskInput" maxlength="80" placeholder="新增" autocomplete="off" aria-label="新增事项，可在表单内选择任务或会议" />
                 </form>
+                <input type="file" id="panelAiImageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
               </div>
             </div>
           </div>
@@ -114,10 +115,10 @@
         <div class="task-list-toolbar">
           <label class="task-search task-side-control" id="taskSearchWrap">
             <span class="task-side-glyph" aria-hidden="true">⌕</span>
-            <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索.../@负责人" aria-label="搜索标题，或 @负责人 / @参会人" title="搜索标题；输入 @姓名 可按负责人/参会人过滤" />
+            <input id="taskListSearch" type="search" autocomplete="off" placeholder="搜索.../@人" aria-label="搜索全部待办与会议，或 @责任人 / @参会人" title="在全部待办与会议中搜索；输入 @姓名 可按责任人/参会人过滤" />
           </label>
           <div class="task-side-slot task-continue-slot">
-            <button type="button" class="soft-button task-continue-yesterday task-side-control" id="continueYesterdayButton" title="查看昨天有投入、今天可继续的任务">
+            <button type="button" class="soft-button task-continue-yesterday task-side-control" id="continueYesterdayButton" title="查看昨天有投入可继续的任务，以及昨天的会议">
               <span class="task-side-glyph" aria-hidden="true">↺</span>
               <span class="task-side-label">继续昨天</span>
             </button>
@@ -221,14 +222,7 @@
         </div>
         <button type="button" class="close-button" data-close-dialog="aiBatchDraftDialog" aria-label="关闭">×</button>
       </div>
-      <p class="form-hint" id="aiBatchDraftHint">可勾选、修改并选择上级后再创建。上级会按历史同类任务预填，可改。</p>
-      <div class="ai-batch-parent-toolbar">
-        <label>
-          <span>统一上级</span>
-          <select id="aiBatchSharedParent"></select>
-        </label>
-        <button type="button" class="soft-button" id="aiBatchApplyParentButton">应用到所选</button>
-      </div>
+      <p class="form-hint" id="aiBatchDraftHint">请核对名称与类型（任务 / 会议）。任务进待办顶部待完善；会议写入日程。</p>
       <div class="modal-scroll" id="aiBatchDraftList"></div>
       <div class="modal-actions">
         <button type="button" class="soft-button" id="aiBatchSelectAllButton">全选</button>
@@ -247,7 +241,7 @@
       </div>
       <button type="button" class="close-button" data-close-dialog="taskCloseConfirmDialog" aria-label="关闭">×</button>
     </div>
-    <p class="entry-link-confirm-message" id="taskCloseConfirmMessage">本环节结束后，可仅关闭，或继续新建跟踪/后续任务。</p>
+    <p class="entry-link-confirm-message" id="taskCloseConfirmMessage">本环节结束后，可仅关闭，或新建后续任务（默认继承原优先级与上级；需要时再勾选「仅关注」）。</p>
     <div class="task-close-confirm-fields">
       <label>
         <span>完成时间</span>
@@ -261,7 +255,6 @@
     <div class="modal-actions task-close-confirm-actions">
       <button type="button" class="soft-button" data-close-dialog="taskCloseConfirmDialog">取消</button>
       <button type="button" class="soft-button" id="taskCloseOnlyButton">仅关闭</button>
-      <button type="button" class="soft-button" id="taskCloseFollowUpButton">关闭并跟踪</button>
       <button type="button" class="primary-button" id="taskCloseSuccessorButton">关闭并新建后续</button>
     </div>
   </dialog>
@@ -310,8 +303,8 @@
       <label>
         <span>日程类型</span>
         <select id="entryType">
-          <option value="calendar">会议 / 日程（计入投入，在「会议」清单查看）</option>
-          <option value="task_work">任务投入（关联待办并统计工时）</option>
+          <option value="calendar">会议日程</option>
+          <option value="task_work">新建待办</option>
         </select>
       </label>
 
@@ -380,17 +373,51 @@
         <p class="follow-up-draft-hint hidden" id="followUpDraftHint">请确认待办名称与目标完成日期，并补充背景说明。上级任务已与关闭任务保持一致。</p>
         <div class="task-ai-dropzone" id="taskAiDropzone">
           <input type="file" id="taskAiImageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
-          <div class="task-ai-dropzone-body" id="taskAiDropzoneBody" tabindex="0" role="button" aria-label="投放截图由 AI 创建待办">
-            <strong>截图生成待办</strong>
-            <span>拖入 / 粘贴截图，或 <button type="button" class="linkish-button" id="taskAiPickImageButton">选择图片</button>。识别到多条时可勾选修改后再批量创建。</span>
+          <div class="task-ai-dropzone-body" id="taskAiDropzoneBody" tabindex="0" role="button" aria-label="投放截图由 AI 识别任务或会议">
+            <strong>截图识别</strong>
+            <span>拖入 / 粘贴截图，或 <button type="button" class="linkish-button" id="taskAiPickImageButton">选择图片</button>。AI 会预填类型（任务/会议），你仍可修改后再创建。</span>
           </div>
           <div class="task-ai-dropzone-status hidden" id="taskAiDropzoneStatus" aria-live="polite"></div>
         </div>
-        <label id="taskTitleField"><span>待办名称</span><input id="taskTitleInput" maxlength="80" placeholder="需要完成什么？" /></label>
-        <label id="taskDueDateField">
-          <span>目标日期时间</span>
-          <input type="datetime-local" id="taskDueDateTime" step="60" aria-label="目标日期时间，默认工作日结束" title="日期与时间一起选择；时间默认工作日结束" />
+        <label id="taskCreateKindField" class="task-create-kind-field hidden">
+          <span>类型</span>
+          <select id="taskCreateKind" aria-label="新建类型：任务或会议">
+            <option value="task" selected>任务</option>
+            <option value="meeting">会议</option>
+          </select>
         </label>
+        <label id="taskTitleField"><span>待办名称</span><input id="taskTitleInput" maxlength="80" placeholder="需要完成什么？" /></label>
+        <div class="form-row task-schedule-time-row" id="taskScheduleTimeRow">
+          <label id="taskDueDateField">
+            <span>目标日期时间</span>
+            <div class="datetime-input-wrap">
+              <input type="text" id="taskDueDateTime" inputmode="numeric" maxlength="16" placeholder="2026-09-10 15:00" autocomplete="off" spellcheck="false" aria-label="目标日期时间，可手写或点选" title="可手写，如 2026-9-10 15:00；失焦后自动标准化" />
+              <button type="button" class="datetime-pick-button" data-datetime-target="taskDueDateTime" aria-label="选择日期时间" title="选择日期时间">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <label class="checkbox-setting task-follow-up-option task-attention-inline" id="taskFollowUpOption" title="勾选后进入待跟踪：只提醒，不排工作投入、不计工时">
+            <input type="checkbox" id="taskFollowUpTracking" />
+            <span id="taskFollowUpTrackingLabel" class="task-attention-label">
+              <b>仅关注</b>
+              <small class="task-attention-hint">只提醒，不排投入</small>
+            </span>
+          </label>
+          <label id="taskMeetingEndField" class="hidden">
+            <span>结束日期时间</span>
+            <div class="datetime-input-wrap">
+              <input type="text" id="taskMeetingEndDateTime" inputmode="numeric" maxlength="16" placeholder="2026-09-10 16:00" autocomplete="off" spellcheck="false" aria-label="会议结束日期时间，可手写或点选" title="可手写，如 2026-9-10 16:00；失焦后自动标准化" />
+              <button type="button" class="datetime-pick-button" data-datetime-target="taskMeetingEndDateTime" aria-label="选择结束日期时间" title="选择结束日期时间">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+        </div>
         <div class="form-row">
           <label><span>责任人</span><input id="taskOwner" maxlength="30" placeholder="例如：我、王芳" /></label>
           <label>
@@ -398,7 +425,6 @@
             <select id="taskPriority">
               <option value="general_daily" selected>一般日常</option>
               <option value="kpi">KPI</option>
-              <option value="follow_up">跟踪关注</option>
               <option value="important_urgent">重要紧急</option>
               <option value="paused">中止暂停</option>
               <option value="monthly_fixed">每月例行</option>
@@ -467,10 +493,6 @@
           <ol class="task-subtask-list" id="taskSubtaskList"></ol>
           <input id="taskSubtaskDraftInput" class="task-subtask-draft" type="text" maxlength="80" placeholder="输入下级任务，回车添加" autocomplete="off" />
         </section>
-        <label class="checkbox-setting task-follow-up-option hidden" id="taskFollowUpOption">
-          <input type="checkbox" id="taskFollowUpTracking" />
-          <span>本环节已结束，但需后续跟踪闭环（关闭本任务后，将新建关联的「待跟踪」任务并请你填写目标完成时间）</span>
-        </label>
       </div>
       <div class="modal-actions task-edit-actions">
         <button type="button" class="danger-button hidden" id="deleteTaskButton">删除待办</button>
@@ -668,6 +690,7 @@
   <script src="todo-list-policy.js"></script>
   <script src="project-summary-policy.js"></script>
   <script src="project-collapse-policy.js"></script>
+  <script src="gantt-arrange-policy.js"></script>
   <script src="task-work-policy.js"></script>
   <script src="schedule-hierarchy-repair-policy.js"></script>
   <script src="schedule-meeting-demote-policy.js"></script>

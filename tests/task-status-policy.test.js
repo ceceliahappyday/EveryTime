@@ -4,6 +4,9 @@ const policy = require("../task-status-policy.js");
 assert.strictEqual(policy.followUpTaskTitle("合同审批"), "合同审批");
 assert.strictEqual(policy.followUpTaskTitle("合同审批 · 跟踪"), "合同审批");
 assert.strictEqual(policy.followUpTaskTitle(""), "后续事项");
+assert.strictEqual(policy.listDisplayTitle({ title: "234 · 跟踪", status: "tracking" }), "234");
+assert.strictEqual(policy.listDisplayTitle("234 · 跟踪"), "234");
+assert.strictEqual(policy.stripTrackingTitleSuffix("合同审批 · 跟踪"), "合同审批");
 assert.strictEqual(policy.scheduleOverviewKind({ taskStatus: "tracking", investedHours: 0 }), "tracking");
 assert.strictEqual(policy.scheduleOverviewKind({ taskStatus: "planned", investedHours: 0 }), "planned");
 assert.strictEqual(policy.scheduleOverviewKind({ taskStatus: "tracking", investedHours: 1 }), "tracking");
@@ -60,15 +63,27 @@ const successor = policy.buildSuccessorTask({
   businessBackground: "保障版本按期上线",
   completedAt: closedAt
 }, { closedAt });
-assert.strictEqual(successor.status, "planned");
+assert.strictEqual(successor.status, "planned", "successor defaults to normal work task");
 assert.strictEqual(successor.successorFromTaskId, "a1");
 assert.strictEqual(successor.parentId, "parent-1");
-assert.strictEqual(successor.title, "上线验收 · 后续");
-assert.strictEqual(successor.priority, "kpi");
+assert.strictEqual(successor.title, "上线验收");
+assert.strictEqual(successor.priority, "kpi", "successor inherits source priority");
 assert.strictEqual(successor.startedAt, closedAt);
 assert.strictEqual(successor.startOverrideAt, closedAt);
 assert.equal(policy.isMemoReminder(successor), false);
 assert.equal(policy.countsTowardWorkHours(successor), true);
+const attentionSuccessor = policy.buildSuccessorTask({
+  id: "a1",
+  title: "上线验收",
+  parentId: "parent-1",
+  owner: "我",
+  priority: "kpi",
+  businessBackground: "保障版本按期上线",
+  completedAt: closedAt
+}, { closedAt, attentionOnly: true });
+assert.strictEqual(attentionSuccessor.status, "tracking");
+assert.strictEqual(attentionSuccessor.priority, "follow_up");
+assert.equal(policy.isMemoReminder(attentionSuccessor), true);
 
 const workFromMemo = policy.buildWorkTodoFromMemo({
   id: "memo-1",

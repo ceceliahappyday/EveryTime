@@ -40,16 +40,31 @@
     );
   }
 
+  function stripTrackingTitleSuffix(title = "") {
+    return String(title || "").trim().replace(/\s*·\s*跟踪\s*$/u, "").trim();
+  }
+
   function followUpTaskTitle(sourceTitle = "") {
-    const title = String(sourceTitle || "").trim().replace(/\s*·\s*跟踪\s*$/u, "");
+    const title = stripTrackingTitleSuffix(sourceTitle);
     return title || "后续事项";
   }
 
+  /** List/card title: drop redundant 「· 跟踪」 when the side badge already says 跟踪. */
+  function listDisplayTitle(taskOrTitle = "") {
+    const raw = typeof taskOrTitle === "string" ? taskOrTitle : (taskOrTitle?.title || "");
+    const cleaned = stripTrackingTitleSuffix(raw);
+    return cleaned || String(raw || "").trim();
+  }
+
   function buildFollowUpBusinessBackground(source = {}) {
-    const title = String(source.title || "").trim().replace(/\s*·\s*跟踪\s*$/u, "");
+    const title = stripTrackingTitleSuffix(source.title);
     const background = String(source.businessBackground || "").trim();
     if (title && background) return `${title}\n${background}`.slice(0, 500);
     return (title || background || "").slice(0, 500);
+  }
+
+  function resolveSourceParentId(source = {}) {
+    return source.parentId || source.parentTaskId || source.parentTask || source.parent || "";
   }
 
   function buildFollowUpTask(source = {}, options = {}) {
@@ -61,7 +76,7 @@
       dueDate: "",
       dueTime: "",
       owner: source.owner || "我",
-      parentId: source.parentId || "",
+      parentId: resolveSourceParentId(source),
       description: String(source.description || "").trim().slice(0, 240),
       priority: "follow_up",
       progress: 0,
@@ -81,36 +96,37 @@
   }
 
   function successorTaskTitle(sourceTitle = "") {
-    const title = String(sourceTitle || "").trim()
-      .replace(/\s*·\s*跟踪\s*$/u, "")
-      .replace(/\s*·\s*后续\s*$/u, "");
+    const title = stripTrackingTitleSuffix(sourceTitle).replace(/\s*·\s*后续\s*$/u, "");
     return title ? `${title} · 后续` : "后续任务";
   }
 
-  /** 关闭后新建的正式后续待办（计入投入），上级与来源一致，开始时间为关闭时刻 */
+  /** 关闭后新建后续：默认继承原任务优先级与上级；仅关注需用户勾选（只提醒、不排投入） */
   function buildSuccessorTask(source = {}, options = {}) {
     const opts = typeof options === "string" ? { dateKey: options } : (options || {});
     const now = new Date().toISOString();
     const closedAt = opts.closedAt || source.completedAt || now;
+    const attentionOnly = opts.attentionOnly === true;
     const sourcePriority = source.priority || "general_daily";
-    const priority = ["follow_up", "monthly_fixed", "paused"].includes(sourcePriority)
+    const workPriority = ["follow_up", "monthly_fixed"].includes(sourcePriority)
       ? "general_daily"
       : sourcePriority;
+    const priority = attentionOnly ? "follow_up" : workPriority;
+    const baseTitle = stripTrackingTitleSuffix(source.title).replace(/\s*·\s*后续\s*$/u, "");
     return {
-      title: successorTaskTitle(source.title),
-      dueDate: "",
-      dueTime: "",
+      title: baseTitle || successorTaskTitle(source.title),
+      dueDate: source.dueDate || "",
+      dueTime: source.dueTime || "",
       owner: source.owner || "我",
-      parentId: source.parentId || "",
-      description: "",
+      parentId: resolveSourceParentId(source),
+      description: String(source.description || "").trim().slice(0, 240),
       priority,
       progress: 0,
-      status: "planned",
+      status: attentionOnly ? TRACKING_STATUS : "planned",
       startedAt: closedAt,
       startOverrideAt: closedAt,
       completedAt: "",
       businessBackground: buildFollowUpBusinessBackground(source),
-      problemReason: "",
+      problemReason: String(source.problemReason || "").trim().slice(0, 500),
       deliveryNote: "",
       recurrence: null,
       recurrenceGroupId: "",
@@ -194,7 +210,9 @@
     belongsInMemoList,
     countsTowardWorkHours,
     isSchedulableStatus,
+    stripTrackingTitleSuffix,
     followUpTaskTitle,
+    listDisplayTitle,
     successorTaskTitle,
     buildFollowUpBusinessBackground,
     buildFollowUpTask,
