@@ -13,7 +13,7 @@ const project = {
 
 assert.equal(policy.DIMENSIONS.some(dim => dim.id === "projectStatus"), false, "project status removed");
 assert.equal(policy.dimensionMeta("taskTree").label, "任务项");
-assert.equal(policy.dimensionMeta("category").label, "分类");
+assert.equal(policy.dimensionMeta("category").label, "任务分类");
 assert.ok(policy.DIMENSIONS.some(dim => dim.id === "category"), "category arrange dimension available");
 
 const defaults = policy.defaultConfig();

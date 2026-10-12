@@ -9,7 +9,7 @@
   const DIMENSIONS = [
     { id: "taskTree", label: "任务项" },
     { id: "taskStatus", label: "任务状态" },
-    { id: "category", label: "分类" },
+    { id: "category", label: "任务分类" },
     { id: "owner", label: "责任人" },
     { id: "priority", label: "优先级" }
   ];
@@ -209,7 +209,7 @@
     if (dimId === "taskStatus") return statusLabel(key);
     if (dimId === "category") {
       if (typeof helpers.categoryLabel === "function") return helpers.categoryLabel(key);
-      return `分类 · ${key}`;
+      return `任务分类 · ${key}`;
     }
     if (dimId === "owner") return `责任人 · ${key}`;
     if (dimId === "priority") return priorityLabel(key);

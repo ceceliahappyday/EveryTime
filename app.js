@@ -1537,6 +1537,16 @@ function getDefaultOwner() {
   return name || "我";
 }
 
+function ownerFieldPlaceholder(meeting = false) {
+  const self = String(state.profileName || "").trim();
+  if (meeting) {
+    return self
+      ? `例如：${self}、王芳、李明（多人用逗号分隔）`
+      : "例如：王芳、李明（多人用逗号分隔）";
+  }
+  return self ? `例如：${self}、王芳` : "例如：王芳";
+}
+
 function isLegacySelfOwner(owner) {
   return String(owner || "").trim() === "我";
 }
@@ -3627,8 +3637,12 @@ function buildMonthTimelineBuckets(startKey, endKey) {
   const end = String(endKey || "").slice(0, 7);
   if (!cursor || !end) return buckets;
   while (cursor <= end) {
-    const [year, month] = cursor.split("-").map(Number);
-    buckets.push({ key: cursor, label: `${month}月` });
+    const [, month] = cursor.split("-").map(Number);
+    buckets.push({
+      key: cursor,
+      label: `${month}月`,
+      dayCount: ProjectViewPolicy.daysInMonthKey?.(cursor) || 30
+    });
     cursor = ProjectViewPolicy.shiftMonthKey(cursor, 1);
     if (buckets.length > 36) break;
   }
@@ -3639,7 +3653,7 @@ function buildDayTimelineBuckets(startKey, endKey) {
   const buckets = [];
   for (let cursor = fromDateKey(startKey); cursor <= fromDateKey(endKey); cursor = addDays(cursor, 1)) {
     const key = toDateKey(cursor);
-    buckets.push({ key, label: key.slice(5).replace("-", "/") });
+    buckets.push({ key, label: key.slice(5).replace("-", "/"), dayCount: 1 });
   }
   return buckets;
 }
@@ -3648,7 +3662,11 @@ function buildWeekTimelineBuckets(startKey, endKey) {
   const buckets = [];
   for (let cursor = fromDateKey(startKey); cursor <= fromDateKey(endKey); cursor = addDays(cursor, 7)) {
     const key = toDateKey(cursor);
-    buckets.push({ key, label: `${cursor.getMonth() + 1}/${cursor.getDate()}周` });
+    buckets.push({
+      key,
+      label: `${cursor.getMonth() + 1}/${cursor.getDate()}周`,
+      dayCount: 7
+    });
   }
   return buckets;
 }
@@ -3757,16 +3775,23 @@ function projectBucketKey(dateKey, scale = "day") {
 
 function taskTimelineSpan(task, buckets, scale = "day") {
   const points = taskTimelineDateKeys(task);
-  const bucketKeys = buckets.map(bucket => bucket.key);
   const first = points.length ? points.sort()[0] : buckets[0]?.key;
   const last = task.completedAt ? toDateKey(new Date(task.completedAt)) : (task.dueDate || points.sort().at(-1) || first);
-  const firstBucket = projectBucketKey(first, scale);
-  const lastBucket = projectBucketKey(last, scale);
-  const startIndex = Math.max(0, bucketKeys.indexOf(firstBucket));
-  const endIndex = Math.max(startIndex, bucketKeys.indexOf(lastBucket));
-  const left = buckets.length ? (startIndex / buckets.length) * 100 : 0;
-  const width = buckets.length ? ((endIndex - startIndex + 1) / buckets.length) * 100 : 100;
-  return { left, width: Math.max(width, 4) };
+  const span = ProjectViewPolicy.progressSpan?.({
+    startDateKey: first,
+    endDateKey: last,
+    isEnded: true,
+    progress: 100,
+    buckets,
+    projectBucketKey: dateKey => projectBucketKey(dateKey, scale),
+    scale,
+    getMonday,
+    fromDateKey
+  });
+  return {
+    left: (span?.leftRatio || 0) * 100,
+    width: Math.max((span?.widthRatio || 1) * 100, 4)
+  };
 }
 
 function createTaskCard(task) {
@@ -4135,7 +4160,7 @@ function syncTaskCreateKindUi() {
   if (ownerLabel) ownerLabel.textContent = meeting ? "参会人" : "责任人员";
   if (el.taskOwner) {
     el.taskOwner.maxLength = meeting ? 80 : 30;
-    el.taskOwner.placeholder = meeting ? "例如：我、王芳、李明（多人用逗号分隔）" : "例如：我、王芳";
+    el.taskOwner.placeholder = ownerFieldPlaceholder(meeting);
   }
   const parentLabel = el.taskParentField?.querySelector(":scope > span");
   if (parentLabel) parentLabel.textContent = meeting ? "关联待办" : "归属上级任务";
@@ -5877,8 +5902,12 @@ function renderProjectSchedule() {
   const header = document.createElement("div");
   header.className = "project-gantt-days is-fill-width";
   const ganttContentWidth = getGanttChartViewportWidth();
-  const ganttBucketWidth = buckets.length ? ganttContentWidth / buckets.length : ganttContentWidth;
-  header.style.gridTemplateColumns = `repeat(${Math.max(1, buckets.length)}, minmax(0, 1fr))`;
+  const axisMetrics = ProjectViewPolicy.axisMetrics?.(buckets, state.projectScale) || {
+    totalDays: buckets.length || 1,
+    gridTemplateColumns: `repeat(${Math.max(1, buckets.length)}, minmax(0, 1fr))`
+  };
+  header.style.gridTemplateColumns = axisMetrics.gridTemplateColumns
+    || `repeat(${Math.max(1, buckets.length)}, minmax(0, 1fr))`;
   const todayBucketKey = projectBucketKey(toDateKey(new Date()), state.projectScale);
   const todayOffset = taskTimelineOffset(toDateKey(new Date()), buckets, state.projectScale);
   header.innerHTML = `${todayOffset === null ? "" : `<u class="gantt-today-line" style="left:${todayOffset}%" title="今天"></u>`}${buckets.map(bucket => `<span${bucket.key === todayBucketKey ? " class=\"is-today\"" : ""}>${bucket.label}</span>`).join("")}`;
@@ -6002,13 +6031,13 @@ function renderProjectSchedule() {
   el.projectGanttScroll = null;
   ganttRoot.appendChild(headerSplit);
   ganttRoot.appendChild(rowsWrap);
+  bindGanttBlankContextMenu(ganttRoot);
   el.timeline.appendChild(ganttRoot);
   state.projectScrollLeft = 0;
   state.projectViewNeedsAnchor = false;
   const syncBucketDropWidth = () => {
     const paneWidth = chartPane.clientWidth || ganttContentWidth;
-    const bucketWidth = buckets.length ? paneWidth / buckets.length : paneWidth;
-    bindProjectDrop(body, buckets, bucketWidth);
+    bindProjectDrop(body, buckets, paneWidth, state.projectScale);
   };
   syncBucketDropWidth();
   requestAnimationFrame(() => {
@@ -6294,6 +6323,20 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
 let ganttContextMenuEl = null;
 let ganttContextMenuTaskId = "";
 
+function positionGanttContextMenu(menu, event) {
+  menu.classList.remove("hidden");
+  const pad = 8;
+  const rect = menu.getBoundingClientRect();
+  const width = rect.width || 160;
+  const height = rect.height || 140;
+  let left = event.clientX;
+  let top = event.clientY;
+  if (left + width > window.innerWidth - pad) left = window.innerWidth - width - pad;
+  if (top + height > window.innerHeight - pad) top = window.innerHeight - height - pad;
+  menu.style.left = `${Math.max(pad, left)}px`;
+  menu.style.top = `${Math.max(pad, top)}px`;
+}
+
 function ensureGanttContextMenu() {
   if (ganttContextMenuEl) return ganttContextMenuEl;
   ganttContextMenuEl = document.createElement("div");
@@ -6309,6 +6352,10 @@ function ensureGanttContextMenu() {
     const action = button.dataset.ganttAction;
     const task = findTask(ganttContextMenuTaskId)?.task;
     hideGanttContextMenu();
+    if (action === "add-root") {
+      openTaskDialog(null, { createKind: "task" });
+      return;
+    }
     if (!task) return;
     if (action === "edit") openTaskDialog(task);
     else if (action === "add-child") openNewChildTaskFromGantt(task);
@@ -6345,17 +6392,32 @@ function showGanttContextMenu(event, task) {
     <button type="button" role="menuitem" data-gantt-action="add-child">新建子任务</button>
     <button type="button" role="menuitem" data-gantt-action="close">${ended ? "恢复任务" : "关闭任务"}</button>
     <button type="button" role="menuitem" data-gantt-action="delete" class="is-danger">删除…</button>`;
-  menu.classList.remove("hidden");
-  const pad = 8;
-  const rect = menu.getBoundingClientRect();
-  const width = rect.width || 160;
-  const height = rect.height || 140;
-  let left = event.clientX;
-  let top = event.clientY;
-  if (left + width > window.innerWidth - pad) left = window.innerWidth - width - pad;
-  if (top + height > window.innerHeight - pad) top = window.innerHeight - height - pad;
-  menu.style.left = `${Math.max(pad, left)}px`;
-  menu.style.top = `${Math.max(pad, top)}px`;
+  positionGanttContextMenu(menu, event);
+}
+
+function showGanttBlankContextMenu(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const menu = ensureGanttContextMenu();
+  ganttContextMenuTaskId = "";
+  menu.innerHTML = `
+    <button type="button" role="menuitem" data-gantt-action="add-root">新建父级任务</button>`;
+  positionGanttContextMenu(menu, event);
+}
+
+function isGanttTaskRowContextTarget(target) {
+  return Boolean(target?.closest?.(
+    ".project-gantt-row-label, .project-gantt-row-chart, .gantt-context-menu, .project-gantt-resize-handle, button, input, select, textarea, a"
+  ));
+}
+
+function bindGanttBlankContextMenu(root) {
+  if (!root || root.dataset.ganttBlankMenuBound === "1") return;
+  root.dataset.ganttBlankMenuBound = "1";
+  root.addEventListener("contextmenu", event => {
+    if (isGanttTaskRowContextTarget(event.target)) return;
+    showGanttBlankContextMenu(event);
+  });
 }
 
 function bindGanttRowContextMenu(row, task) {
@@ -6671,10 +6733,16 @@ function toggleTaskCompletion(task, options = {}) {
 }
 
 function taskTimelineOffset(dateKey, buckets, scale = "day") {
-  const keys = buckets.map(bucket => bucket.key);
-  const index = keys.indexOf(projectBucketKey(dateKey, scale));
-  if (index < 0) return null;
-  return buckets.length ? ((index + .5) / buckets.length) * 100 : 0;
+  const ratio = ProjectViewPolicy.markerRatio?.({
+    dateKey,
+    buckets,
+    projectBucketKey: key => projectBucketKey(key, scale),
+    edge: "center",
+    scale,
+    getMonday,
+    fromDateKey
+  });
+  return ratio == null ? null : ratio * 100;
 }
 
 function mapEntryGanttSegments(investedItems, buckets, scale = "day") {
@@ -7374,7 +7442,7 @@ function copyEntryToDate(entryId, dateKey, hour) {
   return true;
 }
 
-function bindProjectDrop(target, buckets, bucketWidth = 44) {
+function bindProjectDrop(target, buckets, paneWidth = 0, scale = "day") {
   target.addEventListener("dragover", event => { event.preventDefault(); target.classList.add("drag-over"); });
   target.addEventListener("dragleave", () => target.classList.remove("drag-over"));
   target.addEventListener("drop", event => {
@@ -7383,7 +7451,15 @@ function bindProjectDrop(target, buckets, bucketWidth = 44) {
     const scroller = getProjectGanttScroller();
     const rect = (el.projectGanttChartTrack || target.closest(".project-gantt-chart-pane") || scroller).getBoundingClientRect();
     const scrollLeft = state.projectScrollLeft || 0;
-    const index = Math.max(0, Math.min(buckets.length - 1, Math.floor((event.clientX - rect.left + scrollLeft) / bucketWidth)));
+    const width = paneWidth || rect.width || 1;
+    const metrics = ProjectViewPolicy.axisMetrics?.(buckets, scale) || {
+      totalDays: Math.max(1, buckets.length),
+      offsets: buckets.map((_, index) => index)
+    };
+    const dayPos = ((event.clientX - rect.left + scrollLeft) / width) * metrics.totalDays;
+    const index = typeof ProjectViewPolicy.bucketIndexAtDayPos === "function"
+      ? ProjectViewPolicy.bucketIndexAtDayPos(dayPos, metrics)
+      : Math.max(0, Math.min(buckets.length - 1, Math.floor(dayPos)));
     const dateKey = buckets[index]?.key || state.selectedDate;
     const hour = 9;
     const taskId = event.dataTransfer.getData("text/task-id");
@@ -7501,7 +7577,10 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
   fillEntryTaskOptions(entry);
   el.entryStart.value = entry?.start ?? hour;
   el.entryEnd.value = entry?.end ?? Math.min(hour + 1, 22);
-  if (el.entryOwner) el.entryOwner.value = entry?.owner || "";
+  if (el.entryOwner) {
+    el.entryOwner.value = entry?.owner || "";
+    el.entryOwner.placeholder = ownerFieldPlaceholder(true);
+  }
   el.entryNote.value = entry?.note || "";
   fillCategorySelect(el.entryCategory, { selected: category, includeMeeting: true });
   updateEntryTypeControls();
@@ -8102,20 +8181,29 @@ function openTaskMergeDialog() {
   const source = findTask(state.editingTaskId)?.task;
   if (!source) return;
   const allTasks = uniqueTasks(getAllTasks().map(({ task }) => task));
+  // Include done/closed leaves so duplicate ended tasks can merge into each other.
   taskMergeCandidates = allTasks
-    .filter(task => task.id !== source.id && isTodoListTask(task) && !["done", "closed"].includes(task.status));
+    .filter(task => task.id !== source.id && isTodoListTask(task) && !isHiddenRecurringCatalogInstance(task));
   if (!taskMergeCandidates.length) return showToast("没有可合并的目标待办");
   el.taskMergeMessage.textContent = `将把「${source.title}」的所有任务投入合并到另一个待办，并关闭当前待办。`;
+  const sameTitle = taskMergeCandidates.filter(task =>
+    TodoListPolicy.normalizeTitle(task.title) === TodoListPolicy.normalizeTitle(source.title)
+  );
+  const preferredId = sameTitle[0]?.id || taskMergeCandidates[0]?.id || "";
   el.taskMergeTarget.innerHTML = taskMergeCandidates.map(task => {
     const path = TaskOptionPolicy.taskHierarchyPath({ task, tasks: allTasks, separator: " › " });
     return `<option value="${escapeHtml(task.id)}">${escapeHtml(path || task.title)}</option>`;
   }).join("");
-  el.taskMergeTarget.value = taskMergeCandidates[0]?.id || "";
-  if (el.taskMergeSearch) el.taskMergeSearch.value = "";
+  el.taskMergeTarget.value = preferredId;
+  const initialQuery = String(source.title || "").trim();
+  if (el.taskMergeSearch) el.taskMergeSearch.value = initialQuery;
   taskMergeActiveIndex = 0;
-  renderTaskMergeOptions("");
+  renderTaskMergeOptions(initialQuery);
   el.taskMergeDialog.showModal();
-  setTimeout(() => el.taskMergeSearch?.focus(), 20);
+  setTimeout(() => {
+    el.taskMergeSearch?.focus();
+    el.taskMergeSearch?.select?.();
+  }, 20);
 }
 
 function renderTaskMergeOptions(query = "") {
@@ -8127,8 +8215,10 @@ function renderTaskMergeOptions(query = "") {
     tasks: allTasks,
     query,
     selectedId,
+    includeEnded: true,
     leafOnly: false,
     hasChildTasks,
+    isHiddenFutureRecurringInstance: isHiddenRecurringCatalogInstance,
     statusText: task => statusLabel(task.status),
     dateText: task => (task.dueDate ? task.dueDate.slice(5) : "未计划")
   }).filter(item => candidateIds.has(item.task.id));

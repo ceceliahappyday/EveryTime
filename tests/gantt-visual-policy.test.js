@@ -118,6 +118,15 @@ if (!styles.includes(".gantt-add-child") || !styles.includes("opacity: 0")) {
 if (!styles.includes(".gantt-context-menu")) {
   throw new Error("gantt right-click menu styles are required");
 }
+if (!app.includes("showGanttBlankContextMenu") || !app.includes('data-gantt-action="add-root"')) {
+  throw new Error("gantt blank area must support right-click new parent task");
+}
+if (!app.includes("bindGanttBlankContextMenu") || !app.includes("isGanttTaskRowContextTarget")) {
+  throw new Error("gantt blank context menu must bind on the gantt root");
+}
+if (app.includes('placeholder = meeting ? "例如：我')) {
+  throw new Error("owner placeholders must not use 我 as the example person");
+}
 if (!app.includes("window.confirm(message)")) {
   throw new Error("gantt/task delete must ask for secondary confirmation");
 }
@@ -141,6 +150,13 @@ if (!app.includes("getTaskProgressNotes")) {
 }
 if (!app.includes("mapEntryGanttSegments") || !app.includes("entryInvestmentSegments")) {
   throw new Error("gantt actual bars must split per schedule entry");
+}
+const projectView = require("fs").readFileSync(require("path").join(__dirname, "..", "project-view-policy.js"), "utf8");
+if (!projectView.includes("function axisMetrics") || !projectView.includes("bucketDayCount")) {
+  throw new Error("gantt axis must weight columns by calendar days");
+}
+if (!/gridTemplateColumns = axisMetrics/.test(app)) {
+  throw new Error("month gantt header must use day-weighted grid columns");
 }
 if (!app.includes("gantt-entry-label")) {
   throw new Error("each invest bar should carry its own hours/note label");

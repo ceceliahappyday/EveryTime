@@ -117,40 +117,97 @@
     return buckets.findIndex(bucket => bucket.key === key);
   }
 
-  // Only buckets that actually carry invested time become coloured segments;
-  // gaps between them stay empty so the lane reads as real effort, not a range.
-  function timelineFractionForDate(dateKey, buckets = [], projectBucketKey, scale = "day", getMonday, fromDateKey, edge = "start") {
+  function daysInMonthKey(monthKey = "") {
+    const [year, month] = String(monthKey || "").split("-").map(Number);
+    if (!year || !month) return 30;
+    return new Date(year, month, 0).getDate();
+  }
+
+  /** Calendar days represented by one axis bucket (month varies; week=7; day=1). */
+  function bucketDayCount(bucket, scale = "day") {
+    if (Number.isFinite(bucket?.dayCount) && bucket.dayCount > 0) return Number(bucket.dayCount);
+    if (scale === "month") return daysInMonthKey(bucket?.key);
+    if (scale === "week") return 7;
+    return 1;
+  }
+
+  /** Day-weighted axis: month columns scale by days-in-month; week/day stay uniform. */
+  function axisMetrics(buckets = [], scale = "day") {
+    const dayCounts = buckets.map(bucket => bucketDayCount(bucket, scale));
+    const offsets = [];
+    let totalDays = 0;
+    dayCounts.forEach(count => {
+      offsets.push(totalDays);
+      totalDays += count;
+    });
+    return {
+      dayCounts,
+      offsets,
+      totalDays: totalDays || 1,
+      gridTemplateColumns: dayCounts.map(count => `${Math.max(1, count)}fr`).join(" ")
+    };
+  }
+
+  function dayPosToRatio(dayPos, totalDays) {
+    const total = totalDays > 0 ? totalDays : 1;
+    return Math.max(0, Math.min(1, dayPos / total));
+  }
+
+  function bucketIndexAtDayPos(dayPos, metrics) {
+    const { offsets, dayCounts, totalDays } = metrics;
+    if (!offsets.length) return 0;
+    const clamped = Math.max(0, Math.min(totalDays - 0.000001, dayPos));
+    for (let index = offsets.length - 1; index >= 0; index -= 1) {
+      if (clamped >= offsets[index]) return index;
+    }
+    return 0;
+  }
+
+  /**
+   * Absolute day position on the weighted axis (0 … totalDays).
+   * Month window covers day-1 of month 1 through last day of month N.
+   */
+  function timelineDayPosForDate(dateKey, buckets = [], projectBucketKey, scale = "day", getMonday, fromDateKey, edge = "start") {
     if (!dateKey || !buckets.length) return null;
+    const metrics = axisMetrics(buckets, scale);
     const bucketKey = projectBucketKey(dateKey);
     const bucketIndex = buckets.findIndex(bucket => bucket.key === bucketKey);
     if (bucketIndex < 0) return null;
+    const base = metrics.offsets[bucketIndex];
+    const count = metrics.dayCounts[bucketIndex];
     if (scale === "day") {
-      if (edge === "end") return (bucketIndex + 1) / buckets.length;
-      if (edge === "start") return bucketIndex / buckets.length;
-      return (bucketIndex + 0.5) / buckets.length;
+      if (edge === "end") return { dayPos: base + 1, ...metrics };
+      if (edge === "start") return { dayPos: base, ...metrics };
+      return { dayPos: base + 0.5, ...metrics };
     }
     const date = fromDateKey(dateKey);
     if (scale === "week") {
       const monday = getMonday(fromDateKey(bucketKey));
       const dayOffset = Math.round((date - monday) / 86400000);
       if (dayOffset < 0 || dayOffset > 6) return null;
-      const unit = 1 / 7;
-      const start = bucketIndex + dayOffset * unit;
-      if (edge === "end") return start + unit;
-      if (edge === "start") return start;
-      return start + unit / 2;
+      const start = base + dayOffset;
+      if (edge === "end") return { dayPos: start + 1, ...metrics };
+      if (edge === "start") return { dayPos: start, ...metrics };
+      return { dayPos: start + 0.5, ...metrics };
     }
     if (scale === "month") {
-      const monthKey = bucketKey.slice(0, 7);
-      if (dateKey.slice(0, 7) !== monthKey) return null;
-      const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-      const unit = 1 / daysInMonth;
-      const start = bucketIndex + (date.getDate() - 1) * unit;
-      if (edge === "end") return start + unit;
-      if (edge === "start") return start;
-      return start + unit / 2;
+      const monthKey = String(bucketKey).slice(0, 7);
+      if (String(dateKey).slice(0, 7) !== monthKey) return null;
+      const dayOfMonth = date.getDate();
+      if (dayOfMonth < 1 || dayOfMonth > count) return null;
+      const start = base + (dayOfMonth - 1);
+      if (edge === "end") return { dayPos: start + 1, ...metrics };
+      if (edge === "start") return { dayPos: start, ...metrics };
+      return { dayPos: start + 0.5, ...metrics };
     }
     return null;
+  }
+
+  // Returns 0–1 ratio on the day-weighted axis (not equal-bucket index space).
+  function timelineFractionForDate(dateKey, buckets = [], projectBucketKey, scale = "day", getMonday, fromDateKey, edge = "start") {
+    const pos = timelineDayPosForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, edge);
+    if (!pos) return null;
+    return dayPosToRatio(pos.dayPos, pos.totalDays);
   }
 
   function investmentSegments({
@@ -162,6 +219,7 @@
     fromDateKey
   } = {}) {
     if (!buckets.length) return [];
+    const metrics = axisMetrics(buckets, scale);
     if (scale === "day") {
       const indexes = [...new Set(
         investedDateKeys
@@ -174,17 +232,21 @@
         if (last && index === last.endIndex + 1) last.endIndex = index;
         else segments.push({ startIndex: index, endIndex: index });
       });
-      return segments.map(segment => Object.assign({}, segment, {
-        leftRatio: segment.startIndex / buckets.length,
-        widthRatio: (segment.endIndex - segment.startIndex + 1) / buckets.length
-      }));
+      return segments.map(segment => {
+        const startDay = metrics.offsets[segment.startIndex];
+        const endDay = metrics.offsets[segment.endIndex] + metrics.dayCounts[segment.endIndex];
+        return Object.assign({}, segment, {
+          leftRatio: dayPosToRatio(startDay, metrics.totalDays),
+          widthRatio: dayPosToRatio(endDay - startDay, metrics.totalDays)
+        });
+      });
     }
     const ranges = investedDateKeys
       .map(dateKey => {
-        const start = timelineFractionForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, "start");
-        const end = timelineFractionForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, "end");
-        if (start === null || end === null) return null;
-        return { start, end };
+        const start = timelineDayPosForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, "start");
+        const end = timelineDayPosForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, "end");
+        if (!start || !end) return null;
+        return { start: start.dayPos, end: end.dayPos, totalDays: start.totalDays };
       })
       .filter(Boolean)
       .sort((a, b) => a.start - b.start);
@@ -192,40 +254,27 @@
     ranges.forEach(range => {
       const last = merged[merged.length - 1];
       if (last && Math.abs(range.start - last.end) < 0.000001) last.end = range.end;
-      else merged.push({ start: range.start, end: range.end });
+      else merged.push({ start: range.start, end: range.end, totalDays: range.totalDays });
     });
     return merged.map(range => ({
-      leftRatio: range.start / buckets.length,
-      widthRatio: (range.end - range.start) / buckets.length
+      leftRatio: dayPosToRatio(range.start, range.totalDays),
+      widthRatio: dayPosToRatio(range.end - range.start, range.totalDays)
     }));
   }
 
-  /** Day column bounds in bucket-index space (not yet divided by bucket count). */
+  /** Day column bounds in absolute day-space (0 … totalDays). */
   function dayBoundsInBucketSpace(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey) {
+    const start = timelineDayPosForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, "start");
+    const end = timelineDayPosForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, "end");
+    if (!start || !end) return null;
     const bucketKey = projectBucketKey(dateKey);
     const bucketIndex = buckets.findIndex(bucket => bucket.key === bucketKey);
-    if (bucketIndex < 0) return null;
-    if (scale === "day") {
-      return { dayStart: bucketIndex, dayEnd: bucketIndex + 1, bucketIndex };
-    }
-    const date = fromDateKey(dateKey);
-    if (scale === "week") {
-      const monday = getMonday(fromDateKey(bucketKey));
-      const dayOffset = Math.round((date - monday) / 86400000);
-      if (dayOffset < 0 || dayOffset > 6) return null;
-      const unit = 1 / 7;
-      const dayStart = bucketIndex + dayOffset * unit;
-      return { dayStart, dayEnd: dayStart + unit, bucketIndex };
-    }
-    if (scale === "month") {
-      const monthKey = String(bucketKey).slice(0, 7);
-      if (String(dateKey).slice(0, 7) !== monthKey) return null;
-      const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-      const unit = 1 / daysInMonth;
-      const dayStart = bucketIndex + (date.getDate() - 1) * unit;
-      return { dayStart, dayEnd: dayStart + unit, bucketIndex };
-    }
-    return null;
+    return {
+      dayStart: start.dayPos,
+      dayEnd: end.dayPos,
+      bucketIndex,
+      totalDays: start.totalDays
+    };
   }
 
   function clamp01(value) {
@@ -284,6 +333,7 @@
       let widthInDay = Math.max(0.04, durationHours / hourSpan);
       if (leftInDay + widthInDay > 1) widthInDay = Math.max(0.04, 1 - leftInDay);
       const daySpan = bounds.dayEnd - bounds.dayStart;
+      const totalDays = bounds.totalDays || axisMetrics(buckets, scale).totalDays;
       return {
         entryIndex,
         dateKey: entry.dateKey,
@@ -293,8 +343,9 @@
         dayStart: bounds.dayStart,
         dayEnd: bounds.dayEnd,
         daySpan,
-        leftRatio: (bounds.dayStart + leftInDay * daySpan) / buckets.length,
-        widthRatio: (widthInDay * daySpan) / buckets.length
+        totalDays,
+        leftRatio: dayPosToRatio(bounds.dayStart + leftInDay * daySpan, totalDays),
+        widthRatio: dayPosToRatio(widthInDay * daySpan, totalDays)
       };
     }).filter(Boolean);
 
@@ -315,7 +366,7 @@
         if (cur.leftRatio < prevEnd + gapRatio) {
           cur.leftRatio = prevEnd + gapRatio;
         }
-        const dayRight = group[0].dayEnd / buckets.length;
+        const dayRight = dayPosToRatio(group[0].dayEnd, group[0].totalDays);
         if (cur.leftRatio + cur.widthRatio > dayRight) {
           cur.widthRatio = Math.max(0.01, dayRight - cur.leftRatio);
         }
@@ -334,13 +385,27 @@
       }));
   }
 
-  // "start"/"end" pin the marker to the bucket boundary so the pair brackets the whole range.
-  function markerRatio({ dateKey, buckets = [], projectBucketKey, edge = "center" } = {}) {
-    const index = bucketIndexOf(dateKey, buckets, projectBucketKey);
-    if (index < 0) return null;
-    if (edge === "start") return index / buckets.length;
-    if (edge === "end") return (index + 1) / buckets.length;
-    return (index + .5) / buckets.length;
+  // "start"/"end" pin the marker to the day boundary so the pair brackets the whole range.
+  function markerRatio({
+    dateKey,
+    buckets = [],
+    projectBucketKey,
+    edge = "center",
+    scale = "day",
+    getMonday,
+    fromDateKey
+  } = {}) {
+    if (!dateKey || !buckets.length) return null;
+    if (scale === "day" || !fromDateKey) {
+      const metrics = axisMetrics(buckets, "day");
+      const index = bucketIndexOf(dateKey, buckets, projectBucketKey);
+      if (index < 0) return null;
+      const start = metrics.offsets[index];
+      if (edge === "start") return dayPosToRatio(start, metrics.totalDays);
+      if (edge === "end") return dayPosToRatio(start + metrics.dayCounts[index], metrics.totalDays);
+      return dayPosToRatio(start + metrics.dayCounts[index] / 2, metrics.totalDays);
+    }
+    return timelineFractionForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, edge);
   }
 
   function boundaryDateKeys({
@@ -373,25 +438,12 @@
     let end = endDateKey || (isEnded ? start : todayKey);
     if (start && end && end < start) end = start;
     if (!start || !buckets.length) return null;
-    if (scale === "day") {
-      const first = bucketIndexOf(start, buckets, projectBucketKey);
-      let last = bucketIndexOf(end, buckets, projectBucketKey);
-      if (first < 0) return null;
-      if (last < first) last = first;
-      const leftRatio = first / buckets.length;
-      const widthRatio = (last - first + 1) / buckets.length;
-      return {
-        leftRatio,
-        widthRatio,
-        fillRatio: widthRatio * Math.max(0, Math.min(100, Number(progress) || 0)) / 100
-      };
-    }
-    const startPos = timelineFractionForDate(start, buckets, projectBucketKey, scale, getMonday, fromDateKey, "start");
-    const endPos = timelineFractionForDate(end, buckets, projectBucketKey, scale, getMonday, fromDateKey, "end");
-    if (startPos === null || endPos === null) return null;
-    const widthPos = Math.max(endPos - startPos, 1 / (scale === "week" ? 7 : 28));
-    const leftRatio = startPos / buckets.length;
-    const widthRatio = widthPos / buckets.length;
+    const startPos = timelineDayPosForDate(start, buckets, projectBucketKey, scale, getMonday, fromDateKey, "start");
+    const endPos = timelineDayPosForDate(end, buckets, projectBucketKey, scale, getMonday, fromDateKey, "end");
+    if (!startPos || !endPos) return null;
+    const widthDays = Math.max(endPos.dayPos - startPos.dayPos, 1);
+    const leftRatio = dayPosToRatio(startPos.dayPos, startPos.totalDays);
+    const widthRatio = dayPosToRatio(widthDays, startPos.totalDays);
     return {
       leftRatio,
       widthRatio,
@@ -416,6 +468,10 @@
     centeredScrollLeft,
     displayMarkerDateKey,
     rangeContainsBucket,
+    daysInMonthKey,
+    bucketDayCount,
+    axisMetrics,
+    bucketIndexAtDayPos,
     investmentSegments,
     entryInvestmentSegments,
     markerRatio,

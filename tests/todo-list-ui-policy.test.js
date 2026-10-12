@@ -16,6 +16,8 @@ const required = [
   "bindTaskMergePicker",
   "renderTaskMergeOptions",
   "taskMergeSearch",
+  "includeEnded: true",
+  "sameTitle",
   "leafOnly: true",
   "priority-mark",
   "priorityShortLabel",

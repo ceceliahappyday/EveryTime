@@ -210,6 +210,41 @@ assert.deepStrictEqual(policy.initialGanttWindow({
   toDateKey
 }), { startKey: "2026-07", endKey: "2026-09" });
 
+// Month columns are day-weighted: Sep(30) / Oct(31) / Nov(30).
+const monthBuckets = [
+  { key: "2026-09", label: "9月" },
+  { key: "2026-10", label: "10月" },
+  { key: "2026-11", label: "11月" }
+];
+const monthMetrics = policy.axisMetrics(monthBuckets, "month");
+assert.strictEqual(monthMetrics.totalDays, 30 + 31 + 30);
+assert.deepStrictEqual(monthMetrics.dayCounts, [30, 31, 30]);
+assert.strictEqual(monthMetrics.gridTemplateColumns, "30fr 31fr 30fr");
+assert.ok(Math.abs(monthMetrics.offsets[1] / monthMetrics.totalDays - 30 / 91) < 0.0001);
+assert.ok(Math.abs(monthMetrics.dayCounts[1] / monthMetrics.totalDays - 31 / 91) < 0.0001);
+const monthBucketKey = dateKey => String(dateKey).slice(0, 7);
+const octFirst = policy.markerRatio({
+  dateKey: "2026-10-01",
+  buckets: monthBuckets,
+  projectBucketKey: monthBucketKey,
+  edge: "start",
+  scale: "month",
+  getMonday,
+  fromDateKey
+});
+const novFirst = policy.markerRatio({
+  dateKey: "2026-11-01",
+  buckets: monthBuckets,
+  projectBucketKey: monthBucketKey,
+  edge: "start",
+  scale: "month",
+  getMonday,
+  fromDateKey
+});
+assert.ok(Math.abs(octFirst - 30 / 91) < 0.0001, "Oct should start after 30 Sep days");
+assert.ok(Math.abs(novFirst - (30 + 31) / 91) < 0.0001, "Nov should start after Sep+Oct days");
+assert.ok(novFirst - octFirst > 30 / 91, "October column must be wider than a 30-day month");
+
 assert.deepStrictEqual(policy.shiftGanttWindow({
   scale: "day",
   startKey: "2026-08-12",
