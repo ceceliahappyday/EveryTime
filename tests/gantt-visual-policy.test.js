@@ -40,6 +40,13 @@ const requiredApp = [
   "ganttBarLabelGeometry",
   "gantt-axis-nav",
   "selectGanttTaskRow",
+  "showListItemContextMenu",
+  "taskContextActionsMenuHtml",
+  "applyCategoryToSelection",
+  "applyPriorityToSelection",
+  "categoryMenuFlyoutHtml",
+  "priorityMenuFlyoutHtml",
+  "toggleListSelection",
   "restoreProjectGanttRowsScroll",
   "confirmDeleteTask",
   "deleteTaskById"
@@ -127,6 +134,15 @@ if (!styles.includes(".gantt-add-child") || !styles.includes("opacity: 0")) {
 }
 if (!styles.includes(".gantt-context-menu")) {
   throw new Error("gantt right-click menu styles are required");
+}
+if (!styles.includes(".gantt-context-submenu") || !styles.includes(".task-card.is-selected")) {
+  throw new Error("Outlook-style categorize submenu and list multi-select styles are required");
+}
+if (!app.includes("additive: event.ctrlKey || event.metaKey") || !app.includes("data-category-id")) {
+  throw new Error("Ctrl multi-select and categorize submenu actions are required");
+}
+if (!app.includes("data-priority-id") || !app.includes("任务级别仅适用于待办任务")) {
+  throw new Error("bulk priority submenu must apply only to tasks");
 }
 if (!app.includes("showGanttBlankContextMenu") || !app.includes('data-gantt-action="add-root"')) {
   throw new Error("gantt blank area must support right-click new parent task");

@@ -55,6 +55,8 @@ const state = {
   projectScrollLeft: null,
   projectRowsScrollTop: 0,
   selectedGanttTaskId: "",
+  selectedGanttTaskIds: new Set(),
+  selectedListKeys: new Set(),
   projectHorizontalSyncing: false,
   projectAnchorDate: null,
   projectWindowStart: null,
@@ -326,6 +328,7 @@ function updateTaskRecords(id, updater) {
 
 function bindEvents() {
   bindDialogDismissControls();
+  ensureGanttContextMenu();
   el.exportButton.addEventListener("click", () => el.exportDialog.showModal());
   el.importButton?.addEventListener("click", () => importAllData());
   el.progressReviewButton.addEventListener("click", openProgressReview);
@@ -3043,6 +3046,7 @@ function renderUnifiedTodoList() {
             ? `当前分类没有会议<br><button type="button" class="soft-button empty-create-meeting" id="emptyCreateMeeting">新建会议</button>`
             : "当前分类没有待办任务"}</div>`;
     el.taskList.querySelector("#emptyCreateMeeting")?.addEventListener("click", () => openNewFromQuickAdd("", { kind: "meeting" }));
+    paintListSelection();
     return;
   }
 
@@ -3073,6 +3077,7 @@ function renderUnifiedTodoList() {
       else el.taskList.appendChild(createTaskCard(item));
     });
   });
+  paintListSelection();
 }
 
 function getWorkEntriesByDate() {
@@ -3166,9 +3171,25 @@ function createMeetingCard(item) {
       <span class="task-description">${escapeHtml(item.dateKey)} · ${escapeHtml(timeText)}</span>
     </div>
     <span class="priority-mark meeting-invest" title="已投入工时">${escapeHtml(investText)}</span>`;
-  card.addEventListener("click", () => {
+  const openMeeting = () => {
     const found = findEntry(item.entryId);
     if (found) openEntryDialog(found.entry.start, found.entry, found.dateKey);
+  };
+  card.addEventListener("click", event => {
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      toggleListSelection("entry", item.entryId);
+      return;
+    }
+    clearListSelection();
+    openMeeting();
+  });
+  card.addEventListener("contextmenu", event => {
+    showListItemContextMenu(event, {
+      kind: "entry",
+      id: item.entryId,
+      open: openMeeting
+    });
   });
   card.addEventListener("dragstart", event => {
     card.classList.add("dragging");
@@ -3439,11 +3460,13 @@ function updateProjectStats(projects) {
 function createProjectCard(project) {
   const card = document.createElement("article");
   card.className = `project-card project-card-compact ${project.status}`;
+  card.dataset.taskId = project.parent.id;
   card.innerHTML = `
     <div>
       <strong><button class="task-check project-task-check" title="标记任务已关闭"></button>${escapeHtml(project.parent.title)}</strong>
     </div>
     <button class="task-menu" title="查看项目详情">•••</button>`;
+  const openProject = () => openTaskDialog(project.parent);
   const check = card.querySelector(".project-task-check");
   check.classList.toggle("completed", ["done", "closed"].includes(project.parent.status));
   check.addEventListener("click", event => {
@@ -3452,9 +3475,24 @@ function createProjectCard(project) {
   });
   card.querySelector(".task-menu").addEventListener("click", event => {
     event.stopPropagation();
-    openTaskDialog(project.parent);
+    clearListSelection();
+    openProject();
   });
-  card.addEventListener("dblclick", () => openTaskDialog(project.parent));
+  card.addEventListener("click", event => {
+    if (event.target.closest(".task-check, .task-menu")) return;
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      toggleListSelection("task", project.parent.id);
+    }
+  });
+  card.addEventListener("contextmenu", event => {
+    showListItemContextMenu(event, {
+      kind: "task",
+      id: project.parent.id,
+      open: openProject
+    });
+  });
+  card.addEventListener("dblclick", openProject);
   return card;
 }
 
@@ -3942,10 +3980,11 @@ function createTaskCard(task) {
       </div>
       ${sideBadge ? `<span class="${sideBadge.className}" title="${escapeHtml(sideBadge.title)}">${escapeHtml(sideBadge.text)}</span>` : ""}`;
 
+  const openTask = () => openTaskDialog(task, incomplete ? { mode: "setupIncomplete" } : {});
   if (incomplete) {
     card.querySelector(".task-setup-warning")?.addEventListener("click", event => {
       event.stopPropagation();
-      openTaskDialog(task, { mode: "setupIncomplete" });
+      openTask();
     });
   } else {
     card.querySelector(".task-check")?.addEventListener("click", event => {
@@ -3955,7 +3994,20 @@ function createTaskCard(task) {
   }
   card.addEventListener("click", event => {
     if (event.target.closest(".task-check, .task-setup-warning")) return;
-    openTaskDialog(task, incomplete ? { mode: "setupIncomplete" } : {});
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      toggleListSelection("task", task.id);
+      return;
+    }
+    clearListSelection();
+    openTask();
+  });
+  card.addEventListener("contextmenu", event => {
+    showListItemContextMenu(event, {
+      kind: "task",
+      id: task.id,
+      open: openTask
+    });
   });
   card.addEventListener("dragstart", event => {
     card.classList.add("dragging");
@@ -3993,7 +4045,20 @@ function createLinkedWorkCard(item) {
   };
   card.addEventListener("click", event => {
     if (event.target.closest(".task-check")) return;
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      toggleListSelection("entry", item.entryId);
+      return;
+    }
+    clearListSelection();
     openConcreteTask(event);
+  });
+  card.addEventListener("contextmenu", event => {
+    showListItemContextMenu(event, {
+      kind: "entry",
+      id: item.entryId,
+      open: () => openConcreteTask()
+    });
   });
   card.addEventListener("dragstart", event => {
     card.classList.add("dragging");
@@ -6359,17 +6424,200 @@ function fitGanttProgressLabel(el, fullText) {
   requestAnimationFrame(apply);
 }
 
-function selectGanttTaskRow(taskId) {
-  const nextId = String(taskId || "");
-  state.selectedGanttTaskId = nextId;
+function listSelectionKey(kind, id) {
+  return `${kind}:${id}`;
+}
+
+function ensureListSelectionSet() {
+  if (!(state.selectedListKeys instanceof Set)) state.selectedListKeys = new Set();
+  return state.selectedListKeys;
+}
+
+function ensureGanttSelectionSet() {
+  if (!(state.selectedGanttTaskIds instanceof Set)) state.selectedGanttTaskIds = new Set();
+  return state.selectedGanttTaskIds;
+}
+
+function clearListSelection() {
+  const keys = ensureListSelectionSet();
+  if (!keys.size) return;
+  keys.clear();
+  paintListSelection();
+}
+
+function paintListSelection() {
+  const keys = ensureListSelectionSet();
+  const paintNode = node => {
+    let key = "";
+    if (node.dataset.taskId) key = listSelectionKey("task", node.dataset.taskId);
+    else if (node.dataset.entryId) key = listSelectionKey("entry", node.dataset.entryId);
+    node.classList.toggle("is-selected", Boolean(key && keys.has(key)));
+  };
+  el.taskList?.querySelectorAll?.(".task-card, .project-card").forEach(paintNode);
+  el.timeline?.querySelectorAll?.(".week-task-line, .month-task-line").forEach(paintNode);
+}
+
+function toggleListSelection(kind, id) {
+  if (!kind || !id) return;
+  const keys = ensureListSelectionSet();
+  const key = listSelectionKey(kind, id);
+  if (keys.has(key)) keys.delete(key);
+  else keys.add(key);
+  paintListSelection();
+}
+
+function paintGanttSelection() {
+  const ids = ensureGanttSelectionSet();
   el.timeline?.querySelectorAll?.(".project-gantt-row-label.is-selected, .project-gantt-row-chart.is-selected")
     .forEach(node => node.classList.remove("is-selected"));
-  if (!nextId) return;
-  el.timeline?.querySelectorAll?.(`[data-task-id="${CSS.escape(nextId)}"]`).forEach(node => {
-    if (node.classList.contains("project-gantt-row-label") || node.classList.contains("project-gantt-row-chart")) {
-      node.classList.add("is-selected");
-    }
+  ids.forEach(id => {
+    if (!id) return;
+    el.timeline?.querySelectorAll?.(`[data-task-id="${CSS.escape(id)}"]`).forEach(node => {
+      if (node.classList.contains("project-gantt-row-label") || node.classList.contains("project-gantt-row-chart")) {
+        node.classList.add("is-selected");
+      }
+    });
   });
+}
+
+function selectGanttTaskRow(taskId, options = {}) {
+  const nextId = String(taskId || "");
+  const ids = ensureGanttSelectionSet();
+  const additive = Boolean(options.additive);
+  if (!additive) {
+    ids.clear();
+    if (nextId) ids.add(nextId);
+  } else if (nextId) {
+    if (ids.has(nextId)) ids.delete(nextId);
+    else ids.add(nextId);
+  }
+  state.selectedGanttTaskId = nextId || [...ids][0] || "";
+  paintGanttSelection();
+}
+
+function categorySubmenuButtonsHtml() {
+  const cats = typeof TaskCategoryPolicy?.listCategories === "function"
+    ? TaskCategoryPolicy.listCategories()
+    : [];
+  return cats.map(item => {
+    const hex = typeof TaskCategoryPolicy.normalizeColor === "function"
+      ? TaskCategoryPolicy.normalizeColor(item.color)
+      : (item.color || "#638576");
+    return `<button type="button" role="menuitem" data-category-id="${escapeHtml(item.id)}"><i class="cat-swatch" style="background:${escapeHtml(hex)}" aria-hidden="true"></i>${escapeHtml(item.label)}</button>`;
+  }).join("");
+}
+
+function categoryMenuFlyoutHtml() {
+  return `<div class="menu-item-with-submenu" role="none">
+      <button type="button" class="menu-submenu-trigger" role="menuitem" aria-haspopup="true">分类<span class="menu-caret" aria-hidden="true">▸</span></button>
+      <div class="gantt-context-submenu" role="menu">${categorySubmenuButtonsHtml()}</div>
+    </div>`;
+}
+
+const BULK_PRIORITY_OPTIONS = [
+  ["general_daily", "一般日常"],
+  ["kpi", "KPI"],
+  ["important_urgent", "重要紧急"],
+  ["paused", "中止暂停"]
+];
+
+function prioritySubmenuButtonsHtml() {
+  return BULK_PRIORITY_OPTIONS.map(([value, label]) =>
+    `<button type="button" role="menuitem" data-priority-id="${escapeHtml(value)}">${escapeHtml(label)}</button>`
+  ).join("");
+}
+
+function priorityMenuFlyoutHtml() {
+  return `<div class="menu-item-with-submenu" role="none">
+      <button type="button" class="menu-submenu-trigger" role="menuitem" aria-haspopup="true">任务级别<span class="menu-caret" aria-hidden="true">▸</span></button>
+      <div class="gantt-context-submenu" role="menu">${prioritySubmenuButtonsHtml()}</div>
+    </div>`;
+}
+
+function collectBulkSelectionTargets(listKeys = [], ganttTaskIds = []) {
+  const taskIds = [];
+  const entryIds = [];
+  const seenTasks = new Set();
+  const seenEntries = new Set();
+  for (const key of listKeys) {
+    const idx = String(key).indexOf(":");
+    if (idx < 0) continue;
+    const kind = key.slice(0, idx);
+    const id = key.slice(idx + 1);
+    if (kind === "task") {
+      if (!id || seenTasks.has(id) || !findTask(id)?.task) continue;
+      seenTasks.add(id);
+      taskIds.push(id);
+    } else if (kind === "entry") {
+      if (!id || seenEntries.has(id) || !findEntry(id)?.entry) continue;
+      seenEntries.add(id);
+      entryIds.push(id);
+    }
+  }
+  for (const taskId of ganttTaskIds) {
+    const id = String(taskId || "");
+    if (!id || id.startsWith("meeting:") || seenTasks.has(id) || !findTask(id)?.task) continue;
+    seenTasks.add(id);
+    taskIds.push(id);
+  }
+  return { taskIds, entryIds };
+}
+
+function applyPriorityToSelection(priorityId, { listKeys = [], ganttTaskIds = [] } = {}) {
+  const allowed = new Set(BULK_PRIORITY_OPTIONS.map(([value]) => value));
+  if (!allowed.has(priorityId)) return;
+  const priority = migratePriority(priorityId);
+  const label = priorityLabel(priority);
+  const { taskIds } = collectBulkSelectionTargets(listKeys, ganttTaskIds);
+  if (!taskIds.length) {
+    showToast("任务级别仅适用于待办任务");
+    return;
+  }
+  taskIds.forEach(id => {
+    updateTaskRecords(id, task => {
+      task.priority = priority;
+    });
+  });
+  saveData();
+  render();
+  showToast(`已将 ${taskIds.length} 项设为「${label}」`);
+}
+
+function applyCategoryToSelection(categoryId, { listKeys = [], ganttTaskIds = [] } = {}) {
+  if (!categoryId || typeof TaskCategoryPolicy?.colorForCategory !== "function") return;
+  const category = typeof TaskCategoryPolicy.normalizeCategory === "function"
+    ? TaskCategoryPolicy.normalizeCategory(categoryId)
+    : categoryId;
+  const color = TaskCategoryPolicy.colorForCategory(category);
+  const label = typeof TaskCategoryPolicy.labelForCategory === "function"
+    ? TaskCategoryPolicy.labelForCategory(category)
+    : category;
+  const { taskIds, entryIds } = collectBulkSelectionTargets(listKeys, ganttTaskIds);
+  let count = 0;
+
+  taskIds.forEach(id => {
+    updateTaskRecords(id, task => {
+      task.category = category;
+      task.color = color;
+    });
+    syncLinkedEntriesCategory(id, category, color);
+    count += 1;
+  });
+  entryIds.forEach(id => {
+    const found = findEntry(id);
+    if (!found?.entry) return;
+    found.entry.category = category;
+    found.entry.color = color;
+    count += 1;
+  });
+
+  if (!count) {
+    showToast("没有可修改的项");
+    return;
+  }
+  saveData();
+  render();
+  showToast(`已将 ${count} 项设为「${label}」`);
 }
 
 /** Prefer fill bar; fall back to invested segments / span so leaf text remains visible. */
@@ -6406,14 +6654,14 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   const hasChildren = isParentRow;
   const collapsed = options.isParent ? Boolean(options.collapsed) : state.projectCollapsedTasks.has(task.id);
   const progressText = ganttProgressBarText(progressInfo);
-  const selected = state.selectedGanttTaskId === task.id;
+  const selected = ensureGanttSelectionSet().has(task.id) || state.selectedGanttTaskId === task.id;
   const labelRow = document.createElement("div");
   const depth = getTaskDepth(task, rootId) + Math.max(0, Number(options.indentBase) || 0);
   labelRow.className = `project-gantt-row-label ${task.status}${isParentRow ? " is-parent" : ""}${selected ? " is-selected" : ""}`;
   labelRow.style.setProperty("--task-depth", depth);
   labelRow.dataset.depth = String(depth);
   labelRow.dataset.taskId = task.id;
-  labelRow.title = "单击高亮整行；悬停显示＋新建子任务；右键更多操作；拖到其他名称可改挂接；双击编辑；右侧拖到日期可安排投入";
+  labelRow.title = "单击高亮整行；Ctrl+单击多选；悬停显示＋新建子任务；右键分类/更多操作；拖到其他名称可改挂接；双击编辑；右侧拖到日期可安排投入";
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin">
         ${hasChildren ? `<button class="project-collapse-button task-tree-toggle" type="button">${collapsed ? "▸" : "▾"}</button>` : ""}
         <strong title="${escapeHtml(taskTitle)}">${escapeHtml(taskTitle)}</strong>
@@ -6455,7 +6703,7 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   const openTask = () => openTaskDialog(task);
   const selectRow = event => {
     if (event.target?.closest?.(".task-tree-toggle, .gantt-add-child")) return;
-    selectGanttTaskRow(task.id);
+    selectGanttTaskRow(task.id, { additive: event.ctrlKey || event.metaKey });
   };
   labelRow.querySelector(".task-tree-toggle")?.addEventListener("click", event => {
     event.stopPropagation();
@@ -6478,6 +6726,8 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
 
 let ganttContextMenuEl = null;
 let ganttContextMenuTaskId = "";
+let contextMenuListKeys = null;
+let listContextMenuOpen = null;
 
 function positionGanttContextMenu(menu, event) {
   menu.classList.remove("hidden");
@@ -6501,6 +6751,42 @@ function ensureGanttContextMenu() {
   ganttContextMenuEl.setAttribute("role", "menu");
   document.body.appendChild(ganttContextMenuEl);
   ganttContextMenuEl.addEventListener("click", event => {
+    const fromList = Array.isArray(contextMenuListKeys);
+    const listKeys = fromList ? [...contextMenuListKeys] : [];
+    const ganttTaskIds = fromList ? [] : [...ensureGanttSelectionSet()];
+    const categoryBtn = event.target?.closest?.("[data-category-id]");
+    if (categoryBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      const categoryId = categoryBtn.dataset.categoryId;
+      hideGanttContextMenu();
+      applyCategoryToSelection(categoryId, { listKeys, ganttTaskIds });
+      return;
+    }
+    const priorityBtn = event.target?.closest?.("[data-priority-id]");
+    if (priorityBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      const priorityId = priorityBtn.dataset.priorityId;
+      hideGanttContextMenu();
+      applyPriorityToSelection(priorityId, { listKeys, ganttTaskIds });
+      return;
+    }
+    if (event.target?.closest?.(".menu-submenu-trigger, .menu-item-with-submenu")) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    const listActionBtn = event.target?.closest?.("[data-list-action]");
+    if (listActionBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      const action = listActionBtn.dataset.listAction;
+      const open = listContextMenuOpen;
+      hideGanttContextMenu();
+      if (action === "edit" && typeof open === "function") open();
+      return;
+    }
     const button = event.target?.closest?.("[data-gantt-action]");
     if (!button) return;
     event.preventDefault();
@@ -6524,7 +6810,14 @@ function ensureGanttContextMenu() {
     hideGanttContextMenu();
   }, true);
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape") hideGanttContextMenu();
+    if (event.key !== "Escape") return;
+    if (ganttContextMenuEl && !ganttContextMenuEl.classList.contains("hidden")) {
+      hideGanttContextMenu();
+      return;
+    }
+    if (event.target?.closest?.("dialog[open], input, textarea, select, [contenteditable='true']")) return;
+    if (ensureListSelectionSet().size) clearListSelection();
+    if (ensureGanttSelectionSet().size) selectGanttTaskRow("");
   });
   window.addEventListener("scroll", hideGanttContextMenu, true);
   return ganttContextMenuEl;
@@ -6534,20 +6827,66 @@ function hideGanttContextMenu() {
   if (!ganttContextMenuEl) return;
   ganttContextMenuEl.classList.add("hidden");
   ganttContextMenuTaskId = "";
+  contextMenuListKeys = null;
+  listContextMenuOpen = null;
+}
+
+function taskContextActionsMenuHtml({ multi = false, ended = false } = {}) {
+  return `
+    ${multi ? "" : `<button type="button" role="menuitem" data-gantt-action="edit">编辑</button>
+    <button type="button" role="menuitem" data-gantt-action="add-child">新建子任务</button>`}
+    ${categoryMenuFlyoutHtml()}
+    ${priorityMenuFlyoutHtml()}
+    ${multi ? "" : `<button type="button" role="menuitem" data-gantt-action="close">${ended ? "恢复任务" : "关闭任务"}</button>
+    <button type="button" role="menuitem" data-gantt-action="delete" class="is-danger">删除…</button>`}`;
+}
+
+function showListItemContextMenu(event, focus = {}) {
+  if (!focus?.kind || !focus?.id) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const key = listSelectionKey(focus.kind, focus.id);
+  const keys = ensureListSelectionSet();
+  if (!keys.has(key)) {
+    keys.clear();
+    keys.add(key);
+    paintListSelection();
+  }
+  const menu = ensureGanttContextMenu();
+  contextMenuListKeys = [...keys];
+  const multi = keys.size > 1;
+  if (focus.kind === "task") {
+    const task = findTask(focus.id)?.task;
+    ganttContextMenuTaskId = focus.id;
+    listContextMenuOpen = null;
+    menu.innerHTML = taskContextActionsMenuHtml({
+      multi,
+      ended: TaskStatusPolicy.isEndedStatus?.(task?.status)
+    });
+  } else {
+    ganttContextMenuTaskId = "";
+    listContextMenuOpen = typeof focus.open === "function" ? focus.open : null;
+    menu.innerHTML = `
+      ${multi ? "" : `<button type="button" role="menuitem" data-list-action="edit">编辑</button>`}
+      ${categoryMenuFlyoutHtml()}`;
+  }
+  positionGanttContextMenu(menu, event);
 }
 
 function showGanttContextMenu(event, task) {
   if (!task?.id) return;
   event.preventDefault();
   event.stopPropagation();
+  const ids = ensureGanttSelectionSet();
+  if (!ids.has(task.id)) selectGanttTaskRow(task.id);
   const menu = ensureGanttContextMenu();
   ganttContextMenuTaskId = task.id;
-  const ended = TaskStatusPolicy.isEndedStatus?.(task.status);
-  menu.innerHTML = `
-    <button type="button" role="menuitem" data-gantt-action="edit">编辑</button>
-    <button type="button" role="menuitem" data-gantt-action="add-child">新建子任务</button>
-    <button type="button" role="menuitem" data-gantt-action="close">${ended ? "恢复任务" : "关闭任务"}</button>
-    <button type="button" role="menuitem" data-gantt-action="delete" class="is-danger">删除…</button>`;
+  contextMenuListKeys = null;
+  listContextMenuOpen = null;
+  menu.innerHTML = taskContextActionsMenuHtml({
+    multi: ids.size > 1,
+    ended: TaskStatusPolicy.isEndedStatus?.(task.status)
+  });
   positionGanttContextMenu(menu, event);
 }
 
@@ -6556,6 +6895,8 @@ function showGanttBlankContextMenu(event) {
   event.stopPropagation();
   const menu = ensureGanttContextMenu();
   ganttContextMenuTaskId = "";
+  contextMenuListKeys = null;
+  listContextMenuOpen = null;
   menu.innerHTML = `
     <button type="button" role="menuitem" data-gantt-action="add-root">新建父级任务</button>`;
   positionGanttContextMenu(menu, event);
@@ -7480,12 +7821,36 @@ function bindDayOverviewList(container, options = {}) {
     };
     item.addEventListener("click", event => {
       event.stopPropagation();
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        if (item.dataset.taskId) toggleListSelection("task", item.dataset.taskId);
+        else if (item.dataset.entryId) toggleListSelection("entry", item.dataset.entryId);
+        return;
+      }
       if (selectDateKey && selectDateKey !== state.selectedDate) {
         state.selectedDate = selectDateKey;
         render();
         return;
       }
+      clearListSelection();
       if (openOn === "click") openItem();
+    });
+    item.addEventListener("contextmenu", event => {
+      if (item.dataset.taskId) {
+        showListItemContextMenu(event, {
+          kind: "task",
+          id: item.dataset.taskId,
+          open: openItem
+        });
+        return;
+      }
+      if (item.dataset.entryId) {
+        showListItemContextMenu(event, {
+          kind: "entry",
+          id: item.dataset.entryId,
+          open: openItem
+        });
+      }
     });
     if (openOn === "dblclick") {
       item.addEventListener("dblclick", event => {

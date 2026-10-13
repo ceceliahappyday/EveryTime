@@ -1815,6 +1815,20 @@ button.task-group-heading {
   background: rgba(255,255,255,.34);
 }
 .task-card.dragging { opacity: .5; }
+.task-card.is-selected,
+.project-card.is-selected,
+.week-task-line.is-selected,
+.month-task-line.is-selected {
+  background: rgba(79, 143, 214, 0.16);
+  outline: 1px solid rgba(79, 143, 214, 0.45);
+  outline-offset: 0;
+}
+.task-card.is-selected:hover,
+.project-card.is-selected:hover,
+.week-task-line.is-selected:hover,
+.month-task-line.is-selected:hover {
+  background: rgba(79, 143, 214, 0.22);
+}
 .task-card.is-just-linked {
   outline: 2px solid rgba(80, 180, 200, 0.85);
   outline-offset: 1px;
@@ -2761,6 +2775,51 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
 .gantt-context-menu button.is-danger {
   color: var(--danger, #aa4c48);
 }
+.gantt-context-menu .menu-item-with-submenu {
+  position: relative;
+}
+.gantt-context-menu .menu-submenu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.gantt-context-menu .menu-caret {
+  opacity: 0.55;
+  font-size: 11px;
+}
+.gantt-context-submenu {
+  display: none;
+  position: absolute;
+  left: calc(100% - 4px);
+  top: -4px;
+  z-index: 1;
+  min-width: 168px;
+  max-height: min(360px, 70vh);
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-strong, #fff);
+  box-shadow: 0 10px 28px rgba(30, 36, 40, 0.18);
+}
+.gantt-context-menu .menu-item-with-submenu:hover > .gantt-context-submenu,
+.gantt-context-menu .menu-item-with-submenu:focus-within > .gantt-context-submenu {
+  display: block;
+}
+.gantt-context-submenu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gantt-context-submenu .cat-swatch {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
 body.in-desktop.glass-mode .gantt-add-child:hover,
 body.in-desktop.glass-mode .gantt-add-child:focus-visible {
   color: #f4fbff;
@@ -2780,6 +2839,18 @@ body.in-desktop.glass-mode .gantt-context-menu button:focus-visible {
 }
 body.in-desktop.glass-mode .gantt-context-menu button.is-danger {
   color: #ffb4ae;
+}
+body.in-desktop.glass-mode .gantt-context-submenu {
+  border-color: rgba(172, 211, 233, 0.35);
+  background: rgba(12, 24, 36, 0.98);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+body.in-desktop.glass-mode .gantt-context-submenu .cat-swatch {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+body.in-desktop.glass-mode .task-card.is-selected {
+  background: rgba(90, 160, 220, 0.22);
+  outline-color: rgba(140, 200, 240, 0.55);
 }
 .project-gantt-lane {
   position: relative;
