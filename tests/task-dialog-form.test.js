@@ -104,6 +104,9 @@ assert.match(html, /归属上级任务/, "parent task field must remain in the c
 assert.match(html, /id="taskParentTrigger"/, "parent task combobox trigger must remain available");
 assert.match(html, /背景与说明/, "background and reason should merge into one visible field");
 assert.match(html, /id="taskBusinessBackground"/, "businessBackground input must remain for storage");
+assert.match(html, /id="taskBusinessBackground"[\s\S]*contenteditable="true"/, "business background uses rich note editor");
+assert.match(app, /bindRichNoteEditor\(el\.taskBusinessBackground\)/, "business background must bind rich note paste/drop");
+assert.match(app, /businessBackground,/, "save payload keeps businessBackground from rich editor");
 assert.match(html, /id="problemReasonLabel" class="hidden"/, "problem reason stays in DOM but hidden");
 assert.match(html, /id="taskDeliveryField" class="hidden"/, "delivery note stays in DOM but hidden");
 assert.match(html, /id="taskDescription"/, "description input must remain for storage compatibility");

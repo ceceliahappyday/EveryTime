@@ -9,6 +9,7 @@ const ImportPolicy = require("./import-policy.js");
 const AiProviderPolicy = require("./ai-provider-policy.js");
 const AiTaskDraftPolicy = require("./ai-task-draft-policy.js");
 const WindowBoundsPolicy = require("./window-bounds-policy.js");
+const RichNotePolicy = require("./rich-note-policy.js");
 
 let mainWindow;
 let locked = false;
@@ -1168,8 +1169,8 @@ async function buildExcel(outputPath, data) {
     task.id, task.title, task.parentId ? "子任务" : "父任务", task.parentId || "", task.owner || "",
     priorityLabel(task.priority), statusLabel(task.status), Number(task.progress || 0) / 100,
     asDate(task.planDate), asDate(task.dueDate), task.dueTime || "", asDateTime(task.startedAt || task.startOverrideAt),
-    asDateTime(task.completedAt), Number(task.workHours || 0), task.businessBackground || "",
-    task.problemReason || "", task.deliveryNote || "", task.description || "",
+    asDateTime(task.completedAt), Number(task.workHours || 0), RichNotePolicy.plainTextFromNote(task.businessBackground || ""),
+    task.problemReason || "", RichNotePolicy.plainTextFromNote(task.deliveryNote || ""), task.description || "",
     task.recurrence?.frequency === "monthly" ? "是" : "否", task.recurrence?.until || "",
     task.recurrenceGroupId || "", asDateTime(task.createdAt), asDateTime(task.updatedAt)
   ]), {

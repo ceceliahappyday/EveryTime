@@ -59,7 +59,12 @@
   function buildFollowUpBusinessBackground(source = {}) {
     const title = stripTrackingTitleSuffix(source.title);
     const background = String(source.businessBackground || "").trim();
-    if (title && background) return `${title}\n${background}`.slice(0, 500);
+    const rich = /<img\b/i.test(background) || /<[a-z][\s\S]*>/i.test(background);
+    if (title && background) {
+      if (rich) return `${title}<br>${background}`;
+      return `${title}\n${background}`.slice(0, 500);
+    }
+    if (rich) return title || background || "";
     return (title || background || "").slice(0, 500);
   }
 

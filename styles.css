@@ -3810,13 +3810,15 @@ body.in-desktop.glass-mode .task-attention-inline {
   margin-top: 0;
 }
 #taskEditForm .task-context-field,
-#taskEditForm label:has(> textarea) {
+#taskEditForm label:has(> textarea),
+#taskEditForm label:has(> .rich-note-editor) {
   display: block;
   width: 100%;
   margin-top: 12px;
 }
 #taskEditForm .task-context-field > span,
-#taskEditForm label:has(> textarea) > span {
+#taskEditForm label:has(> textarea) > span,
+#taskEditForm label:has(> .rich-note-editor) > span {
   display: block;
   margin-bottom: 7px;
   min-width: 0;
@@ -4234,12 +4236,12 @@ body.in-desktop:has(dialog[open]) .resize-handle {
 .close-button { width: 32px; height: 32px; border-radius: 9px; color: var(--muted); background: #f3f2ee; font-size: 20px; }
 .modal label { display: block; margin-top: 15px; }
 .modal label > span, .color-picker > span { display: block; margin-bottom: 7px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; }
-.modal input, .modal select, .modal textarea {
+.modal input, .modal select, .modal textarea, .modal .rich-note-editor {
   width: 100%; padding: 11px 12px;
   color: var(--ink); background: #faf9f6;
   border: 1px solid var(--line); border-radius: 9px; outline: 0; resize: vertical;
 }
-.modal input:focus, .modal select:focus, .modal textarea:focus { border-color: #8da497; box-shadow: 0 0 0 3px rgba(60,102,85,.08); }
+.modal input:focus, .modal select:focus, .modal textarea:focus, .modal .rich-note-editor:focus { border-color: #8da497; box-shadow: 0 0 0 3px rgba(60,102,85,.08); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .color-picker { display: flex; align-items: center; gap: 9px; margin-top: 17px; }
 .color-picker > span { margin: 0 7px 0 0; }
@@ -4315,7 +4317,8 @@ body.in-desktop:has(dialog[open]) .resize-handle {
   letter-spacing: 0;
   line-height: 1.45;
 }
-.task-context-field textarea {
+.task-context-field textarea,
+.task-context-field .rich-note-editor {
   min-height: 84px;
   line-height: 1.55;
 }
@@ -4490,9 +4493,30 @@ body.in-desktop.glass-mode #taskEditForm .entry-task-trigger {
   font-size: 12px;
   color: var(--muted);
 }
-.task-close-confirm-fields textarea {
-  min-height: 72px;
+.task-close-confirm-fields textarea,
+.task-close-confirm-fields .rich-note-editor {
+  min-height: 96px;
   resize: vertical;
+}
+.rich-note-editor {
+  max-height: 280px;
+  overflow: auto;
+  box-sizing: border-box;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.rich-note-editor.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+}
+.rich-note-editor img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 8px 0;
+  border-radius: 8px;
 }
 .danger-button {
   display: inline-flex;
@@ -5278,7 +5302,8 @@ body.in-desktop.glass-mode .modal {
 body.in-desktop.glass-mode .modal::backdrop { background: rgba(0, 8, 15, .32); }
 body.in-desktop.glass-mode .modal input,
 body.in-desktop.glass-mode .modal select,
-body.in-desktop.glass-mode .modal textarea {
+body.in-desktop.glass-mode .modal textarea,
+body.in-desktop.glass-mode .modal .rich-note-editor {
   color: #ffffff;
   caret-color: #8fe0d7;
   background: rgba(0, 0, 0, .28);
@@ -5286,9 +5311,13 @@ body.in-desktop.glass-mode .modal textarea {
 }
 body.in-desktop.glass-mode .modal input:focus,
 body.in-desktop.glass-mode .modal select:focus,
-body.in-desktop.glass-mode .modal textarea:focus {
+body.in-desktop.glass-mode .modal textarea:focus,
+body.in-desktop.glass-mode .modal .rich-note-editor:focus {
   border-color: #8fe0d7;
   box-shadow: 0 0 0 3px rgba(101,180,177,.20);
+}
+body.in-desktop.glass-mode .modal .rich-note-editor.is-empty::before {
+  color: rgba(202, 216, 225, .72);
 }
 body.in-desktop.glass-mode .modal select option {
   color: #f5f9fb;

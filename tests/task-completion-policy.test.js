@@ -7,6 +7,8 @@ for (const marker of [
   "toggleTaskCompletion(task",
   "completedAt = closing",
   "completionNote",
+  "getRichNoteEditorValue",
+  "RichNotePolicy.normalizeNoteForStorage",
   "saveData();\n  render();"
 ]) {
   if (!app.includes(marker)) throw new Error(`missing completion persistence marker: ${marker}`);

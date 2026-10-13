@@ -256,7 +256,15 @@
       </label>
       <label>
         <span>完成情况说明（选填）</span>
-        <textarea id="taskCloseCompletionNote" maxlength="500" rows="3" placeholder="已完成什么、结果如何、还有哪些遗留"></textarea>
+        <div
+          id="taskCloseCompletionNote"
+          class="rich-note-editor"
+          contenteditable="true"
+          role="textbox"
+          aria-multiline="true"
+          aria-label="完成情况说明"
+          data-placeholder="已完成什么、结果如何、还有哪些遗留；可直接粘贴图片"
+        ></div>
       </label>
     </div>
     <div class="modal-actions task-close-confirm-actions">
@@ -527,7 +535,15 @@
         </label>
         <label id="businessBackgroundLabel" class="task-context-field">
           <span>背景与说明</span>
-          <textarea id="taskBusinessBackground" rows="3" maxlength="800" placeholder="为什么做这件事？要解决什么问题？补充必要上下文即可。"></textarea>
+          <div
+            id="taskBusinessBackground"
+            class="rich-note-editor"
+            contenteditable="true"
+            role="textbox"
+            aria-multiline="true"
+            aria-label="背景与说明"
+            data-placeholder="为什么做这件事？要解决什么问题？补充必要上下文即可；可直接粘贴图片"
+          ></div>
         </label>
         <label id="problemReasonLabel" class="hidden" aria-hidden="true">
           <span>问题原因（可选）</span>
@@ -852,6 +868,7 @@
   <script src="week-entry-policy.js"></script>
   <script src="project-view-policy.js"></script>
   <script src="task-status-policy.js"></script>
+  <script src="rich-note-policy.js"></script>
   <script src="ai-task-draft-policy.js"></script>
   <script src="ai-answer-policy.js"></script>
   <script src="navigation-policy.js"></script>

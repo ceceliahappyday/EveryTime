@@ -622,6 +622,8 @@ function bindEvents() {
   bindFlexibleDateTimeInput(el.taskActualStart, { kind: "start" });
   bindFlexibleDateTimeInput(el.taskActualEnd, { kind: "end" });
   bindFlexibleDateTimeInput(el.taskCloseCompletedAt, { kind: "end" });
+  bindRichNoteEditor(el.taskCloseCompletionNote);
+  bindRichNoteEditor(el.taskBusinessBackground);
   bindWorkHourDateTimeDefault(el.taskActualStart, "start");
   bindWorkHourDateTimeDefault(el.taskActualEnd, "end");
   document.querySelectorAll("[data-datetime-target]").forEach(button => {
@@ -4701,7 +4703,7 @@ function openTaskDialog(task = null, options = {}) {
   el.taskActualStart.value = toLocalDateTimeInput(statusTask?.startOverrideAt || statusTask?.startedAt);
   el.taskActualEnd.value = toLocalDateTimeInput(statusTask?.completedAt);
   // UI merges background / reason / description; originals stay in data until user saves.
-  el.taskBusinessBackground.value = mergeTaskContextText(task);
+  setRichNoteEditorValue(el.taskBusinessBackground, mergeTaskContextText(task));
   el.taskProblemReason.value = task?.problemReason || "";
   el.taskDeliveryNote.value = task?.deliveryNote || "";
   el.taskDescription.value = task?.description || "";
@@ -5091,7 +5093,7 @@ function saveMeetingFromCreateDialog() {
     start,
     end,
     owner: (el.taskOwner?.value || "").trim().slice(0, 80),
-    note: (el.taskBusinessBackground?.value || "").trim().slice(0, 800),
+    note: plainTextFromDeliveryNote(safeReadRichNote(el.taskBusinessBackground)).slice(0, 800),
     color: "amber",
     taskId
   };
@@ -5119,6 +5121,12 @@ function saveTask() {
   const monthlySelected = isMonthlyPrioritySelected();
   const dueParts = getTaskDueParts();
   const attentionOnly = isAttentionModeUi() && Boolean(el.taskFollowUpTracking?.checked);
+  let businessBackground = "";
+  try {
+    businessBackground = getRichNoteEditorValue(el.taskBusinessBackground);
+  } catch (error) {
+    return showTaskFieldError(el.taskBusinessBackground, error?.message || "背景与说明过大，请减少图片后再保存");
+  }
   const payload = {
     title: TaskStatusPolicy.stripTrackingTitleSuffix?.(el.taskTitleInput.value.trim())
       || el.taskTitleInput.value.trim(),
@@ -5139,7 +5147,7 @@ function saveTask() {
     startedAt: fromLocalDateTimeInput(el.taskActualStart.value),
     startOverrideAt: fromLocalDateTimeInput(el.taskActualStart.value),
     completedAt: fromLocalDateTimeInput(el.taskActualEnd.value),
-    businessBackground: el.taskBusinessBackground.value.trim().slice(0, 800),
+    businessBackground,
     // Consolidated into businessBackground on save so reopen won't duplicate.
     problemReason: "",
     // Keep historical deliveryNote; deliverables are edited as child tasks in UI.
@@ -5270,7 +5278,7 @@ function openProgressReview() {
           <input type="range" class="review-progress" min="0" max="100" step="5" value="${task.progress || 0}" />
           <strong class="review-progress-value">${task.progress || 0}%</strong>
         </div>
-        <textarea class="review-delivery-note" rows="3" maxlength="500" placeholder="已完成什么、下一步是什么、目前有哪些风险">${escapeHtml(task.deliveryNote || "")}</textarea>`;
+        <textarea class="review-delivery-note" rows="3" maxlength="4000" placeholder="已完成什么、下一步是什么、目前有哪些风险">${escapeHtml(plainTextFromDeliveryNote(task.deliveryNote || ""))}</textarea>`;
       const range = card.querySelector(".review-progress");
       range.addEventListener("input", () => card.querySelector(".review-progress-value").textContent = `${range.value}%`);
       el.progressReviewList.appendChild(card);
@@ -5285,7 +5293,15 @@ function saveProgressReview() {
     const found = findTask(card.dataset.taskId);
     if (!found) return;
     found.task.progress = Number(card.querySelector(".review-progress").value);
-    found.task.deliveryNote = card.querySelector(".review-delivery-note").value.trim();
+    const noteField = card.querySelector(".review-delivery-note");
+    const nextPlain = String(noteField?.value || "").trim();
+    const previous = found.task.deliveryNote || "";
+    const previousPlain = plainTextFromDeliveryNote(previous);
+    if (nextPlain === previousPlain && typeof RichNotePolicy !== "undefined" && RichNotePolicy.hasInlineImages(previous)) {
+      found.task.deliveryNote = previous;
+    } else {
+      found.task.deliveryNote = nextPlain.slice(0, RichNotePolicy?.MAX_TEXT_CHARS || 4000);
+    }
     found.task.updatedAt = now;
     if (found.task.progress > 100) found.task.progress = 100;
   });
@@ -6596,9 +6612,7 @@ function requestTaskCompletion(task) {
   if (el.taskCloseCompletedAt) {
     el.taskCloseCompletedAt.value = toLocalDateTimeInput(new Date().toISOString());
   }
-  if (el.taskCloseCompletionNote) {
-    el.taskCloseCompletionNote.value = task.deliveryNote || "";
-  }
+  setRichNoteEditorValue(el.taskCloseCompletionNote, task.deliveryNote || "");
   el.taskCloseConfirmDialog?.showModal();
 }
 
@@ -6606,7 +6620,13 @@ function confirmCloseTaskChoice(mode = "only") {
   const closeMode = mode === true ? "tracking" : mode === false ? "only" : String(mode || "only");
   const task = pendingCloseTaskId ? findTask(pendingCloseTaskId)?.task : null;
   const completedAt = fromLocalDateTimeInput(el.taskCloseCompletedAt?.value || "") || new Date().toISOString();
-  const completionNote = String(el.taskCloseCompletionNote?.value || "").trim().slice(0, 500);
+  let completionNote = "";
+  try {
+    completionNote = getRichNoteEditorValue(el.taskCloseCompletionNote);
+  } catch (error) {
+    showToast(error?.message || "完成情况说明过大，请减少图片后再保存");
+    return;
+  }
   const resumeAfterClose = parentReviewResumeTaskId && task && parentReviewResumeTaskId === task.id;
   pendingCloseTaskId = null;
   parentReviewResumeTaskId = null;
@@ -6617,6 +6637,7 @@ function confirmCloseTaskChoice(mode = "only") {
     showToast("完成时间不能早于实际开始时间");
     pendingCloseTaskId = task.id;
     if (resumeAfterClose) parentReviewResumeTaskId = task.id;
+    setRichNoteEditorValue(el.taskCloseCompletionNote, completionNote);
     el.taskCloseConfirmDialog?.showModal();
     return;
   }
@@ -6671,7 +6692,9 @@ function toggleTaskCompletion(task, options = {}) {
   const nextStatus = closing ? "done" : getAutomaticTaskStatus(task.id);
   const hasCompletionNote = Object.prototype.hasOwnProperty.call(options, "completionNote");
   const completionNote = hasCompletionNote
-    ? String(options.completionNote || "").trim().slice(0, 500)
+    ? (typeof RichNotePolicy !== "undefined"
+      ? RichNotePolicy.normalizeNoteForStorage(options.completionNote || "")
+      : String(options.completionNote || "").trim())
     : null;
   const sourceSnapshot = closing ? {
     status: task.status,
@@ -8939,13 +8962,38 @@ function mergeTaskContextText(task) {
   const pushUnique = value => {
     const text = String(value || "").trim();
     if (!text) return;
-    if (parts.some(part => part.includes(text) || text.includes(part))) return;
+    const plain = plainTextFromDeliveryNote(text);
+    const hasImage = typeof RichNotePolicy !== "undefined" && RichNotePolicy.hasInlineImages(text);
+    if (!plain && !hasImage) return;
+    if (parts.some(part => {
+      if (part === text) return true;
+      const partPlain = plainTextFromDeliveryNote(part);
+      return Boolean(plain && partPlain && (partPlain.includes(plain) || plain.includes(partPlain)));
+    })) return;
     parts.push(text);
   };
   pushUnique(task.businessBackground);
   pushUnique(task.problemReason);
   pushUnique(task.description);
-  return parts.join("\n\n").slice(0, 800);
+  if (!parts.length) return "";
+  if (parts.length === 1) return parts[0];
+  const hasMarkup = parts.some(part => typeof RichNotePolicy !== "undefined" && RichNotePolicy.containsMarkup(part));
+  if (hasMarkup) {
+    return parts.map(part => (
+      typeof RichNotePolicy !== "undefined" && RichNotePolicy.containsMarkup(part)
+        ? part
+        : escapeHtml(part).replace(/\n/g, "<br>")
+    )).join("<br><br>");
+  }
+  return parts.join("\n\n");
+}
+
+function safeReadRichNote(editor) {
+  try {
+    return getRichNoteEditorValue(editor);
+  } catch {
+    return plainTextFromDeliveryNote(editor?.innerText || editor?.textContent || "");
+  }
 }
 
 function renderTaskSubtasks(task = null) {
@@ -9471,3 +9519,129 @@ function formatHours(value) { return `${trimNumber(value)} 小时`; }
 function trimNumber(value) { return Number.isInteger(value) ? value : value.toFixed(1); }
 function getHourHeight() { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--hour-height")); }
 function escapeHtml(value) { const div = document.createElement("div"); div.textContent = value; return div.innerHTML; }
+
+function plainTextFromDeliveryNote(value) {
+  if (typeof RichNotePolicy !== "undefined" && RichNotePolicy.plainTextFromNote) {
+    return RichNotePolicy.plainTextFromNote(value);
+  }
+  return String(value || "").trim();
+}
+
+function syncRichNoteEmptyState(editor) {
+  if (!editor) return;
+  const empty = typeof RichNotePolicy !== "undefined"
+    ? RichNotePolicy.isEffectivelyEmpty(editor.innerHTML)
+    : !String(editor.textContent || "").trim();
+  editor.classList.toggle("is-empty", empty);
+}
+
+function setRichNoteEditorValue(editor, value) {
+  if (!editor) return;
+  const raw = String(value || "");
+  if (!raw) {
+    editor.innerHTML = "";
+  } else if (typeof RichNotePolicy !== "undefined" && RichNotePolicy.containsMarkup(raw)) {
+    editor.innerHTML = RichNotePolicy.sanitizeNoteHtml(raw);
+  } else {
+    editor.textContent = raw;
+  }
+  syncRichNoteEmptyState(editor);
+}
+
+function getRichNoteEditorValue(editor) {
+  if (!editor) return "";
+  const html = editor.innerHTML || "";
+  if (typeof RichNotePolicy === "undefined") return String(editor.textContent || "").trim();
+  return RichNotePolicy.normalizeNoteForStorage(html);
+}
+
+function insertHtmlAtRichNoteCursor(editor, html) {
+  if (!editor) return;
+  editor.focus();
+  const selection = window.getSelection();
+  if (!selection) return;
+  let range = null;
+  if (selection.rangeCount) {
+    const current = selection.getRangeAt(0);
+    if (editor.contains(current.commonAncestorContainer)) range = current;
+  }
+  if (!range) {
+    range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+  }
+  range.deleteContents();
+  const fragment = range.createContextualFragment(html);
+  const last = fragment.lastChild;
+  range.insertNode(fragment);
+  if (last) {
+    range.setStartAfter(last);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  syncRichNoteEmptyState(editor);
+}
+
+async function insertCompressedImageIntoRichNote(editor, fileOrBlob) {
+  if (!editor || !fileOrBlob) return;
+  const currentCount = typeof RichNotePolicy !== "undefined"
+    ? RichNotePolicy.countImages(editor.innerHTML)
+    : editor.querySelectorAll("img").length;
+  const maxImages = RichNotePolicy?.MAX_IMAGES || 8;
+  if (currentCount >= maxImages) {
+    showToast(`完成情况说明最多插入 ${maxImages} 张图片`);
+    return;
+  }
+  try {
+    const dataUrl = await compressImageToDataUrl(fileOrBlob, { maxEdge: 1280, maxBytes: 700 * 1024 });
+    if (typeof RichNotePolicy !== "undefined" && !RichNotePolicy.isAllowedDataImageSrc(dataUrl)) {
+      throw new Error("图片格式不受支持");
+    }
+    insertHtmlAtRichNoteCursor(editor, `<img src="${dataUrl}" alt="">`);
+  } catch (error) {
+    showToast(error?.message || "图片插入失败");
+  }
+}
+
+function bindRichNoteEditor(editor) {
+  if (!editor || editor.dataset.richNoteBound === "1") return;
+  editor.dataset.richNoteBound = "1";
+  syncRichNoteEmptyState(editor);
+  editor.addEventListener("input", () => syncRichNoteEmptyState(editor));
+  editor.addEventListener("blur", () => {
+    if (typeof RichNotePolicy !== "undefined") {
+      editor.innerHTML = RichNotePolicy.sanitizeNoteHtml(editor.innerHTML);
+    }
+    syncRichNoteEmptyState(editor);
+  });
+  editor.addEventListener("paste", async event => {
+    const items = [...(event.clipboardData?.items || [])];
+    const imageItems = items.filter(item => item.type?.startsWith("image/"));
+    if (imageItems.length) {
+      event.preventDefault();
+      const text = String(event.clipboardData?.getData("text/plain") || "");
+      if (text) insertHtmlAtRichNoteCursor(editor, escapeHtml(text).replace(/\n/g, "<br>"));
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (file) await insertCompressedImageIntoRichNote(editor, file);
+      }
+      return;
+    }
+    event.preventDefault();
+    const text = String(event.clipboardData?.getData("text/plain") || "");
+    if (text) insertHtmlAtRichNoteCursor(editor, escapeHtml(text).replace(/\n/g, "<br>"));
+  });
+  editor.addEventListener("dragover", event => {
+    if ([...(event.dataTransfer?.types || [])].includes("Files")) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    }
+  });
+  editor.addEventListener("drop", async event => {
+    const files = [...(event.dataTransfer?.files || [])].filter(file => file.type?.startsWith("image/"));
+    if (!files.length) return;
+    event.preventDefault();
+    for (const file of files) await insertCompressedImageIntoRichNote(editor, file);
+  });
+}
