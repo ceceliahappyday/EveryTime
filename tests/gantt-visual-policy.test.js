@@ -144,6 +144,9 @@ if (!app.includes("additive: event.ctrlKey || event.metaKey") || !app.includes("
 if (!app.includes("data-priority-id") || !app.includes("任务级别仅适用于待办任务")) {
   throw new Error("bulk priority submenu must apply only to tasks");
 }
+if (!app.includes("positionContextSubmenu") || !styles.includes("is-flip-up")) {
+  throw new Error("context submenus must flip when near viewport edges");
+}
 if (!app.includes("showGanttBlankContextMenu") || !app.includes('data-gantt-action="add-root"')) {
   throw new Error("gantt blank area must support right-click new parent task");
 }

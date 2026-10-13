@@ -30,5 +30,19 @@ assert.match(
   /latest\.yml does not advertise version/,
   "release workflow must verify latest.yml before upload"
 );
+assert.match(
+  html,
+  /id="updateProgress"[^>]*popover="manual"/,
+  "update progress must use popover so it stays above open dialogs"
+);
+assert.match(
+  styles,
+  /\.update-progress\s*\{[^}]*z-index:\s*2147483646/s,
+  "update progress needs a top-layer-friendly z-index fallback"
+);
+assert.ok(
+  fs.readFileSync("app.js", "utf8").includes("showUpdateProgressBanner"),
+  "update progress must call showPopover when visible"
+);
 
 console.log("settings modal layout tests passed");

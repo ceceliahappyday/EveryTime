@@ -1487,25 +1487,44 @@ async function renderAppVersion() {
   if (el.settingsAppVersion) el.settingsAppVersion.textContent = label;
 }
 
+function hideUpdateProgressBanner() {
+  if (!el.updateProgress) return;
+  try {
+    if (typeof el.updateProgress.hidePopover === "function" && el.updateProgress.matches?.(":popover-open")) {
+      el.updateProgress.hidePopover();
+    }
+  } catch (_) { /* ignore */ }
+  el.updateProgress.classList.add("hidden");
+  el.updateProgress.classList.remove("done", "error");
+  if (el.updateProgressBar) el.updateProgressBar.style.width = "0%";
+}
+
+function showUpdateProgressBanner() {
+  if (!el.updateProgress) return;
+  el.updateProgress.classList.remove("hidden");
+  try {
+    if (typeof el.updateProgress.showPopover === "function") el.updateProgress.showPopover();
+  } catch (_) { /* ignore */ }
+}
+
 function bindUpdateProgress() {
   window.desktopAPI?.onUpdateProgress?.(payload => {
     if (!el.updateProgress || !payload) return;
     if (payload.state === "idle") {
-      el.updateProgress.classList.add("hidden");
-      el.updateProgress.classList.remove("done", "error");
-      el.updateProgressBar.style.width = "0%";
+      hideUpdateProgressBanner();
       return;
     }
     const percent = Math.max(0, Math.min(100, Number(payload.percent || 0)));
-    el.updateProgress.classList.remove("hidden", "done", "error");
+    el.updateProgress.classList.remove("done", "error");
     el.updateProgress.classList.toggle("done", payload.state === "downloaded");
     el.updateProgress.classList.toggle("error", payload.state === "error");
     el.updateProgressText.textContent = payload.message || (
       payload.state === "checking" ? "正在检查更新…" : `正在下载更新… ${Math.round(percent)}%`
     );
     el.updateProgressBar.style.width = `${percent}%`;
+    showUpdateProgressBanner();
     if (payload.state === "downloaded" || payload.state === "error") {
-      setTimeout(() => el.updateProgress?.classList.add("hidden"), 6500);
+      setTimeout(() => hideUpdateProgressBanner(), 6500);
     }
   });
 }
@@ -6731,16 +6750,55 @@ let listContextMenuOpen = null;
 
 function positionGanttContextMenu(menu, event) {
   menu.classList.remove("hidden");
+  menu.style.maxHeight = "";
+  menu.style.overflowY = "";
   const pad = 8;
-  const rect = menu.getBoundingClientRect();
-  const width = rect.width || 160;
-  const height = rect.height || 140;
-  let left = event.clientX;
-  let top = event.clientY;
-  if (left + width > window.innerWidth - pad) left = window.innerWidth - width - pad;
-  if (top + height > window.innerHeight - pad) top = window.innerHeight - height - pad;
-  menu.style.left = `${Math.max(pad, left)}px`;
-  menu.style.top = `${Math.max(pad, top)}px`;
+  const place = () => {
+    const rect = menu.getBoundingClientRect();
+    const maxHeight = Math.max(160, window.innerHeight - pad * 2);
+    let width = rect.width || 160;
+    let height = rect.height || 140;
+    if (height > maxHeight) {
+      menu.style.maxHeight = `${maxHeight}px`;
+      menu.style.overflowY = "auto";
+      height = maxHeight;
+    }
+    let left = event.clientX;
+    let top = event.clientY;
+    if (left + width > window.innerWidth - pad) left = window.innerWidth - width - pad;
+    if (top + height > window.innerHeight - pad) top = window.innerHeight - height - pad;
+    menu.style.left = `${Math.max(pad, left)}px`;
+    menu.style.top = `${Math.max(pad, top)}px`;
+  };
+  place();
+  requestAnimationFrame(place);
+}
+
+function positionContextSubmenu(host) {
+  const submenu = host?.querySelector?.(":scope > .gantt-context-submenu");
+  if (!submenu) return;
+  const pad = 8;
+  submenu.classList.remove("is-flip-up", "is-flip-left");
+  submenu.style.maxHeight = "";
+  submenu.style.visibility = "hidden";
+  submenu.style.display = "block";
+  void submenu.offsetWidth;
+  let rect = submenu.getBoundingClientRect();
+  if (rect.right > window.innerWidth - pad) submenu.classList.add("is-flip-left");
+  void submenu.offsetWidth;
+  rect = submenu.getBoundingClientRect();
+  const hostRect = host.getBoundingClientRect();
+  const availDown = Math.max(80, window.innerHeight - pad - (hostRect.top - 4));
+  const availUp = Math.max(80, hostRect.bottom + 4 - pad);
+  const needed = Math.max(rect.height, submenu.scrollHeight || 0);
+  if (needed > availDown && availUp > availDown) {
+    submenu.classList.add("is-flip-up");
+    submenu.style.maxHeight = `${Math.min(360, availUp)}px`;
+  } else {
+    submenu.style.maxHeight = `${Math.min(360, availDown)}px`;
+  }
+  submenu.style.visibility = "";
+  submenu.style.display = "";
 }
 
 function ensureGanttContextMenu() {
@@ -6750,6 +6808,13 @@ function ensureGanttContextMenu() {
   ganttContextMenuEl.className = "gantt-context-menu hidden";
   ganttContextMenuEl.setAttribute("role", "menu");
   document.body.appendChild(ganttContextMenuEl);
+  ganttContextMenuEl.addEventListener("mouseover", event => {
+    const host = event.target?.closest?.(".menu-item-with-submenu");
+    if (!host || !ganttContextMenuEl.contains(host)) return;
+    if (ganttContextMenuEl._submenuHost === host) return;
+    ganttContextMenuEl._submenuHost = host;
+    positionContextSubmenu(host);
+  });
   ganttContextMenuEl.addEventListener("click", event => {
     const fromList = Array.isArray(contextMenuListKeys);
     const listKeys = fromList ? [...contextMenuListKeys] : [];
@@ -6826,6 +6891,15 @@ function ensureGanttContextMenu() {
 function hideGanttContextMenu() {
   if (!ganttContextMenuEl) return;
   ganttContextMenuEl.classList.add("hidden");
+  ganttContextMenuEl._submenuHost = null;
+  ganttContextMenuEl.querySelectorAll(".gantt-context-submenu").forEach(node => {
+    node.classList.remove("is-flip-up", "is-flip-left");
+    node.style.maxHeight = "";
+    node.style.display = "";
+    node.style.visibility = "";
+  });
+  ganttContextMenuEl.style.maxHeight = "";
+  ganttContextMenuEl.style.overflowY = "";
   ganttContextMenuTaskId = "";
   contextMenuListKeys = null;
   listContextMenuOpen = null;

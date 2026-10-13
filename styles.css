@@ -2804,6 +2804,14 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   background: var(--surface-strong, #fff);
   box-shadow: 0 10px 28px rgba(30, 36, 40, 0.18);
 }
+.gantt-context-submenu.is-flip-left {
+  left: auto;
+  right: calc(100% - 4px);
+}
+.gantt-context-submenu.is-flip-up {
+  top: auto;
+  bottom: -4px;
+}
 .gantt-context-menu .menu-item-with-submenu:hover > .gantt-context-submenu,
 .gantt-context-menu .menu-item-with-submenu:focus-within > .gantt-context-submenu {
   display: block;
@@ -6135,22 +6143,30 @@ body.in-desktop.glass-mode .settings-work-hours-line {
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 .update-progress {
+  /* popover=manual puts this in the top layer above open <dialog>s */
   position: fixed;
-  z-index: 21;
-  left: 50%;
+  inset: unset;
+  top: auto;
+  right: auto;
   bottom: 72px;
+  left: 50%;
+  z-index: 2147483646;
   width: min(360px, calc(100% - 36px));
+  margin: 0;
   padding: 10px 12px 12px;
   overflow: hidden;
   border: 1px solid rgba(172,211,233,.36);
   border-radius: 12px;
   color: #eef8fb;
-  background: rgba(6, 20, 31, .72);
+  background: rgba(6, 20, 31, .92);
   box-shadow: 0 12px 34px rgba(0,0,0,.28);
   backdrop-filter: blur(18px) saturate(1.2);
   transform: translateX(-50%);
 }
-.update-progress.hidden { display: none; }
+.update-progress.hidden { display: none !important; }
+.update-progress:popover-open {
+  display: block;
+}
 .update-progress span {
   display: block;
   margin-bottom: 8px;
