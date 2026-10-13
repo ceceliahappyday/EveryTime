@@ -78,6 +78,7 @@ const requiredStyles = [
   ".project-gantt-label-pane",
   ".project-gantt-chart-track",
   ".project-gantt-lane i.gantt-meeting-bar",
+  ".project-gantt-lane i.gantt-actual-bar",
   ".gantt-legend i.legend-meeting",
   "#2fbf6b",
   'content: "✓"',
@@ -86,6 +87,15 @@ const requiredStyles = [
 requiredStyles.forEach(token => {
   if (!styles.includes(token)) throw new Error(`missing gantt visual style: ${token}`);
 });
+if (!/i\.gantt-actual-bar\s*\{[^}]*var\(--entry/s.test(styles)) {
+  throw new Error("invest bars must follow category color via --entry");
+}
+if (!app.includes("applyCategoryColorStyle(chartRow, taskCategoryColor)")) {
+  throw new Error("task gantt chart rows must receive category color");
+}
+if (!/settings-category-drag[^\{]*\{[^}]*height:\s*22px/s.test(styles)) {
+  throw new Error("category drag handle should match swatch height");
+}
 
 if (!/height:\s*42px/.test(styles.match(/\.project-gantt-group-heading\s*\{[^}]+\}/s)?.[0] || "")) {
   throw new Error("gantt group headings must use fixed height to stay aligned with chart spacers");

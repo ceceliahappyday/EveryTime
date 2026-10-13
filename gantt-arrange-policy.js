@@ -216,8 +216,12 @@
     return key;
   }
 
-  function compareGroupKeys(dimId, a, b) {
+  function compareGroupKeys(dimId, a, b, helpers = {}) {
     if (dimId === "taskStatus") return STATUS_ORDER.indexOf(a) - STATUS_ORDER.indexOf(b);
+    if (dimId === "category" && typeof helpers.categoryOrderIndex === "function") {
+      const diff = helpers.categoryOrderIndex(a) - helpers.categoryOrderIndex(b);
+      if (diff !== 0) return diff;
+    }
     return String(a).localeCompare(String(b), "zh-CN");
   }
 
@@ -294,7 +298,7 @@
       buckets.get(key).push(row);
     });
     return [...buckets.keys()]
-      .sort((a, b) => compareGroupKeys(dim.id, a, b))
+      .sort((a, b) => compareGroupKeys(dim.id, a, b, helpers))
       .map(key => {
         const label = groupLabelForDimension(dim.id, key, helpers);
         const nextPath = path.concat([{ dimId: dim.id, key, label }]);
@@ -469,7 +473,7 @@
       buckets.get(key).push(unit);
     });
     return [...buckets.keys()]
-      .sort((a, b) => compareGroupKeys(dim.id, a, b))
+      .sort((a, b) => compareGroupKeys(dim.id, a, b, helpers))
       .map(key => {
         const label = groupLabelForDimension(dim.id, key, helpers);
         const nextPath = path.concat([{ dimId: dim.id, key, label }]);
@@ -509,7 +513,7 @@
       buckets.get(key).push(row);
     });
     return [...buckets.keys()]
-      .sort((a, b) => compareGroupKeys(dim.id, a, b))
+      .sort((a, b) => compareGroupKeys(dim.id, a, b, helpers))
       .map(key => {
         const label = groupLabelForDimension(dim.id, key, helpers);
         const nextPath = path.concat([{ dimId: dim.id, key, label }]);
@@ -550,11 +554,12 @@
     getChildTasks,
     resolveCategory,
     categoryLabel,
+    categoryOrderIndex,
     extraRows = []
   } = {}) {
     const normalized = normalizeConfig(config);
     const split = splitArrangeDimensions(normalized);
-    const helpers = { classifyProjectStatus, resolveCategory, categoryLabel };
+    const helpers = { classifyProjectStatus, resolveCategory, categoryLabel, categoryOrderIndex };
     const meetingRows = Array.isArray(extraRows) ? extraRows : [];
 
     if (split.treeOn) {

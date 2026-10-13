@@ -2681,7 +2681,6 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   box-shadow: none;
 }
 .project-gantt-title.is-meeting {
-  color: #8a6130;
   background: transparent;
   border: 0;
 }
@@ -2809,17 +2808,17 @@ body.in-desktop.glass-mode .gantt-context-menu button.is-danger {
 }
 .project-gantt-lane i.gantt-actual-bar {
   z-index: 3;
-  background: #4f8fd6;
-  border: 1px solid #8ec4f0;
+  background: var(--entry, #4f8fd6);
+  border: 1px solid color-mix(in srgb, var(--entry, #4f8fd6) 55%, #fff);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.42),
-    inset 0 -1px 0 rgba(0, 24, 48, .38),
+    inset 0 -1px 0 color-mix(in srgb, var(--entry, #4f8fd6) 35%, #000),
     0 1px 2px rgba(0,0,0,.28);
 }
 .project-gantt-lane i.gantt-meeting-bar {
   z-index: 3;
-  background: #c9923a;
-  border: 1px solid #e8c15a;
+  background: var(--entry, #c9923a);
+  border: 1px solid color-mix(in srgb, var(--entry, #c9923a) 55%, #fff);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.42),
     inset 0 -1px 0 rgba(96, 58, 8, .28),
@@ -5209,7 +5208,6 @@ body.in-desktop.glass-mode .project-gantt-row-label[data-depth="3"] .project-gan
   border: 0;
 }
 body.in-desktop.glass-mode .project-gantt-title.is-meeting {
-  color: #f0d06a;
   background: transparent;
   border: 0;
 }
@@ -5226,9 +5224,9 @@ body.in-desktop.glass-mode .project-gantt-lane i.gantt-span-track {
   border-color: rgba(255,255,255,.10);
 }
 body.in-desktop.glass-mode .project-gantt-lane i.gantt-progress-fill { background: rgba(0, 10, 18, .20); }
-body.in-desktop.glass-mode .project-gantt-lane i.gantt-meeting-bar { background: #c9923a; }
+body.in-desktop.glass-mode .project-gantt-lane i.gantt-meeting-bar { background: var(--entry, #c9923a); }
 body.in-desktop.glass-mode .gantt-legend i.legend-meeting { background: #c9923a; }
-body.in-desktop.glass-mode .project-gantt-lane i.gantt-actual-bar { background: #4f8fd6; }
+body.in-desktop.glass-mode .project-gantt-lane i.gantt-actual-bar { background: var(--entry, #4f8fd6); }
 body.in-desktop.glass-mode .gantt-legend { color: #cfe0ea; }
 body.in-desktop.glass-mode .gantt-legend i.legend-start {
   border-color: transparent transparent transparent #52c97a;
@@ -5770,17 +5768,57 @@ body.in-desktop .window-controls {
   gap: 6px;
   margin: 0;
 }
-/* Outlook / OneNote：一行 = 颜色 + 分类名，彼此平行 */
+/* Outlook / OneNote：一行 = 拖动手柄 + 颜色 + 分类名 */
 .settings-category-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 28px;
+  grid-template-columns: 22px auto minmax(0, 1fr) 28px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-height: 40px;
-  padding: 6px 8px 6px 10px;
+  padding: 6px 8px 6px 6px;
   border: 1px solid var(--line-soft);
   border-radius: 10px;
   background: #faf9f6;
+  position: relative;
+}
+.settings-category-row.is-dragging {
+  opacity: 0.45;
+}
+.settings-category-row.drop-before::before,
+.settings-category-row.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.settings-category-row.drop-before::before { top: -2px; }
+.settings-category-row.drop-after::after { bottom: -2px; }
+.settings-category-drag {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  line-height: 0;
+  cursor: grab;
+  user-select: none;
+  align-self: center;
+}
+.settings-category-drag svg { fill: currentColor; display: block; }
+.settings-category-drag:active { cursor: grabbing; }
+.settings-category-drag:hover {
+  color: var(--ink);
+  background: rgba(60, 102, 85, .08);
 }
 .settings-category-row input[type="text"] {
   width: 100%;
@@ -5798,6 +5836,7 @@ body.in-desktop .window-controls {
   box-shadow: 0 0 0 3px rgba(60,102,85,.08);
 }
 .settings-category-swatch {
+  box-sizing: border-box;
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -5806,6 +5845,7 @@ body.in-desktop .window-controls {
   padding: 0;
   cursor: pointer;
   flex: 0 0 auto;
+  align-self: center;
 }
 .settings-category-swatch:hover {
   transform: scale(1.08);
@@ -5887,6 +5927,13 @@ body.in-desktop .window-controls {
 body.in-desktop.glass-mode .settings-category-row {
   background: rgba(12, 28, 42, .55);
   border-color: rgba(181, 218, 239, .22);
+}
+body.in-desktop.glass-mode .settings-category-drag {
+  color: #cad8e1;
+}
+body.in-desktop.glass-mode .settings-category-drag:hover {
+  color: #fff;
+  background: rgba(143, 224, 215, .16);
 }
 body.in-desktop.glass-mode .settings-category-row input[type="text"] {
   color: #f1f8fb;

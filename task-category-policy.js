@@ -152,19 +152,20 @@
 
   function normalizeCatalog(list) {
     const byId = new Map();
+    const ordered = [];
     (Array.isArray(list) ? list : []).forEach(item => {
       const normalized = normalizeCategoryRecord(item);
       if (!normalized || byId.has(normalized.id)) return;
       byId.set(normalized.id, normalized);
+      ordered.push(normalized);
     });
-    const ordered = [];
+    // Keep stored order; only append missing builtins at the end.
     BUILTIN.forEach(item => {
-      ordered.push(byId.get(item.id) || cloneCategory(item));
-      byId.delete(item.id);
+      if (byId.has(item.id)) return;
+      const cloned = cloneCategory(item);
+      byId.set(cloned.id, cloned);
+      ordered.push(cloned);
     });
-    [...byId.values()]
-      .sort((a, b) => a.label.localeCompare(b.label, "zh-CN"))
-      .forEach(item => ordered.push({ ...item, builtin: false }));
     return ordered;
   }
 
@@ -240,13 +241,27 @@
     return colorForCategory(resolveTaskCategory(task));
   }
 
-  function resolveEntryColor(entry = {}, task = null) {
-    if (task) return resolveTaskColor(task);
+  function resolveEntryCategory(entry = {}, task = null) {
+    if (entry?.category && findCategory(entry.category)) return entry.category;
+    if (task) return resolveTaskCategory(task);
+    const hex = normalizeColor(entry?.color);
+    const byColor = listCategories().find(item => normalizeColor(item.color) === hex);
+    if (byColor) return byColor.id;
     if (entry?.type === "calendar" || entry?.kind === "meeting" || entry?.entryType === "calendar") {
-      return colorForCategory("meeting");
+      return "meeting";
     }
-    if (entry?.category && findCategory(entry.category)) return colorForCategory(entry.category);
-    return normalizeColor(entry?.color || DEFAULT_COLOR);
+    return DEFAULT_CATEGORY;
+  }
+
+  function resolveEntryColor(entry = {}, task = null) {
+    // Entry's own category wins — do not force "meeting" color over a user-chosen tag.
+    return colorForCategory(resolveEntryCategory(entry, task));
+  }
+
+  function categoryOrderIndex(id) {
+    const list = listCategories();
+    const index = list.findIndex(item => item.id === id);
+    return index >= 0 ? index : list.length + 1;
   }
 
   function categoryOptionsHtml(selected = DEFAULT_CATEGORY, { includeMeeting = true } = {}) {
@@ -310,6 +325,24 @@
     return upsertCategory({ label, description, color });
   }
 
+  function reorderCategories(orderedIds = [], storage = getStorage()) {
+    const list = loadCatalog(storage);
+    const byId = new Map(list.map(item => [item.id, item]));
+    const next = [];
+    const seen = new Set();
+    (Array.isArray(orderedIds) ? orderedIds : []).forEach(rawId => {
+      const id = String(rawId || "").trim();
+      if (!id || seen.has(id) || !byId.has(id)) return;
+      seen.add(id);
+      next.push(byId.get(id));
+    });
+    list.forEach(item => {
+      if (seen.has(item.id)) return;
+      next.push(item);
+    });
+    return saveCatalog(next, storage);
+  }
+
   return {
     STORAGE_KEY,
     CATEGORIES: BUILTIN,
@@ -337,10 +370,13 @@
     descriptionForCategory,
     resolveTaskCategory,
     resolveTaskColor,
+    resolveEntryCategory,
     resolveEntryColor,
+    categoryOrderIndex,
     categoryOptionsHtml,
     upsertCategory,
     removeCategory,
-    createCategory
+    createCategory,
+    reorderCategories
   };
 });

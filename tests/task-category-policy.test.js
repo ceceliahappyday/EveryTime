@@ -42,10 +42,40 @@ const custom = policy.listCategories().find(item => item.label === "客户A");
 assert.ok(custom, "custom category should be created");
 assert.equal(custom.color, "#C00000");
 assert.equal(policy.resolveEntryColor({}, { category: custom.id }), "#C00000");
+const afterCreate = policy.listCategories();
+assert.equal(afterCreate[afterCreate.length - 1].id, custom.id, "new category appends at the end");
+
+policy.createCategory({ label: "客户B", color: "#002060" });
+const customB = policy.listCategories().find(item => item.label === "客户B");
+const reordered = policy.reorderCategories([
+  customB.id,
+  "work",
+  "meeting",
+  "study",
+  "life",
+  "other",
+  custom.id
+]);
+assert.equal(reordered[0].id, customB.id, "reorder can move custom category to top");
+assert.equal(reordered[1].id, "work");
+assert.equal(reordered[reordered.length - 1].id, custom.id);
 
 policy.removeCategory(custom.id);
+policy.removeCategory(customB.id);
 assert.equal(policy.findCategory(custom.id), null);
 assert.ok(policy.findCategory("work"));
+
+assert.equal(
+  policy.resolveEntryCategory({ entryType: "calendar", category: "study", color: "#AA7B39" }),
+  "study",
+  "entry category must win over meeting defaults"
+);
+assert.equal(
+  policy.resolveEntryColor({ entryType: "calendar", category: "study" }),
+  policy.colorForCategory("study"),
+  "calendar entry color follows chosen category"
+);
+assert.equal(policy.categoryOrderIndex("work") < policy.categoryOrderIndex("other"), true);
 
 assert.match(html, /id="settingsCategoryList"/, "settings expose category color list");
 assert.match(html, /Excel/, "hint mentions Excel palette");
@@ -58,9 +88,14 @@ assert.match(app, /settingsDialog \|\| document\.body/, "palette attaches inside
 assert.match(app, /THEME_PALETTE|STANDARD_PALETTE/, "palette uses Excel theme + standard colors");
 assert.match(app, /applyCategoryColorStyle/, "schedule applies hex via CSS variables");
 assert.match(app, /data-category-open-palette/, "one color circle opens palette");
+assert.match(app, /bindSettingsCategoryListInteractions/, "settings category list supports drag reorder");
+assert.match(app, /reorderCategories/, "settings persist category order");
+assert.match(app, /data-category-drag/, "category rows expose a drag handle");
+assert.match(app, /focusLast:\s*true/, "new category focuses the last row");
 
 assert.match(styles, /\.category-color-palette/, "palette popover styles");
 assert.match(styles, /\.category-color-palette-cell/, "palette cell styles");
 assert.match(styles, /\.settings-category-swatch/, "single category swatch");
+assert.match(styles, /\.settings-category-drag/, "drag handle styles");
 
 console.log("task category policy tests passed");

@@ -216,9 +216,6 @@ function migrateData() {
       entry.entryType ||= entry.taskId ? "task_work" : "calendar";
       entry.note ||= "";
       entry.owner ||= "";
-      entry.color = typeof TaskCategoryPolicy?.normalizeColor === "function"
-        ? TaskCategoryPolicy.normalizeColor(entry.color || "sage")
-        : (entry.color || "sage");
     });
     day.tasks.forEach(task => {
       task.parentId ||= task.parentTaskId || task.parentTask || task.parent || "";
@@ -260,6 +257,18 @@ function migrateData() {
         task.progress = 100;
       }
       task.startOverrideAt ||= "";
+    });
+  });
+  // Second pass: sync entry category/color after all tasks are normalized.
+  Object.values(state.data).forEach(day => {
+    (day.entries || []).forEach(entry => {
+      const linkedTask = entry.taskId ? findTask(entry.taskId)?.task : null;
+      entry.category = typeof TaskCategoryPolicy?.resolveEntryCategory === "function"
+        ? TaskCategoryPolicy.resolveEntryCategory(entry, linkedTask)
+        : (entry.category || (entry.entryType === "calendar" ? "meeting" : "work"));
+      entry.color = typeof TaskCategoryPolicy?.colorForCategory === "function"
+        ? TaskCategoryPolicy.colorForCategory(entry.category)
+        : (entry.color || "sage");
     });
   });
   if (typeof ScheduleHierarchyRepairPolicy?.repairPlannerData === "function") {
@@ -1449,38 +1458,10 @@ async function initDesktop() {
       label: "新分类",
       color: TaskCategoryPolicy.DEFAULT_COLOR || "#638576"
     });
-    renderSettingsCategoryList();
+    renderSettingsCategoryList({ focusLast: true });
     refreshCategorySelects();
   });
-  el.settingsCategoryList?.addEventListener("input", event => {
-    const row = event.target.closest?.("[data-category-id]");
-    if (!row || !event.target.matches?.("[data-category-label]")) return;
-    TaskCategoryPolicy?.upsertCategory?.({
-      id: row.dataset.categoryId,
-      label: event.target.value
-    });
-    refreshCategorySelects();
-  });
-  el.settingsCategoryList?.addEventListener("click", event => {
-    const openPalette = event.target.closest?.("[data-category-open-palette]");
-    const removeBtn = event.target.closest?.("[data-category-remove]");
-    const row = event.target.closest?.("[data-category-id]");
-    if (!row) return;
-    const id = row.dataset.categoryId;
-    if (openPalette) {
-      event.preventDefault();
-      event.stopPropagation();
-      openCategoryColorPalette(openPalette, id);
-      return;
-    }
-    if (removeBtn) {
-      event.preventDefault();
-      closeCategoryColorPalette();
-      TaskCategoryPolicy?.removeCategory?.(id);
-      renderSettingsCategoryList();
-      refreshCategorySelects();
-    }
-  });
+  bindSettingsCategoryListInteractions();
   el.settingsDialog?.addEventListener("close", () => closeCategoryColorPalette());
   document.addEventListener("pointerdown", event => {
     const palette = document.getElementById("categoryColorPalette");
@@ -1635,7 +1616,7 @@ async function openSettingsDialog() {
   }
 }
 
-function renderSettingsCategoryList() {
+function renderSettingsCategoryList({ focusLast = false } = {}) {
   if (!el.settingsCategoryList || typeof TaskCategoryPolicy?.listCategories !== "function") return;
   closeCategoryColorPalette();
   el.settingsCategoryList.innerHTML = TaskCategoryPolicy.listCategories().map(item => {
@@ -1643,12 +1624,137 @@ function renderSettingsCategoryList() {
     const remove = item.builtin
       ? ""
       : `<button type="button" class="settings-category-remove" data-category-remove aria-label="删除分类" title="删除分类">×</button>`;
-    return `<div class="settings-category-row" data-category-id="${escapeHtml(item.id)}">
+    return `<div class="settings-category-row" data-category-id="${escapeHtml(item.id)}" draggable="false">
+      <span class="settings-category-drag" data-category-drag role="button" tabindex="0" aria-label="拖动调整顺序" title="拖动调整顺序"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><circle cx="5" cy="3.5" r="1.35"/><circle cx="11" cy="3.5" r="1.35"/><circle cx="5" cy="8" r="1.35"/><circle cx="11" cy="8" r="1.35"/><circle cx="5" cy="12.5" r="1.35"/><circle cx="11" cy="12.5" r="1.35"/></svg></span>
       <button type="button" class="settings-category-swatch" data-category-open-palette style="background:${escapeHtml(hex)}" aria-label="选择颜色" title="点击选择颜色（Excel 色板）"></button>
       <input type="text" data-category-label maxlength="24" value="${escapeHtml(item.label)}" placeholder="分类名称" aria-label="分类名称" />
       ${remove || `<span class="settings-category-remove-spacer" aria-hidden="true"></span>`}
     </div>`;
   }).join("");
+  if (focusLast) {
+    const lastInput = el.settingsCategoryList.querySelector(".settings-category-row:last-child [data-category-label]");
+    lastInput?.focus?.();
+    lastInput?.select?.();
+    lastInput?.scrollIntoView?.({ block: "nearest" });
+  }
+}
+
+function bindSettingsCategoryListInteractions() {
+  const list = el.settingsCategoryList;
+  if (!list || list.dataset.categoryInteractionsBound === "1") return;
+  list.dataset.categoryInteractionsBound = "1";
+  let dragId = "";
+
+  list.addEventListener("input", event => {
+    const row = event.target.closest?.("[data-category-id]");
+    if (!row || !event.target.matches?.("[data-category-label]")) return;
+    TaskCategoryPolicy?.upsertCategory?.({
+      id: row.dataset.categoryId,
+      label: event.target.value
+    });
+    refreshCategorySelects();
+  });
+
+  list.addEventListener("click", event => {
+    const openPalette = event.target.closest?.("[data-category-open-palette]");
+    const removeBtn = event.target.closest?.("[data-category-remove]");
+    const row = event.target.closest?.("[data-category-id]");
+    if (!row) return;
+    const id = row.dataset.categoryId;
+    if (openPalette) {
+      event.preventDefault();
+      event.stopPropagation();
+      openCategoryColorPalette(openPalette, id);
+      return;
+    }
+    if (removeBtn) {
+      event.preventDefault();
+      closeCategoryColorPalette();
+      TaskCategoryPolicy?.removeCategory?.(id);
+      renderSettingsCategoryList();
+      refreshCategorySelects();
+    }
+  });
+
+  const clearRowDraggable = () => {
+    list.querySelectorAll(".settings-category-row[draggable='true']").forEach(row => {
+      if (!row.classList.contains("is-dragging")) row.draggable = false;
+    });
+  };
+
+  list.addEventListener("pointerdown", event => {
+    const handle = event.target.closest?.("[data-category-drag]");
+    const row = event.target.closest?.(".settings-category-row");
+    if (!handle || !row) return;
+    row.draggable = true;
+  });
+  list.addEventListener("pointerup", clearRowDraggable);
+  list.addEventListener("pointercancel", clearRowDraggable);
+
+  list.addEventListener("dragstart", event => {
+    const row = event.target.closest?.(".settings-category-row");
+    // Handle pointerdown enables draggable; block accidental drags from inputs/buttons.
+    if (!row || !list.contains(row) || !row.draggable) {
+      event.preventDefault();
+      return;
+    }
+    dragId = row.dataset.categoryId || "";
+    if (!dragId) {
+      event.preventDefault();
+      return;
+    }
+    row.classList.add("is-dragging");
+    closeCategoryColorPalette();
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", dragId);
+  });
+
+  list.addEventListener("dragend", event => {
+    const row = event.target.closest?.(".settings-category-row");
+    row?.classList.remove("is-dragging");
+    if (row) row.draggable = false;
+    list.querySelectorAll(".settings-category-row.is-drop-target").forEach(item => {
+      item.classList.remove("is-drop-target", "drop-before", "drop-after");
+    });
+    dragId = "";
+  });
+
+  list.addEventListener("dragover", event => {
+    const row = event.target.closest?.(".settings-category-row");
+    if (!row || !dragId || row.dataset.categoryId === dragId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const rect = row.getBoundingClientRect();
+    const before = event.clientY < rect.top + rect.height / 2;
+    list.querySelectorAll(".settings-category-row.is-drop-target").forEach(item => {
+      item.classList.remove("is-drop-target", "drop-before", "drop-after");
+    });
+    row.classList.add("is-drop-target", before ? "drop-before" : "drop-after");
+  });
+
+  list.addEventListener("drop", event => {
+    const row = event.target.closest?.(".settings-category-row");
+    if (!row || !dragId) return;
+    event.preventDefault();
+    const targetId = row.dataset.categoryId;
+    if (!targetId || targetId === dragId) return;
+    const ids = [...list.querySelectorAll(".settings-category-row")]
+      .map(item => item.dataset.categoryId)
+      .filter(Boolean);
+    const from = ids.indexOf(dragId);
+    let to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    const rect = row.getBoundingClientRect();
+    const before = event.clientY < rect.top + rect.height / 2;
+    ids.splice(from, 1);
+    to = ids.indexOf(targetId);
+    if (to < 0) return;
+    ids.splice(before ? to : to + 1, 0, dragId);
+    TaskCategoryPolicy?.reorderCategories?.(ids);
+    renderSettingsCategoryList();
+    refreshCategorySelects();
+    render();
+  });
 }
 
 function closeCategoryColorPalette() {
@@ -1695,9 +1801,11 @@ function openCategoryColorPalette(anchor, categoryId) {
     event.preventDefault();
     event.stopPropagation();
     TaskCategoryPolicy.upsertCategory?.({ id: categoryId, color: cell.dataset.pickColor });
+    syncCategoryColorAcrossData(categoryId);
     closeCategoryColorPalette();
     renderSettingsCategoryList();
     refreshCategorySelects();
+    render();
   });
   // <dialog> 在顶层：色板必须挂在设置弹窗内，挂 body 会被挡住且点不到
   const host = el.settingsDialog || document.body;
@@ -5204,6 +5312,7 @@ function saveTask() {
     Object.assign(found.task, payload);
     found.task.setupIncomplete = false;
     found.task.updatedAt = new Date().toISOString();
+    syncLinkedEntriesCategory(found.task.id, payload.category, payload.color);
     const targetTaskDate = payload.dueDate || found.dateKey || state.selectedDate;
     if (found.dateKey !== targetTaskDate) {
       state.data[found.dateKey].tasks = state.data[found.dateKey].tasks.filter(item => item.id !== found.task.id);
@@ -5508,6 +5617,19 @@ function meetingPhaseBucket(meeting) {
   return "planned";
 }
 
+function resolveMeetingCategory(meeting = {}) {
+  const counts = new Map();
+  (meeting.entries || []).forEach(({ entry }) => {
+    const linkedTask = entry?.taskId ? findTask(entry.taskId)?.task : null;
+    const category = typeof TaskCategoryPolicy?.resolveEntryCategory === "function"
+      ? TaskCategoryPolicy.resolveEntryCategory(entry, linkedTask)
+      : (entry?.category || "meeting");
+    counts.set(category, (counts.get(category) || 0) + 1);
+  });
+  if (!counts.size) return "meeting";
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))[0][0];
+}
+
 function buildMeetingArrangeRows(meetings = []) {
   return meetings.map(meeting => {
     const owners = [...new Set(
@@ -5517,6 +5639,10 @@ function buildMeetingArrangeRows(meetings = []) {
     )];
     const phase = meetingPhaseBucket(meeting);
     const status = phase === "ended" ? "done" : phase;
+    const category = resolveMeetingCategory(meeting);
+    const color = typeof TaskCategoryPolicy?.colorForCategory === "function"
+      ? TaskCategoryPolicy.colorForCategory(category)
+      : "#AA7B39";
     return {
       kind: "meeting",
       meeting,
@@ -5525,7 +5651,9 @@ function buildMeetingArrangeRows(meetings = []) {
         title: meeting.title,
         status,
         owner: owners[0] || "未指定",
-        priority: "general_daily"
+        priority: "general_daily",
+        category,
+        color
       },
       rootId: "",
       isParent: false,
@@ -5632,6 +5760,11 @@ function buildGanttArrangeSections(projects, meetings = []) {
     getChildTasks,
     resolveCategory: task => TaskCategoryPolicy?.resolveTaskCategory?.(task) || task?.category || "work",
     categoryLabel: id => TaskCategoryPolicy?.labelForCategory?.(id) || id,
+    categoryOrderIndex: id => (
+      typeof TaskCategoryPolicy?.categoryOrderIndex === "function"
+        ? TaskCategoryPolicy.categoryOrderIndex(id)
+        : 0
+    ),
     extraRows: meetingRows
   }).map(decorateSection);
 }
@@ -5978,7 +6111,10 @@ function renderProjectSchedule() {
         appendGanttRowPair(
           labelGroup,
           chartGroup,
-          createCalendarGanttRow(row.meeting, buckets, state.projectScale, { indentBase })
+          createCalendarGanttRow(row.meeting, buckets, state.projectScale, {
+            indentBase,
+            category: row.task?.category
+          })
         );
         return;
       }
@@ -6287,6 +6423,10 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   const chartRow = document.createElement("div");
   chartRow.className = `project-gantt-row-chart ${task.status}${isParentRow ? " is-parent" : ""}${selected ? " is-selected" : ""}`;
   chartRow.dataset.taskId = task.id;
+  const taskCategoryColor = typeof TaskCategoryPolicy?.resolveTaskColor === "function"
+    ? TaskCategoryPolicy.resolveTaskColor(task)
+    : (task.color || "#4f8fd6");
+  applyCategoryColorStyle(chartRow, taskCategoryColor);
   chartRow.draggable = TaskStatusPolicy.isSchedulableStatus(task.status);
   chartRow.addEventListener("dragstart", event => {
     event.dataTransfer.setData("text/task-id", task.id);
@@ -6521,6 +6661,10 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
   const meetingTitle = String(meeting?.title || "").trim();
   if (!TodoListPolicy.hasDisplayTitle(meetingTitle)) return null;
   const parts = calendarMeetingTimelineParts(meeting, buckets, scale);
+  const category = options.category || resolveMeetingCategory(meeting);
+  const color = typeof TaskCategoryPolicy?.colorForCategory === "function"
+    ? TaskCategoryPolicy.colorForCategory(category)
+    : "#AA7B39";
   const labelRow = document.createElement("div");
   const depth = Math.max(0, Number(options.indentBase) || 0);
   labelRow.className = "project-gantt-row-label meeting";
@@ -6531,6 +6675,7 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
     </div>`;
   const chartRow = document.createElement("div");
   chartRow.className = "project-gantt-row-chart meeting";
+  applyCategoryColorStyle(chartRow, color);
   chartRow.innerHTML = `<div class="project-gantt-lane">
       ${parts.segments.map(segment => `<i class="gantt-meeting-bar" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label || "会议投入")}"></i>
       ${segment.label ? `<span class="gantt-progress-pct gantt-entry-label" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label)}">${escapeHtml(segment.label)}</span>` : ""}`).join("")}
@@ -6543,6 +6688,31 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
   labelRow.addEventListener("dblclick", openMeeting);
   chartRow.addEventListener("dblclick", openMeeting);
   return { labelRow, chartRow };
+}
+
+function syncLinkedEntriesCategory(taskId, category, color) {
+  if (!taskId) return;
+  Object.values(state.data || {}).forEach(day => {
+    (day.entries || []).forEach(entry => {
+      if (entry.taskId !== taskId) return;
+      entry.category = category;
+      entry.color = color;
+    });
+  });
+}
+
+function syncCategoryColorAcrossData(categoryId) {
+  if (!categoryId || typeof TaskCategoryPolicy?.colorForCategory !== "function") return;
+  const color = TaskCategoryPolicy.colorForCategory(categoryId);
+  Object.values(state.data || {}).forEach(day => {
+    (day.tasks || []).forEach(task => {
+      if (task.category === categoryId) task.color = color;
+    });
+    (day.entries || []).forEach(entry => {
+      if (entry.category === categoryId) entry.color = color;
+    });
+  });
+  saveData();
 }
 
 function bindDialogDismissControls() {
