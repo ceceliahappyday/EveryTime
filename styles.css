@@ -2431,10 +2431,12 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   display: flex;
   align-items: stretch;
   flex: 0 0 auto;
+  position: sticky;
+  top: 0;
   width: 100%;
   min-width: 0;
   z-index: 8;
-  margin: 0 0 8px;
+  margin: 0;
   background: var(--surface-strong, #fff);
 }
 .project-gantt-header-split .project-gantt-label-header {
@@ -2451,24 +2453,40 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   min-width: 0;
   overflow: hidden;
 }
+.project-gantt-days-viewport.is-hscroll,
+.project-gantt-chart-pane.is-hscroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
 .project-gantt-days-viewport.has-gantt-nav {
-  display: flex;
-  align-items: stretch;
-  gap: 4px;
+  position: relative;
+  display: block;
 }
 .project-gantt-days-viewport.has-gantt-nav .project-gantt-days-track {
-  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
 }
+/* Overlay nav so axis width matches the chart track (keeps today-line aligned). */
+.project-gantt-days-viewport.has-gantt-nav .gantt-axis-nav {
+  position: absolute;
+  z-index: 9;
+  top: 50%;
+  transform: translateY(-50%);
+  flex: none;
+}
+.project-gantt-days-viewport.has-gantt-nav .gantt-axis-nav.is-prev { left: 4px; }
+.project-gantt-days-viewport.has-gantt-nav .gantt-axis-nav.is-next { right: 4px; }
 .gantt-axis-nav {
   flex: 0 0 28px;
   width: 28px;
+  height: 28px;
   margin: 0;
   padding: 0;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.72);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
@@ -2501,8 +2519,18 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   max-width: 100%;
   box-sizing: border-box;
 }
+.project-gantt-days-track.is-fixed-unit,
+.project-gantt-days.is-fixed-unit,
+.project-gantt-chart-track.is-fixed-unit,
+.project-gantt-body.is-fixed-unit,
+.gantt-holiday-lane.is-fixed-unit {
+  max-width: none;
+  box-sizing: border-box;
+}
 .project-gantt-days-track.is-fill-width,
-.project-gantt-chart-track.is-fill-width {
+.project-gantt-chart-track.is-fill-width,
+.project-gantt-days-track.is-fixed-unit,
+.project-gantt-chart-track.is-fixed-unit {
   transform: none !important;
 }
 .project-gantt-rows-wrap {
@@ -2516,6 +2544,11 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   flex: 1;
   min-width: 0;
   overflow: hidden;
+}
+.project-gantt-days-viewport.is-hscroll,
+.project-gantt-chart-pane.is-hscroll {
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .project-gantt-chart-track {
   will-change: transform;
@@ -2552,39 +2585,48 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
 }
 .project-gantt-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 8px 10px;
   border: 1px solid var(--line-soft);
   border-radius: 12px;
   background: rgba(248,247,243,.94);
+  flex-wrap: nowrap;
 }
 .project-gantt-toolbar-main {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 .project-gantt-toolbar strong { font-size: 11px; white-space: nowrap; }
 .project-scale-switcher {
-  display: grid;
-  grid-template-columns: repeat(3, 34px);
-  gap: 3px;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
   padding: 3px;
   border-radius: 10px;
   background: rgba(220,224,217,.74);
+  white-space: nowrap;
 }
 .project-scale-switcher button {
-  padding: 5px 0;
+  flex: 0 0 auto;
+  min-width: 32px;
+  padding: 5px 8px;
   border-radius: 8px;
   color: var(--muted);
   background: transparent;
-  font-size: 10px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 .project-scale-switcher button.active { color: #fff; background: var(--accent); font-weight: 800; }
 .project-gantt-days {
-  position: static;
+  position: relative;
   top: auto;
   z-index: 7;
   display: grid;
@@ -2597,8 +2639,11 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   margin-bottom: 0;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--line-soft);
+  /* No layout border — outline only, so columns match the chart track width. */
+  border: 0;
   border-radius: 10px;
+  outline: 1px solid var(--line-soft);
+  outline-offset: -1px;
   background: rgba(248,247,243,.98);
   color: var(--muted);
   font-size: 9px;
@@ -2612,9 +2657,13 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   min-width: 0;
   width: 100%;
   height: 100%;
-  padding: 0 2px;
+  padding: 0 1px;
   text-align: center;
   white-space: nowrap;
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+}
+.project-gantt-days > span:last-child {
+  border-right: 0;
 }
 .project-gantt-section {
   box-sizing: border-box;
@@ -2856,7 +2905,10 @@ body.in-desktop.glass-mode .gantt-context-submenu {
 body.in-desktop.glass-mode .gantt-context-submenu .cat-swatch {
   border-color: rgba(255, 255, 255, 0.22);
 }
-body.in-desktop.glass-mode .task-card.is-selected {
+body.in-desktop.glass-mode .task-card.is-selected,
+body.in-desktop.glass-mode .project-card.is-selected,
+body.in-desktop.glass-mode .week-task-line.is-selected,
+body.in-desktop.glass-mode .month-task-line.is-selected {
   background: rgba(90, 160, 220, 0.22);
   outline-color: rgba(140, 200, 240, 0.55);
 }
@@ -3053,20 +3105,78 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
   width: 0;
   height: 12px;
   border-radius: 0;
-  border-left: 1px dashed rgba(224, 112, 88, .58);
+  border-left: 2px solid #3b82f6;
   background: none;
 }
-.project-gantt-days span.is-today { color: #e07058; }
-.project-gantt-days u.gantt-today-line {
+.project-gantt-days span.is-today { color: #3b82f6; font-weight: 700; }
+.project-gantt-days span.is-holiday {
+  color: var(--muted, #8a9399);
+  background: rgba(148, 163, 184, 0.14);
+}
+.project-gantt-days u.gantt-today-line,
+.project-gantt-chart-track > u.gantt-today-line.is-chart {
   position: absolute;
-  z-index: 6;
+  z-index: 8;
   top: 0;
   bottom: 0;
   width: 0;
-  border-left: 1px dashed rgba(224, 112, 88, .58);
+  border-left: 2px solid #3b82f6;
   text-decoration: none;
-  opacity: .9;
+  opacity: .95;
   pointer-events: none;
+}
+.project-gantt-days u.gantt-today-line.has-dot::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+}
+.project-gantt-chart-track {
+  position: relative;
+}
+.gantt-holiday-lane {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  pointer-events: none;
+}
+.gantt-holiday-lane > i {
+  box-sizing: border-box;
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
+  min-width: 0;
+}
+.gantt-holiday-lane > i:last-child {
+  border-right: 0;
+}
+.gantt-holiday-lane i.is-holiday {
+  background: rgba(148, 163, 184, 0.08);
+}
+.project-gantt-chart-track > .project-gantt-body {
+  position: relative;
+  z-index: 1;
+}
+.gantt-filter-list {
+  max-height: 240px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.gantt-filter-list li {
+  margin: 0;
+  padding: 4px 0;
+}
+.gantt-settings-field {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 12px;
 }
 /* 目标完成时间：黄色感叹号 */
 .project-gantt-lane u.gantt-cutoff-flag::after {
@@ -5241,6 +5351,13 @@ body.in-desktop.glass-mode .project-gantt-label-header {
   background: rgba(8, 22, 36, .88);
   border-color: rgba(172,211,233,.32);
 }
+body.in-desktop.glass-mode .project-gantt-days {
+  outline-color: rgba(172,211,233,.32);
+}
+body.in-desktop.glass-mode .project-gantt-days > span,
+body.in-desktop.glass-mode .gantt-holiday-lane > i {
+  border-right-color: rgba(172, 211, 233, 0.12);
+}
 body.in-desktop.glass-mode .project-gantt-label-pane,
 body.in-desktop.glass-mode .project-gantt-group-heading {
   background: transparent;
@@ -5319,7 +5436,15 @@ body.in-desktop.glass-mode .project-gantt-lane u.gantt-end-marker::after { color
 body.in-desktop.glass-mode .gantt-legend i.legend-cutoff,
 body.in-desktop.glass-mode .project-gantt-lane u.gantt-cutoff-flag::after { color: #f0d06a; background: none; }
 body.in-desktop.glass-mode .gantt-legend i.legend-today,
-body.in-desktop.glass-mode .project-gantt-days u.gantt-today-line { border-left-color: rgba(255, 138, 106, .62); }
+body.in-desktop.glass-mode .project-gantt-days u.gantt-today-line,
+body.in-desktop.glass-mode .project-gantt-chart-track > u.gantt-today-line.is-chart {
+  border-left-color: #60a5fa;
+}
+body.in-desktop.glass-mode .project-gantt-days span.is-today { color: #93c5fd; }
+body.in-desktop.glass-mode .project-gantt-days span.is-holiday,
+body.in-desktop.glass-mode .gantt-holiday-lane i.is-holiday {
+  background: rgba(148, 163, 184, 0.16);
+}
 body.in-desktop.glass-mode .project-gantt-days span.is-today { color: #ff8a6a; }
 body.in-desktop.glass-mode .schedule-month-cell {
   border-color: rgba(172,211,233,.22);

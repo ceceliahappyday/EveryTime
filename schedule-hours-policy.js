@@ -244,7 +244,11 @@
     return total;
   }
 
-  /** Workday hours between create time and due time, using configured work segments (skip weekends). */
+  function toDateKeyLocal(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+
+  /** Workday hours between create time and due time, using configured work segments (skip weekends / holidays). */
   function workdayPlanHoursBetween({
     startIso = "",
     dueDate = "",
@@ -256,7 +260,8 @@
     afternoonStart,
     afternoonEnd,
     segments,
-    skipWeekends = true
+    skipWeekends = true,
+    holidays = null
   } = {}) {
     const work = normalizeWorkSegments({
       workStartHour,
@@ -277,7 +282,14 @@
     let total = 0;
     for (let cursor = new Date(startDay); cursor <= endDay; cursor.setDate(cursor.getDate() + 1)) {
       const dayIndex = (cursor.getDay() + 6) % 7; // Mon=0 … Sun=6
-      if (skipWeekends && isWeekendDayIndex(dayIndex)) continue;
+      const key = toDateKeyLocal(cursor);
+      const holiday = holidays && holidays[key];
+      if (holiday?.type === "workday") {
+        // makeup workday — count even on weekends
+      } else {
+        if (skipWeekends && isWeekendDayIndex(dayIndex)) continue;
+        if (holiday?.type === "holiday") continue;
+      }
       const dayDate = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate());
       const dayStartBound = cursor.getTime() === startDay.getTime() ? start : applyDecimalHour(new Date(dayDate), work.workStartHour);
       const dayEndBound = cursor.getTime() === endDay.getTime() ? end : applyDecimalHour(new Date(dayDate), work.workEndHour);

@@ -141,11 +141,53 @@ if (!styles.includes(".gantt-context-submenu") || !styles.includes(".task-card.i
 if (!app.includes("additive: event.ctrlKey || event.metaKey") || !app.includes("data-category-id")) {
   throw new Error("Ctrl multi-select and categorize submenu actions are required");
 }
+if (!app.includes("bindListSelectableCard") || !app.includes("range: event.shiftKey")) {
+  throw new Error("list/gantt multi-select must support Ctrl toggle and Shift range");
+}
+if (!app.includes("applyListMultiSelectEvent") || !app.includes("isListMultiSelectEvent")) {
+  throw new Error("multi-select must run on pointerdown so draggable cards do not swallow it");
+}
 if (!app.includes("data-priority-id") || !app.includes("任务级别仅适用于待办任务")) {
   throw new Error("bulk priority submenu must apply only to tasks");
 }
 if (!app.includes("positionContextSubmenu") || !styles.includes("is-flip-up")) {
   throw new Error("context submenus must flip when near viewport edges");
+}
+if (!app.includes('data-scale="quarter"') || !app.includes('data-scale="year"')) {
+  throw new Error("gantt scale switcher must include quarter and year");
+}
+if (!app.includes("bindGanttFilterPanel") || !app.includes("bindGanttSettingsPanel")) {
+  throw new Error("gantt filter and settings panels are required");
+}
+if (!app.includes("gantt-today-line is-chart") || !styles.includes("gantt-holiday-lane")) {
+  throw new Error("full-height today line and holiday lane styles are required");
+}
+if (!app.includes("has-dot") || !styles.includes("has-dot::before")) {
+  throw new Error("today line must show a header dot aligned with the chart line");
+}
+if (!app.includes("buildWeekTimelineBuckets") || !app.includes("bindGanttSyncedHorizontalScroll")) {
+  throw new Error("quarter week buckets and synced horizontal scroll are required");
+}
+if (!require("fs").readFileSync(require("path").join(__dirname, "..", "project-view-policy.js"), "utf8").includes("function axisLayout")) {
+  throw new Error("project-view-policy must expose axisLayout for fixed/fill column modes");
+}
+if (!styles.includes("flex-wrap: nowrap") || !styles.includes(".project-scale-switcher")) {
+  throw new Error("gantt scale switcher must stay on one row");
+}
+if (!styles.includes(".project-gantt-days-viewport.has-gantt-nav .gantt-axis-nav") || !styles.includes("is-prev")) {
+  throw new Error("gantt axis nav must overlay so today-line aligns with chart");
+}
+if (!app.includes("rowsWrap.prepend(headerSplit)") || !styles.includes("position: sticky")) {
+  throw new Error("gantt axis must live in the same scrollport as chart rows");
+}
+if (!styles.includes("outline: 1px solid") || !styles.includes(".gantt-holiday-lane > i")) {
+  throw new Error("day axis and holiday lane must share borderless column geometry");
+}
+if (!app.includes("mergeSelectedTasksIntoNew") || !app.includes('data-gantt-action="merge-selection"')) {
+  throw new Error("multi-select merge into one new task is required");
+}
+if (!fs.readFileSync("index.html", "utf8").includes("gantt-view-policy.js")) {
+  throw new Error("index.html must load gantt-view-policy.js");
 }
 if (!app.includes("showGanttBlankContextMenu") || !app.includes('data-gantt-action="add-root"')) {
   throw new Error("gantt blank area must support right-click new parent task");
@@ -184,8 +226,11 @@ const projectView = require("fs").readFileSync(require("path").join(__dirname, "
 if (!projectView.includes("function axisMetrics") || !projectView.includes("bucketDayCount")) {
   throw new Error("gantt axis must weight columns by calendar days");
 }
-if (!/gridTemplateColumns = axisMetrics/.test(app)) {
-  throw new Error("month gantt header must use day-weighted grid columns");
+if (!app.includes("applyGanttAxisTrackWidths") || !app.includes("gridTemplateColumns")) {
+  throw new Error("gantt header/chart must share layout-driven grid columns");
+}
+if (!app.includes("axisLayout") || !app.includes("is-fixed-unit")) {
+  throw new Error("gantt must support fill vs fixed-unit column modes");
 }
 if (!app.includes("gantt-entry-label")) {
   throw new Error("each invest bar should carry its own hours/note label");

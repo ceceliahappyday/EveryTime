@@ -3,9 +3,36 @@
   if (typeof module === "object" && module.exports) module.exports = policy;
   root.ProjectViewPolicy = policy;
 })(typeof globalThis !== "undefined" ? globalThis : window, function () {
-  function currentBucketKey(dateKey, scale, getMonday) {
-    if (scale === "month") return String(dateKey).slice(0, 7);
-    if (scale === "week") return getMonday ? getMonday(dateKey) : dateKey;
+  const GANTT_MIN_DAY_PX = 44;
+  const GANTT_QUARTER_WEEK_COUNT = 12;
+  const GANTT_YEAR_MONTH_COUNT = 12;
+
+  /**
+   * Axis geometry unit:
+   * - day/week/month → day columns
+   * - quarter → week columns (7 calendar days each)
+   * - year → month columns
+   */
+  function resolveGeometryScale(scale) {
+    if (scale === "year") return "month";
+    if (scale === "quarter") return "week";
+    return "day";
+  }
+
+  function formatDateKey(date) {
+    if (!date || Number.isNaN(+date)) return "";
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+
+  function currentBucketKey(dateKey, scale, helpers = {}) {
+    if (scale === "year") return String(dateKey || "").slice(0, 7);
+    if (scale === "quarter") {
+      const { getMonday, fromDateKey, toDateKey } = helpers;
+      if (dateKey && getMonday && fromDateKey) {
+        const monday = getMonday(fromDateKey(dateKey));
+        return typeof toDateKey === "function" ? toDateKey(monday) : formatDateKey(monday);
+      }
+    }
     return dateKey;
   }
 
@@ -19,21 +46,6 @@
     return Math.max(0, anchorIndex(buckets, anchorKey) * bucketWidth);
   }
 
-  /** Fixed viewport sizes so day/week/month share the same chart width. */
-  function visibleBucketCount(scale) {
-    if (scale === "month") return 3;
-    if (scale === "week") return 4;
-    return 7;
-  }
-
-  function futureBucketCount(scale) {
-    return visibleBucketCount(scale);
-  }
-
-  function ganttWindowBucketCount(scale) {
-    return visibleBucketCount(scale);
-  }
-
   function monthKeyFromDateKey(dateKey = "") {
     return String(dateKey || "").slice(0, 7);
   }
@@ -45,38 +57,173 @@
     return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
   }
 
-  function initialGanttWindow({ scale, centerDateKey, addDays, getMonday, fromDateKey, toDateKey }) {
-    const count = visibleBucketCount(scale);
-    const before = Math.floor((count - 1) / 2);
-    if (scale === "day") {
-      const center = fromDateKey(centerDateKey);
-      return {
-        startKey: toDateKey(addDays(center, -before)),
-        endKey: toDateKey(addDays(center, count - before - 1))
-      };
-    }
-    if (scale === "week") {
-      const centerMonday = getMonday(fromDateKey(centerDateKey));
-      return {
-        startKey: toDateKey(addDays(centerMonday, -before * 7)),
-        endKey: toDateKey(addDays(centerMonday, (count - before - 1) * 7))
-      };
-    }
-    const centerMonth = monthKeyFromDateKey(centerDateKey);
+  function weekDayBounds(centerDateKey, getMonday, fromDateKey, toDateKey, addDays) {
+    const monday = getMonday(fromDateKey(centerDateKey));
+    return { startKey: toDateKey(monday), endKey: toDateKey(addDays(monday, 6)) };
+  }
+
+  function monthDayBounds(centerDateKey, fromDateKey, toDateKey) {
+    const date = fromDateKey(centerDateKey);
+    const start = new Date(date.getFullYear(), date.getMonth(), 1);
+    const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    return { startKey: toDateKey(start), endKey: toDateKey(end) };
+  }
+
+  function quarterDayBounds(centerDateKey, fromDateKey, toDateKey) {
+    const date = fromDateKey(centerDateKey);
+    const quarter = Math.floor(date.getMonth() / 3);
+    const start = new Date(date.getFullYear(), quarter * 3, 1);
+    const end = new Date(date.getFullYear(), quarter * 3 + 3, 0);
+    return { startKey: toDateKey(start), endKey: toDateKey(end) };
+  }
+
+  /** 12 week columns starting at the Monday of the natural quarter. */
+  function quarterWeekBounds(centerDateKey, getMonday, fromDateKey, toDateKey, addDays) {
+    const date = fromDateKey(centerDateKey);
+    const quarter = Math.floor(date.getMonth() / 3);
+    const quarterStart = new Date(date.getFullYear(), quarter * 3, 1);
+    const startMonday = getMonday(quarterStart);
     return {
-      startKey: shiftMonthKey(centerMonth, -before),
-      endKey: shiftMonthKey(centerMonth, count - before - 1)
+      startKey: toDateKey(startMonday),
+      endKey: toDateKey(addDays(startMonday, GANTT_QUARTER_WEEK_COUNT * 7 - 1))
     };
   }
 
-  /** Move the fixed window by one bucket (day / week / month). */
-  function shiftGanttWindow({ scale, startKey, endKey, direction, addDays, fromDateKey, toDateKey }) {
+  /** Sliding day window centered on anchor; used by month scale so resize changes day count. */
+  function slidingDayBounds(centerDateKey, visibleDayCount, addDays, fromDateKey, toDateKey) {
+    const count = Math.max(7, Math.min(62, Number(visibleDayCount) || 31));
+    const center = fromDateKey(centerDateKey);
+    const before = Math.floor((count - 1) / 2);
+    const start = addDays(center, -before);
+    return {
+      startKey: toDateKey(start),
+      endKey: toDateKey(addDays(start, count - 1))
+    };
+  }
+
+  function yearMonthBounds(centerDateKey) {
+    const year = String(centerDateKey || "").slice(0, 4) || String(new Date().getFullYear());
+    return { startKey: `${year}-01`, endKey: `${year}-12` };
+  }
+
+  /** How many day columns fit the chart viewport for month scale. */
+  function visibleDayCountForViewport(viewportWidth, minDayPx = GANTT_MIN_DAY_PX) {
+    const vp = Math.max(240, Number(viewportWidth) || 240);
+    const unit = Math.max(24, Number(minDayPx) || GANTT_MIN_DAY_PX);
+    return Math.max(7, Math.min(45, Math.floor(vp / unit)));
+  }
+
+  /**
+   * Pixel layout for axis columns.
+   * Day/month/year fill the viewport; week/quarter use fixed min width and scroll when needed.
+   */
+  function axisLayout({
+    scale = "day",
+    bucketCount = 1,
+    viewportWidth = 240,
+    minDayPx = GANTT_MIN_DAY_PX
+  } = {}) {
+    const vp = Math.max(240, Number(viewportWidth) || 240);
+    const count = Math.max(1, Number(bucketCount) || 1);
+    const dayPx = Math.max(24, Number(minDayPx) || GANTT_MIN_DAY_PX);
+    if (scale === "day") {
+      return { mode: "fill", unitPx: vp, contentWidth: vp, fillWidth: true };
+    }
+    if (scale === "month" || scale === "year") {
+      return { mode: "fill", unitPx: vp / count, contentWidth: vp, fillWidth: true };
+    }
+    if (scale === "week") {
+      const fixed = dayPx * 7;
+      if (vp >= fixed) {
+        return { mode: "fill", unitPx: Math.floor(vp / 7), contentWidth: vp, fillWidth: true };
+      }
+      return { mode: "scroll", unitPx: dayPx, contentWidth: fixed, fillWidth: false };
+    }
+    if (scale === "quarter") {
+      const minWeekPx = Math.max(64, Math.round(dayPx * 1.6));
+      const fixed = minWeekPx * GANTT_QUARTER_WEEK_COUNT;
+      if (vp >= fixed) {
+        return {
+          mode: "fill",
+          unitPx: Math.floor(vp / GANTT_QUARTER_WEEK_COUNT),
+          contentWidth: vp,
+          fillWidth: true
+        };
+      }
+      return { mode: "scroll", unitPx: minWeekPx, contentWidth: fixed, fillWidth: false };
+    }
+    return { mode: "fill", unitPx: vp / count, contentWidth: vp, fillWidth: true };
+  }
+
+  /** Approximate column count for a period window. */
+  function visibleBucketCount(scale, startKey = "", endKey = "", fromDateKey) {
+    if (scale === "year") return GANTT_YEAR_MONTH_COUNT;
+    if (scale === "day") return 1;
+    if (scale === "week") return 7;
+    if (scale === "quarter") return GANTT_QUARTER_WEEK_COUNT;
+    if (typeof fromDateKey === "function" && startKey && endKey && scale !== "year") {
+      const start = fromDateKey(startKey);
+      const end = fromDateKey(endKey);
+      if (start && end && !Number.isNaN(start) && !Number.isNaN(end)) {
+        const days = Math.max(1, Math.round((end - start) / 86400000) + 1);
+        return scale === "quarter" ? Math.max(1, Math.round(days / 7)) : days;
+      }
+    }
+    if (scale === "month") return 31;
+    return 7;
+  }
+
+  function futureBucketCount(scale) {
+    return visibleBucketCount(scale);
+  }
+
+  function ganttWindowBucketCount(scale) {
+    return visibleBucketCount(scale);
+  }
+
+  function initialGanttWindow({
+    scale,
+    centerDateKey,
+    visibleDayCount,
+    addDays,
+    getMonday,
+    fromDateKey,
+    toDateKey
+  }) {
+    if (scale === "day") {
+      return { startKey: centerDateKey, endKey: centerDateKey };
+    }
+    if (scale === "week") {
+      return weekDayBounds(centerDateKey, getMonday, fromDateKey, toDateKey, addDays);
+    }
+    if (scale === "month") {
+      return slidingDayBounds(centerDateKey, visibleDayCount, addDays, fromDateKey, toDateKey);
+    }
+    if (scale === "quarter") {
+      return quarterWeekBounds(centerDateKey, getMonday, fromDateKey, toDateKey, addDays);
+    }
+    if (scale === "year") {
+      return yearMonthBounds(centerDateKey);
+    }
+    return { startKey: centerDateKey, endKey: centerDateKey };
+  }
+
+  /** Move the period window by one step (day / week / month / quarter / year). */
+  function shiftGanttWindow({
+    scale,
+    startKey,
+    endKey,
+    direction,
+    visibleDayCount,
+    addDays,
+    fromDateKey,
+    toDateKey,
+    getMonday
+  }) {
     const step = direction === "past" ? -1 : 1;
     if (scale === "day") {
-      return {
-        startKey: toDateKey(addDays(fromDateKey(startKey), step)),
-        endKey: toDateKey(addDays(fromDateKey(endKey), step))
-      };
+      const next = toDateKey(addDays(fromDateKey(startKey), step));
+      return { startKey: next, endKey: next };
     }
     if (scale === "week") {
       return {
@@ -84,10 +231,23 @@
         endKey: toDateKey(addDays(fromDateKey(endKey), step * 7))
       };
     }
-    return {
-      startKey: shiftMonthKey(monthKeyFromDateKey(startKey), step),
-      endKey: shiftMonthKey(monthKeyFromDateKey(endKey), step)
-    };
+    if (scale === "month") {
+      const span = Math.max(1, Math.round((fromDateKey(endKey) - fromDateKey(startKey)) / 86400000) + 1);
+      const count = Math.max(7, Number(visibleDayCount) || span);
+      const nextCenter = toDateKey(addDays(fromDateKey(startKey), step * count + Math.floor((count - 1) / 2)));
+      return slidingDayBounds(nextCenter, count, addDays, fromDateKey, toDateKey);
+    }
+    if (scale === "quarter") {
+      return {
+        startKey: toDateKey(addDays(fromDateKey(startKey), step * GANTT_QUARTER_WEEK_COUNT * 7)),
+        endKey: toDateKey(addDays(fromDateKey(endKey), step * GANTT_QUARTER_WEEK_COUNT * 7))
+      };
+    }
+    if (scale === "year") {
+      const year = Number(String(startKey).slice(0, 4)) + step;
+      return { startKey: `${year}-01`, endKey: `${year}-12` };
+    }
+    return { startKey, endKey };
   }
 
   /** @deprecated Prefer shiftGanttWindow; kept for older callers. */
@@ -123,15 +283,16 @@
     return new Date(year, month, 0).getDate();
   }
 
-  /** Calendar days represented by one axis bucket (month varies; week=7; day=1). */
+  /** Calendar days represented by one axis bucket. */
   function bucketDayCount(bucket, scale = "day") {
     if (Number.isFinite(bucket?.dayCount) && bucket.dayCount > 0) return Number(bucket.dayCount);
-    if (scale === "month") return daysInMonthKey(bucket?.key);
-    if (scale === "week") return 7;
+    const geo = resolveGeometryScale(scale);
+    if (geo === "month") return daysInMonthKey(bucket?.key);
+    if (geo === "week") return 7;
     return 1;
   }
 
-  /** Day-weighted axis: month columns scale by days-in-month; week/day stay uniform. */
+  /** Day-weighted axis: year month columns scale by days-in-month; day columns stay uniform. */
   function axisMetrics(buckets = [], scale = "day") {
     const dayCounts = buckets.map(bucket => bucketDayCount(bucket, scale));
     const offsets = [];
@@ -169,36 +330,64 @@
    */
   function timelineDayPosForDate(dateKey, buckets = [], projectBucketKey, scale = "day", getMonday, fromDateKey, edge = "start") {
     if (!dateKey || !buckets.length) return null;
+    const geo = resolveGeometryScale(scale);
     const metrics = axisMetrics(buckets, scale);
-    const bucketKey = projectBucketKey(dateKey);
+    const bucketKey = typeof projectBucketKey === "function"
+      ? projectBucketKey(dateKey)
+      : currentBucketKey(dateKey, scale, { getMonday, fromDateKey });
     const bucketIndex = buckets.findIndex(bucket => bucket.key === bucketKey);
     if (bucketIndex < 0) return null;
     const base = metrics.offsets[bucketIndex];
     const count = metrics.dayCounts[bucketIndex];
-    if (scale === "day") {
+    if (geo === "day") {
       if (edge === "end") return { dayPos: base + 1, ...metrics };
       if (edge === "start") return { dayPos: base, ...metrics };
       return { dayPos: base + 0.5, ...metrics };
     }
-    const date = fromDateKey(dateKey);
-    if (scale === "week") {
-      const monday = getMonday(fromDateKey(bucketKey));
-      const dayOffset = Math.round((date - monday) / 86400000);
-      if (dayOffset < 0 || dayOffset > 6) return null;
+    if (geo === "week") {
+      if (!fromDateKey || !getMonday) return null;
+      const date = fromDateKey(dateKey);
+      const monday = getMonday(date);
+      const dayOffset = Math.max(0, Math.min(count - 1, Math.round((date - monday) / 86400000)));
       const start = base + dayOffset;
       if (edge === "end") return { dayPos: start + 1, ...metrics };
       if (edge === "start") return { dayPos: start, ...metrics };
       return { dayPos: start + 0.5, ...metrics };
     }
-    if (scale === "month") {
-      const monthKey = String(bucketKey).slice(0, 7);
-      if (String(dateKey).slice(0, 7) !== monthKey) return null;
-      const dayOfMonth = date.getDate();
-      if (dayOfMonth < 1 || dayOfMonth > count) return null;
-      const start = base + (dayOfMonth - 1);
-      if (edge === "end") return { dayPos: start + 1, ...metrics };
-      if (edge === "start") return { dayPos: start, ...metrics };
-      return { dayPos: start + 0.5, ...metrics };
+    // year → month columns
+    const date = fromDateKey(dateKey);
+    const monthKey = String(bucketKey).slice(0, 7);
+    if (String(dateKey).slice(0, 7) !== monthKey) return null;
+    const dayOfMonth = date.getDate();
+    if (dayOfMonth < 1 || dayOfMonth > count) return null;
+    const start = base + (dayOfMonth - 1);
+    if (edge === "end") return { dayPos: start + 1, ...metrics };
+    if (edge === "start") return { dayPos: start, ...metrics };
+    return { dayPos: start + 0.5, ...metrics };
+  }
+
+  function compareAxisKeys(a, b, scale) {
+    const geo = resolveGeometryScale(scale);
+    const left = geo === "month" ? String(a || "").slice(0, 7) : String(a || "");
+    const right = geo === "month" ? String(b || "").slice(0, 7) : String(b || "");
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
+  }
+
+  /** Map a date onto the axis, clamping to window edges when outside. */
+  function clampedDayPosForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, edge = "start") {
+    const exact = timelineDayPosForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, edge);
+    if (exact) return { ...exact, clamped: false };
+    if (!dateKey || !buckets.length) return null;
+    const metrics = axisMetrics(buckets, scale);
+    const first = buckets[0].key;
+    const last = buckets[buckets.length - 1].key;
+    if (compareAxisKeys(dateKey, first, scale) < 0) {
+      return { dayPos: 0, ...metrics, clamped: true };
+    }
+    if (compareAxisKeys(dateKey, last, scale) > 0) {
+      return { dayPos: metrics.totalDays, ...metrics, clamped: true };
     }
     return null;
   }
@@ -220,7 +409,8 @@
   } = {}) {
     if (!buckets.length) return [];
     const metrics = axisMetrics(buckets, scale);
-    if (scale === "day") {
+    const geo = resolveGeometryScale(scale);
+    if (geo === "day") {
       const indexes = [...new Set(
         investedDateKeys
           .map(dateKey => bucketIndexOf(dateKey, buckets, projectBucketKey))
@@ -396,8 +586,9 @@
     fromDateKey
   } = {}) {
     if (!dateKey || !buckets.length) return null;
-    if (scale === "day" || !fromDateKey) {
-      const metrics = axisMetrics(buckets, "day");
+    const geo = resolveGeometryScale(scale);
+    if (geo === "day" || !fromDateKey) {
+      const metrics = axisMetrics(buckets, scale);
       const index = bucketIndexOf(dateKey, buckets, projectBucketKey);
       if (index < 0) return null;
       const start = metrics.offsets[index];
@@ -412,12 +603,15 @@
     investedDateKeys = [],
     startedDateKey = "",
     completedDateKey = "",
+    createdDateKey = "",
+    dueDateKey = "",
     isEnded = false
   } = {}) {
     const invested = investedDateKeys.filter(Boolean).slice().sort();
-    const start = startedDateKey || invested[0] || "";
+    const start = startedDateKey || invested[0] || createdDateKey || dueDateKey || "";
     let end = completedDateKey || "";
-    if (!end && isEnded) end = invested[invested.length - 1] || "";
+    if (!end && isEnded) end = invested[invested.length - 1] || dueDateKey || start || "";
+    if (!end && !isEnded) end = "";
     if (end && start && end < start) end = start;
     return { start, end };
   }
@@ -438,12 +632,16 @@
     let end = endDateKey || (isEnded ? start : todayKey);
     if (start && end && end < start) end = start;
     if (!start || !buckets.length) return null;
-    const startPos = timelineDayPosForDate(start, buckets, projectBucketKey, scale, getMonday, fromDateKey, "start");
-    const endPos = timelineDayPosForDate(end, buckets, projectBucketKey, scale, getMonday, fromDateKey, "end");
+    const startPos = clampedDayPosForDate(start, buckets, projectBucketKey, scale, getMonday, fromDateKey, "start");
+    const endPos = clampedDayPosForDate(end, buckets, projectBucketKey, scale, getMonday, fromDateKey, "end");
     if (!startPos || !endPos) return null;
-    const widthDays = Math.max(endPos.dayPos - startPos.dayPos, 1);
-    const leftRatio = dayPosToRatio(startPos.dayPos, startPos.totalDays);
-    const widthRatio = dayPosToRatio(widthDays, startPos.totalDays);
+    const totalDays = startPos.totalDays || endPos.totalDays || 1;
+    const leftDay = Math.max(0, Math.min(totalDays, startPos.dayPos));
+    const rightDay = Math.max(leftDay, Math.min(totalDays, Math.max(endPos.dayPos, leftDay + 0.5)));
+    if (rightDay <= 0 || leftDay >= totalDays) return null;
+    const widthDays = Math.max(rightDay - leftDay, 0.5);
+    const leftRatio = dayPosToRatio(leftDay, totalDays);
+    const widthRatio = dayPosToRatio(widthDays, totalDays);
     return {
       leftRatio,
       widthRatio,
@@ -456,10 +654,16 @@
   }
 
   return {
+    GANTT_MIN_DAY_PX,
+    GANTT_QUARTER_WEEK_COUNT,
+    GANTT_YEAR_MONTH_COUNT,
     currentBucketKey,
+    resolveGeometryScale,
     anchorIndex,
     anchorScrollLeft,
     visibleBucketCount,
+    visibleDayCountForViewport,
+    axisLayout,
     futureBucketCount,
     ganttWindowBucketCount,
     initialGanttWindow,
@@ -479,6 +683,13 @@
     progressSpan,
     shouldShowDueFlag,
     monthKeyFromDateKey,
-    shiftMonthKey
+    shiftMonthKey,
+    weekDayBounds,
+    monthDayBounds,
+    quarterDayBounds,
+    quarterWeekBounds,
+    slidingDayBounds,
+    yearMonthBounds,
+    clampedDayPosForDate
   };
 });

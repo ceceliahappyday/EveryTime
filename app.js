@@ -56,7 +56,9 @@ const state = {
   projectRowsScrollTop: 0,
   selectedGanttTaskId: "",
   selectedGanttTaskIds: new Set(),
+  ganttSelectionAnchorId: "",
   selectedListKeys: new Set(),
+  listSelectionAnchorKey: "",
   projectHorizontalSyncing: false,
   projectAnchorDate: null,
   projectWindowStart: null,
@@ -3194,15 +3196,7 @@ function createMeetingCard(item) {
     const found = findEntry(item.entryId);
     if (found) openEntryDialog(found.entry.start, found.entry, found.dateKey);
   };
-  card.addEventListener("click", event => {
-    if (event.ctrlKey || event.metaKey) {
-      event.preventDefault();
-      toggleListSelection("entry", item.entryId);
-      return;
-    }
-    clearListSelection();
-    openMeeting();
-  });
+  bindListSelectableCard(card, "entry", item.entryId, { onActivate: openMeeting });
   card.addEventListener("contextmenu", event => {
     showListItemContextMenu(event, {
       kind: "entry",
@@ -3211,6 +3205,10 @@ function createMeetingCard(item) {
     });
   });
   card.addEventListener("dragstart", event => {
+    if (isListMultiSelectEvent(event)) {
+      event.preventDefault();
+      return;
+    }
     card.classList.add("dragging");
     event.dataTransfer.setData("text/entry-id", item.entryId);
     event.dataTransfer.effectAllowed = "copy";
@@ -3497,11 +3495,11 @@ function createProjectCard(project) {
     clearListSelection();
     openProject();
   });
-  card.addEventListener("click", event => {
-    if (event.target.closest(".task-check, .task-menu")) return;
-    if (event.ctrlKey || event.metaKey) {
-      event.preventDefault();
-      toggleListSelection("task", project.parent.id);
+  bindListSelectableCard(card, "task", project.parent.id, {
+    ignoreSelector: ".task-check, .task-menu, button",
+    onActivate: () => {
+      // Keep single-click as select-only for project cards; open on double-click / menu.
+      selectListItem("task", project.parent.id);
     }
   });
   card.addEventListener("contextmenu", event => {
@@ -3780,20 +3778,35 @@ function bindWorkspaceSplitResize() {
 }
 
 function projectTimelineBuckets(projects, scale = "day", meetings = []) {
-  const expected = ProjectViewPolicy.visibleBucketCount?.(scale) || (scale === "month" ? 3 : scale === "week" ? 4 : 7);
   if (!state.projectWindowStart || !state.projectWindowEnd) resetProjectGanttWindow(scale);
-  let buckets = scale === "month"
-    ? buildMonthTimelineBuckets(state.projectWindowStart, state.projectWindowEnd)
-    : scale === "week"
-      ? buildWeekTimelineBuckets(state.projectWindowStart, state.projectWindowEnd)
-      : buildDayTimelineBuckets(state.projectWindowStart, state.projectWindowEnd);
-  if (buckets.length !== expected) {
-    resetProjectGanttWindow(scale);
-    buckets = scale === "month"
-      ? buildMonthTimelineBuckets(state.projectWindowStart, state.projectWindowEnd)
-      : scale === "week"
-        ? buildWeekTimelineBuckets(state.projectWindowStart, state.projectWindowEnd)
-        : buildDayTimelineBuckets(state.projectWindowStart, state.projectWindowEnd);
+  return buildGanttTimelineBuckets(state.projectWindowStart, state.projectWindowEnd, scale);
+}
+
+function buildGanttTimelineBuckets(startKey, endKey, scale = "day") {
+  if (scale === "year") return buildMonthTimelineBuckets(startKey, endKey);
+  if (scale === "quarter") return buildWeekTimelineBuckets(startKey, endKey);
+  return buildDayTimelineBuckets(startKey, endKey, scale);
+}
+
+function buildWeekTimelineBuckets(startKey, endKey) {
+  const buckets = [];
+  let cursor = fromDateKey(startKey);
+  const end = fromDateKey(endKey);
+  if (!cursor || !end || Number.isNaN(+cursor) || Number.isNaN(+end)) return buckets;
+  cursor = getMonday(cursor);
+  while (cursor <= end) {
+    const weekEnd = addDays(cursor, 6);
+    const startDay = cursor.getDate();
+    const endDay = weekEnd.getDate();
+    buckets.push({
+      key: toDateKey(cursor),
+      label: `${startDay}日-${endDay}日`,
+      dayCount: 7,
+      dateKey: toDateKey(cursor),
+      endDateKey: toDateKey(weekEnd)
+    });
+    cursor = addDays(cursor, 7);
+    if (buckets.length > 24) break;
   }
   return buckets;
 }
@@ -3816,33 +3829,30 @@ function buildMonthTimelineBuckets(startKey, endKey) {
   return buckets;
 }
 
-function buildDayTimelineBuckets(startKey, endKey) {
+function buildDayTimelineBuckets(startKey, endKey, scale = "day") {
   const buckets = [];
+  const weekdayShort = ["日", "一", "二", "三", "四", "五", "六"];
   for (let cursor = fromDateKey(startKey); cursor <= fromDateKey(endKey); cursor = addDays(cursor, 1)) {
     const key = toDateKey(cursor);
-    buckets.push({ key, label: key.slice(5).replace("-", "/"), dayCount: 1 });
-  }
-  return buckets;
-}
-
-function buildWeekTimelineBuckets(startKey, endKey) {
-  const buckets = [];
-  for (let cursor = fromDateKey(startKey); cursor <= fromDateKey(endKey); cursor = addDays(cursor, 7)) {
-    const key = toDateKey(cursor);
-    buckets.push({
-      key,
-      label: `${cursor.getMonth() + 1}/${cursor.getDate()}周`,
-      dayCount: 7
-    });
+    const monthDay = `${cursor.getMonth() + 1}/${cursor.getDate()}`;
+    const label = scale === "day"
+      ? monthDay
+      : `${cursor.getDate()} ${weekdayShort[cursor.getDay()]}`;
+    buckets.push({ key, label, dayCount: 1, dateKey: key });
   }
   return buckets;
 }
 
 function resetProjectGanttWindow(scale = state.projectScale) {
   const centerDateKey = state.projectAnchorDate || toDateKey(new Date());
+  const viewportWidth = getGanttChartViewportWidth();
+  const visibleDayCount = typeof ProjectViewPolicy.visibleDayCountForViewport === "function"
+    ? ProjectViewPolicy.visibleDayCountForViewport(viewportWidth, ProjectViewPolicy.GANTT_MIN_DAY_PX)
+    : 31;
   const window = ProjectViewPolicy.initialGanttWindow({
     scale,
     centerDateKey,
+    visibleDayCount,
     addDays,
     getMonday,
     fromDateKey,
@@ -3896,18 +3906,24 @@ function shiftProjectGanttWindow(direction = "future") {
   if (state.taskView !== "project") return;
   if (!state.projectWindowStart || !state.projectWindowEnd) resetProjectGanttWindow(state.projectScale);
   const savedRowsTop = captureProjectGanttRowsScroll();
+  const viewportWidth = getGanttChartViewportWidth();
+  const visibleDayCount = typeof ProjectViewPolicy.visibleDayCountForViewport === "function"
+    ? ProjectViewPolicy.visibleDayCountForViewport(viewportWidth, ProjectViewPolicy.GANTT_MIN_DAY_PX)
+    : 31;
   const shifted = ProjectViewPolicy.shiftGanttWindow({
     scale: state.projectScale,
     startKey: state.projectWindowStart,
     endKey: state.projectWindowEnd,
     direction,
+    visibleDayCount,
     addDays,
     fromDateKey,
-    toDateKey
+    toDateKey,
+    getMonday
   });
   state.projectWindowStart = shifted.startKey;
   state.projectWindowEnd = shifted.endKey;
-  state.projectAnchorDate = state.projectScale === "month"
+  state.projectAnchorDate = state.projectScale === "year"
     ? `${shifted.startKey}-01`
     : shifted.startKey;
   state.projectViewNeedsAnchor = false;
@@ -3934,9 +3950,10 @@ function taskTimelineDateKeys(task) {
 
 function projectBucketKey(dateKey, scale = "day") {
   if (!dateKey) return "";
-  const date = fromDateKey(dateKey);
-  if (scale === "month") return dateKey.slice(0, 7);
-  if (scale === "week") return toDateKey(getMonday(date));
+  if (typeof ProjectViewPolicy?.currentBucketKey === "function") {
+    return ProjectViewPolicy.currentBucketKey(dateKey, scale, { getMonday, fromDateKey, toDateKey });
+  }
+  if (scale === "year") return dateKey.slice(0, 7);
   return dateKey;
 }
 
@@ -4011,16 +4028,7 @@ function createTaskCard(task) {
       requestTaskCompletion(task);
     });
   }
-  card.addEventListener("click", event => {
-    if (event.target.closest(".task-check, .task-setup-warning")) return;
-    if (event.ctrlKey || event.metaKey) {
-      event.preventDefault();
-      toggleListSelection("task", task.id);
-      return;
-    }
-    clearListSelection();
-    openTask();
-  });
+  bindListSelectableCard(card, "task", task.id, { onActivate: openTask });
   card.addEventListener("contextmenu", event => {
     showListItemContextMenu(event, {
       kind: "task",
@@ -4029,6 +4037,10 @@ function createTaskCard(task) {
     });
   });
   card.addEventListener("dragstart", event => {
+    if (isListMultiSelectEvent(event)) {
+      event.preventDefault();
+      return;
+    }
     card.classList.add("dragging");
     event.dataTransfer.setData("text/task-id", task.id);
     event.dataTransfer.effectAllowed = "copy";
@@ -4062,16 +4074,7 @@ function createLinkedWorkCard(item) {
       openTaskDialog(task);
     }
   };
-  card.addEventListener("click", event => {
-    if (event.target.closest(".task-check")) return;
-    if (event.ctrlKey || event.metaKey) {
-      event.preventDefault();
-      toggleListSelection("entry", item.entryId);
-      return;
-    }
-    clearListSelection();
-    openConcreteTask(event);
-  });
+  bindListSelectableCard(card, "entry", item.entryId, { onActivate: openConcreteTask });
   card.addEventListener("contextmenu", event => {
     showListItemContextMenu(event, {
       kind: "entry",
@@ -4080,6 +4083,10 @@ function createLinkedWorkCard(item) {
     });
   });
   card.addEventListener("dragstart", event => {
+    if (isListMultiSelectEvent(event)) {
+      event.preventDefault();
+      return;
+    }
     card.classList.add("dragging");
     event.dataTransfer.setData("text/entry-id", item.entryId);
     event.dataTransfer.effectAllowed = "copy";
@@ -5853,12 +5860,147 @@ function buildGanttArrangeSections(projects, meetings = []) {
   }).map(decorateSection);
 }
 
+function bindGanttFilterPanel(toolbar, projects = [], ganttView = getGanttViewConfig()) {
+  document.querySelectorAll("body > .gantt-filter-panel").forEach(node => node.remove());
+  const owners = typeof GanttViewPolicy?.collectOwners === "function"
+    ? GanttViewPolicy.collectOwners(
+      projects.flatMap(project => [project.parent, ...(project.children || [])]),
+      TaskOptionPolicy?.splitOwnerMembers
+    )
+    : [];
+  const selected = new Set(ganttView.ownerFilter || []);
+  const wrap = document.createElement("div");
+  wrap.className = "gantt-arrange-wrap gantt-filter-wrap";
+  wrap.innerHTML = `
+    <button type="button" class="gantt-arrange-button" aria-expanded="false" aria-haspopup="true">筛选${selected.size ? ` · ${selected.size}` : ""}</button>
+    <div class="gantt-arrange-panel gantt-filter-panel" hidden>
+      <strong>按责任人员筛选</strong>
+      <p class="form-hint">不勾选表示显示全部。会议行始终显示。</p>
+      <ul class="gantt-filter-list">
+        ${owners.length
+    ? owners.map(name => `<li><label><input type="checkbox" data-owner="${escapeHtml(name)}" ${selected.has(name) ? "checked" : ""}/> ${escapeHtml(name)}</label></li>`).join("")
+    : `<li class="form-hint">暂无责任人员</li>`}
+      </ul>
+      <div class="gantt-arrange-actions">
+        <button type="button" class="soft-button" data-filter-clear>清空</button>
+        <button type="button" class="primary-button" data-filter-apply>应用</button>
+      </div>
+    </div>`;
+  const button = wrap.querySelector(".gantt-arrange-button");
+  const panel = wrap.querySelector(".gantt-filter-panel");
+  const positionPanel = () => {
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(300, Math.max(240, window.innerWidth - 24));
+    let left = Math.min(Math.round(rect.left), Math.max(8, window.innerWidth - width - 8));
+    panel.style.position = "fixed";
+    panel.style.left = `${left}px`;
+    panel.style.top = `${Math.round(rect.bottom + 6)}px`;
+    panel.style.width = `${width}px`;
+    panel.style.zIndex = "6000";
+  };
+  const closePanel = () => {
+    panel.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    if (panel.parentElement === document.body) wrap.appendChild(panel);
+  };
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    if (panel.hidden) {
+      document.body.appendChild(panel);
+      panel.hidden = false;
+      positionPanel();
+      button.setAttribute("aria-expanded", "true");
+    } else closePanel();
+  });
+  panel.querySelector("[data-filter-clear]")?.addEventListener("click", () => {
+    panel.querySelectorAll("[data-owner]").forEach(input => { input.checked = false; });
+  });
+  panel.querySelector("[data-filter-apply]")?.addEventListener("click", () => {
+    const ownerFilter = [...panel.querySelectorAll("[data-owner]:checked")].map(input => input.dataset.owner);
+    saveGanttViewConfig({ ownerFilter });
+    closePanel();
+    renderSchedule();
+  });
+  document.addEventListener("click", event => {
+    if (panel.hidden) return;
+    if (panel.contains(event.target) || button.contains(event.target)) return;
+    closePanel();
+  }, true);
+  toolbar.querySelector(".project-gantt-toolbar-main")?.appendChild(wrap);
+}
+
+function bindGanttSettingsPanel(toolbar, ganttView = getGanttViewConfig()) {
+  document.querySelectorAll("body > .gantt-settings-panel").forEach(node => node.remove());
+  const modes = GanttViewPolicy?.HOLIDAY_MODES || [];
+  const wrap = document.createElement("div");
+  wrap.className = "gantt-arrange-wrap gantt-settings-wrap";
+  wrap.innerHTML = `
+    <button type="button" class="gantt-arrange-button" aria-expanded="false" aria-haspopup="true">甘特设置</button>
+    <div class="gantt-arrange-panel gantt-settings-panel" hidden>
+      <strong>假期显示</strong>
+      <label class="gantt-settings-field">模式
+        <select data-holiday-mode>
+          ${modes.map(item => `<option value="${item.id}" ${item.id === ganttView.holidayMode ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}
+        </select>
+      </label>
+      <label class="checkbox-setting">
+        <input type="checkbox" data-exclude-holidays ${ganttView.excludeHolidaysFromDays ? "checked" : ""}/>
+        <span>计算天数时排除假期</span>
+      </label>
+      <p class="form-hint">起点 / 终点与计划、实际投入逻辑保持不变。</p>
+      <div class="gantt-arrange-actions">
+        <button type="button" class="primary-button" data-settings-apply>应用</button>
+      </div>
+    </div>`;
+  const button = wrap.querySelector(".gantt-arrange-button");
+  const panel = wrap.querySelector(".gantt-settings-panel");
+  const positionPanel = () => {
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(320, Math.max(260, window.innerWidth - 24));
+    let left = Math.min(Math.round(rect.left), Math.max(8, window.innerWidth - width - 8));
+    panel.style.position = "fixed";
+    panel.style.left = `${left}px`;
+    panel.style.top = `${Math.round(rect.bottom + 6)}px`;
+    panel.style.width = `${width}px`;
+    panel.style.zIndex = "6000";
+  };
+  const closePanel = () => {
+    panel.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    if (panel.parentElement === document.body) wrap.appendChild(panel);
+  };
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    if (panel.hidden) {
+      document.body.appendChild(panel);
+      panel.hidden = false;
+      positionPanel();
+      button.setAttribute("aria-expanded", "true");
+    } else closePanel();
+  });
+  panel.querySelector("[data-settings-apply]")?.addEventListener("click", () => {
+    saveGanttViewConfig({
+      holidayMode: panel.querySelector("[data-holiday-mode]")?.value || "weekend_holiday",
+      excludeHolidaysFromDays: Boolean(panel.querySelector("[data-exclude-holidays]")?.checked)
+    });
+    closePanel();
+    renderSchedule();
+  });
+  document.addEventListener("click", event => {
+    if (panel.hidden) return;
+    if (panel.contains(event.target) || button.contains(event.target)) return;
+    closePanel();
+  }, true);
+  toolbar.querySelector(".project-gantt-toolbar-main")?.appendChild(wrap);
+}
+
 function bindGanttArrangePanel(toolbar) {
   if (state.ganttArrangeAbort) state.ganttArrangeAbort.abort();
   state.ganttArrangeAbort = new AbortController();
   const { signal } = state.ganttArrangeAbort;
-  // 面板曾挂到 body，重绘时可能留下无监听的孤儿层
-  document.querySelectorAll("body > .gantt-arrange-panel").forEach(node => node.remove());
+  // 面板曾挂到 body，重绘时可能留下无监听的孤儿层（勿清筛选/设置面板）
+  document.querySelectorAll("body > .gantt-arrange-panel:not(.gantt-filter-panel):not(.gantt-settings-panel)")
+    .forEach(node => node.remove());
   const wrap = document.createElement("div");
   wrap.className = "gantt-arrange-wrap";
   const keepOpen = Boolean(state.ganttArrangeKeepOpen);
@@ -6035,10 +6177,94 @@ function bindGanttArrangePanel(toolbar) {
   if (keepOpen) requestAnimationFrame(() => showPanel());
 }
 
+function getGanttViewConfig() {
+  return typeof GanttViewPolicy?.loadConfig === "function"
+    ? GanttViewPolicy.loadConfig()
+    : { holidayMode: "weekend_holiday", excludeHolidaysFromDays: false, ownerFilter: [] };
+}
+
+function saveGanttViewConfig(patch = {}) {
+  const next = GanttViewPolicy?.normalizeConfig?.({
+    ...getGanttViewConfig(),
+    ...patch
+  }) || { ...getGanttViewConfig(), ...patch };
+  GanttViewPolicy?.saveConfig?.(next);
+  return next;
+}
+
+function filterProjectsByGanttOwner(projects, ownerFilter = []) {
+  if (!ownerFilter.length || typeof GanttViewPolicy?.taskMatchesOwnerFilter !== "function") return projects;
+  const split = TaskOptionPolicy?.splitOwnerMembers;
+  return projects.filter(project => {
+    const tasks = [project.parent, ...(project.children || [])];
+    return tasks.some(task => GanttViewPolicy.taskMatchesOwnerFilter(task, ownerFilter, split));
+  });
+}
+
+function ganttAxisNavTitle(scale, direction = "future") {
+  const past = direction === "past";
+  if (scale === "year") return past ? "上一年" : "下一年";
+  if (scale === "quarter") return past ? "上一季（12周）" : "下一季（12周）";
+  if (scale === "month") return past ? "前一段日期" : "后一段日期";
+  if (scale === "week") return past ? "上一周" : "下一周";
+  return past ? "前一天" : "后一天";
+}
+
+function ganttBucketHolidayClass(bucket, holidayMode, scale = state.projectScale) {
+  // Quarter uses week columns — avoid painting whole weeks as weekend blocks.
+  if (scale === "quarter" || scale === "year" || holidayMode === "off") return "";
+  const dateKey = bucket?.dateKey || (String(bucket?.key || "").length === 10 ? bucket.key : "");
+  if (!dateKey || typeof GanttViewPolicy?.isHolidayColumn !== "function") return "";
+  return GanttViewPolicy.isHolidayColumn({
+    dateKey,
+    holidayMode,
+    holidays: CN_HOLIDAYS,
+    fromDateKey
+  }) ? " is-holiday" : "";
+}
+
+function bindGanttSyncedHorizontalScroll(daysViewport, chartPane) {
+  if (!daysViewport || !chartPane) return;
+  let syncing = false;
+  const sync = (from, to) => {
+    if (syncing) return;
+    syncing = true;
+    to.scrollLeft = from.scrollLeft;
+    state.projectScrollLeft = from.scrollLeft;
+    syncing = false;
+  };
+  daysViewport.addEventListener("scroll", () => sync(daysViewport, chartPane), { passive: true });
+  chartPane.addEventListener("scroll", () => sync(chartPane, daysViewport), { passive: true });
+}
+
+function applyGanttAxisTrackWidths({
+  daysTrack,
+  header,
+  chartTrack,
+  body,
+  holidayLane,
+  layout,
+  gridTemplateColumns
+}) {
+  const widthPx = `${Math.max(1, Math.round(layout.contentWidth))}px`;
+  const fill = Boolean(layout.fillWidth);
+  [daysTrack, header, chartTrack, body, holidayLane].filter(Boolean).forEach(node => {
+    node.classList.toggle("is-fill-width", fill);
+    node.classList.toggle("is-fixed-unit", !fill);
+    node.style.width = fill ? "100%" : widthPx;
+    node.style.minWidth = fill ? "100%" : widthPx;
+    if (node === header || node === holidayLane) {
+      node.style.gridTemplateColumns = gridTemplateColumns;
+    }
+  });
+}
+
 function renderProjectSchedule() {
+  const ganttView = getGanttViewConfig();
   const allProjects = getProjectSummaries();
   // Gantt shows every status group by default; left-panel status tabs do not apply here.
-  const projects = ProjectCollapsePolicy.filterProjectsForStatus(allProjects, "all");
+  const statusProjects = ProjectCollapsePolicy.filterProjectsForStatus(allProjects, "all");
+  const projects = filterProjectsByGanttOwner(statusProjects, ganttView.ownerFilter);
   const meetings = getCalendarMeetingSummaries();
   el.timeline.innerHTML = "";
   el.timeline.className = "project-gantt";
@@ -6067,6 +6293,8 @@ function renderProjectSchedule() {
         <button type="button" data-scale="day">日</button>
         <button type="button" data-scale="week">周</button>
         <button type="button" data-scale="month">月</button>
+        <button type="button" data-scale="quarter">季</button>
+        <button type="button" data-scale="year">年</button>
       </div>
     </div>
     <div class="gantt-legend">
@@ -6089,6 +6317,8 @@ function renderProjectSchedule() {
       renderSchedule();
     });
   });
+  bindGanttFilterPanel(toolbar, statusProjects, ganttView);
+  bindGanttSettingsPanel(toolbar, ganttView);
   bindGanttArrangePanel(toolbar);
   el.projectGanttChrome.innerHTML = "";
   el.projectGanttChrome.appendChild(toolbar);
@@ -6118,34 +6348,52 @@ function renderProjectSchedule() {
   const navPrev = document.createElement("button");
   navPrev.type = "button";
   navPrev.className = "gantt-axis-nav is-prev";
-  navPrev.title = state.projectScale === "month" ? "上一月" : state.projectScale === "week" ? "上一周" : "前一天";
+  navPrev.title = ganttAxisNavTitle(state.projectScale, "past");
   navPrev.setAttribute("aria-label", navPrev.title);
   navPrev.textContent = "‹";
   navPrev.addEventListener("click", () => shiftProjectGanttWindow("past"));
   const navNext = document.createElement("button");
   navNext.type = "button";
   navNext.className = "gantt-axis-nav is-next";
-  navNext.title = state.projectScale === "month" ? "下一月" : state.projectScale === "week" ? "下一周" : "后一天";
+  navNext.title = ganttAxisNavTitle(state.projectScale, "future");
   navNext.setAttribute("aria-label", navNext.title);
   navNext.textContent = "›";
   navNext.addEventListener("click", () => shiftProjectGanttWindow("future"));
   const daysTrack = document.createElement("div");
-  daysTrack.className = "project-gantt-days-track is-fill-width";
+  daysTrack.className = "project-gantt-days-track";
   el.projectGanttDaysTrack = daysTrack;
   const header = document.createElement("div");
-  header.className = "project-gantt-days is-fill-width";
+  header.className = "project-gantt-days";
   const ganttContentWidth = getGanttChartViewportWidth();
   const axisMetrics = ProjectViewPolicy.axisMetrics?.(buckets, state.projectScale) || {
     totalDays: buckets.length || 1,
     gridTemplateColumns: `repeat(${Math.max(1, buckets.length)}, minmax(0, 1fr))`
   };
-  header.style.gridTemplateColumns = axisMetrics.gridTemplateColumns
-    || `repeat(${Math.max(1, buckets.length)}, minmax(0, 1fr))`;
-  const todayBucketKey = projectBucketKey(toDateKey(new Date()), state.projectScale);
-  const todayOffset = taskTimelineOffset(toDateKey(new Date()), buckets, state.projectScale);
-  header.innerHTML = `${todayOffset === null ? "" : `<u class="gantt-today-line" style="left:${todayOffset}%" title="今天"></u>`}${buckets.map(bucket => `<span${bucket.key === todayBucketKey ? " class=\"is-today\"" : ""}>${bucket.label}</span>`).join("")}`;
-  header.style.width = "100%";
-  daysTrack.style.width = "100%";
+  const layout = typeof ProjectViewPolicy.axisLayout === "function"
+    ? ProjectViewPolicy.axisLayout({
+      scale: state.projectScale,
+      bucketCount: buckets.length,
+      viewportWidth: ganttContentWidth,
+      minDayPx: ProjectViewPolicy.GANTT_MIN_DAY_PX
+    })
+    : { mode: "fill", contentWidth: ganttContentWidth, fillWidth: true, unitPx: ganttContentWidth / Math.max(1, buckets.length) };
+  const gridTemplateColumns = layout.fillWidth
+    ? (state.projectScale === "year"
+      ? (axisMetrics.gridTemplateColumns || `repeat(${Math.max(1, buckets.length)}, minmax(0, 1fr))`)
+      : `repeat(${Math.max(1, buckets.length)}, minmax(0, 1fr))`)
+    : `repeat(${Math.max(1, buckets.length)}, ${Math.max(1, Math.round(layout.unitPx))}px)`;
+  const todayKey = toDateKey(new Date());
+  const todayBucketKey = projectBucketKey(todayKey, state.projectScale);
+  const todayOffset = taskTimelineOffset(todayKey, buckets, state.projectScale);
+  const holidayMode = ganttView.holidayMode;
+  // Header + chart share the same content width / scrollLeft so the today markers stay colinear.
+  header.innerHTML = `${todayOffset === null ? "" : `<u class="gantt-today-line has-dot" style="left:${todayOffset}%" title="今天"></u>`}${buckets.map(bucket => {
+    const classes = [
+      bucket.key === todayBucketKey ? "is-today" : "",
+      ganttBucketHolidayClass(bucket, holidayMode, state.projectScale).trim()
+    ].filter(Boolean).join(" ");
+    return `<span${classes ? ` class="${classes}"` : ""}>${bucket.label}</span>`;
+  }).join("")}`;
   daysTrack.appendChild(header);
   daysViewport.append(navPrev, daysTrack, navNext);
   headerSplit.append(labelHeader, headerResize, daysViewport);
@@ -6176,17 +6424,42 @@ function renderProjectSchedule() {
   bindGanttLabelResize(resizeHandle, [headerSplit, split]);
 
   const chartPane = document.createElement("div");
-  chartPane.className = "project-gantt-chart-pane";
+  chartPane.className = `project-gantt-chart-pane${layout.fillWidth ? "" : " is-hscroll"}`;
+  daysViewport.classList.toggle("is-hscroll", !layout.fillWidth);
 
   const chartTrack = document.createElement("div");
-  chartTrack.className = "project-gantt-chart-track is-fill-width";
+  chartTrack.className = "project-gantt-chart-track";
   el.projectGanttChartTrack = chartTrack;
-  chartTrack.style.width = "100%";
   chartTrack.style.transform = "none";
+  if (todayOffset !== null) {
+    const chartToday = document.createElement("u");
+    chartToday.className = "gantt-today-line is-chart";
+    chartToday.style.left = `${todayOffset}%`;
+    chartToday.title = "今天";
+    chartTrack.appendChild(chartToday);
+  }
+  let holidayLane = null;
+  if (state.projectScale !== "year") {
+    holidayLane = document.createElement("div");
+    holidayLane.className = "gantt-holiday-lane";
+    holidayLane.innerHTML = buckets.map(bucket => {
+      const holidayClass = ganttBucketHolidayClass(bucket, holidayMode, state.projectScale).trim();
+      return `<i class="${holidayClass}"></i>`;
+    }).join("");
+    chartTrack.appendChild(holidayLane);
+  }
 
   const body = document.createElement("div");
-  body.className = "project-gantt-body is-fill-width";
-  body.style.width = "100%";
+  body.className = "project-gantt-body";
+  applyGanttAxisTrackWidths({
+    daysTrack,
+    header,
+    chartTrack,
+    body,
+    holidayLane,
+    layout,
+    gridTemplateColumns
+  });
 
   const ganttSections = buildGanttArrangeSections(projects, meetings);
   const appendSectionRows = (rows, labelGroup, chartGroup, indentBase = 0) => {
@@ -6264,18 +6537,50 @@ function renderProjectSchedule() {
   split.appendChild(chartPane);
   rowsWrap.appendChild(split);
 
-  el.projectGanttScroll = null;
-  ganttRoot.appendChild(headerSplit);
+  el.projectGanttScroll = layout.fillWidth ? null : chartPane;
+  // Keep axis + chart in the same scrollport so scrollbar gutter cannot skew columns.
+  rowsWrap.prepend(headerSplit);
   ganttRoot.appendChild(rowsWrap);
   bindGanttBlankContextMenu(ganttRoot);
   el.timeline.appendChild(ganttRoot);
-  state.projectScrollLeft = 0;
+  if (!layout.fillWidth) {
+    bindGanttSyncedHorizontalScroll(daysViewport, chartPane);
+    const restoreLeft = Math.max(0, Number(state.projectScrollLeft) || 0);
+    daysViewport.scrollLeft = restoreLeft;
+    chartPane.scrollLeft = restoreLeft;
+  } else {
+    state.projectScrollLeft = 0;
+  }
   state.projectViewNeedsAnchor = false;
   const syncBucketDropWidth = () => {
-    const paneWidth = chartPane.clientWidth || ganttContentWidth;
-    bindProjectDrop(body, buckets, paneWidth, state.projectScale);
+    const contentWidth = layout.fillWidth
+      ? (chartPane.clientWidth || ganttContentWidth)
+      : layout.contentWidth;
+    bindProjectDrop(body, buckets, contentWidth, state.projectScale);
   };
   syncBucketDropWidth();
+  // Month scale: resize changes visible day count instead of compressing columns.
+  if (state.projectScale === "month" && typeof ResizeObserver === "function") {
+    let resizeTimer = 0;
+    const observer = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (state.taskView !== "project" || state.projectScale !== "month") return;
+        const nextCount = ProjectViewPolicy.visibleDayCountForViewport?.(
+          getGanttChartViewportWidth(),
+          ProjectViewPolicy.GANTT_MIN_DAY_PX
+        );
+        const currentCount = buckets.length;
+        if (!nextCount || nextCount === currentCount) return;
+        state.projectAnchorDate = state.projectAnchorDate || toDateKey(new Date());
+        state.projectWindowStart = null;
+        state.projectWindowEnd = null;
+        renderSchedule();
+      }, 120);
+    });
+    observer.observe(chartPane);
+    ganttRoot._ganttResizeObserver = observer;
+  }
   requestAnimationFrame(() => {
     syncBucketDropWidth();
     restoreProjectGanttRowsScroll(state.projectRowsScrollTop);
@@ -6324,6 +6629,7 @@ function setProjectScrollLeft(value) {
 
 function getTaskPlanWorkHours(task) {
   if (!task) return 0;
+  const excludeHolidays = Boolean(getGanttViewConfig().excludeHolidaysFromDays);
   return ScheduleHoursPolicy.workdayPlanHoursBetween?.({
     startIso: task.createdAtIso || task.startedAt || task.updatedAt || "",
     dueDate: task.dueDate || "",
@@ -6334,7 +6640,8 @@ function getTaskPlanWorkHours(task) {
     afternoonEnd: state.afternoonEnd,
     workStartHour: state.workStartHour,
     workEndHour: state.workEndHour,
-    skipWeekends: true
+    skipWeekends: true,
+    holidays: excludeHolidays ? CN_HOLIDAYS : null
   }) || 0;
 }
 
@@ -6459,9 +6766,25 @@ function ensureGanttSelectionSet() {
 
 function clearListSelection() {
   const keys = ensureListSelectionSet();
-  if (!keys.size) return;
+  if (!keys.size && !state.listSelectionAnchorKey) return;
   keys.clear();
+  state.listSelectionAnchorKey = "";
   paintListSelection();
+}
+
+function visibleListSelectionKeys() {
+  // Prefer left list order; fall back to overview lines when list has no selectables.
+  const fromList = el.taskList
+    ? [...el.taskList.querySelectorAll(".task-card[data-task-id], .task-card[data-entry-id], .project-card[data-task-id]")]
+    : [];
+  const source = fromList.length
+    ? fromList
+    : [...(el.timeline?.querySelectorAll?.(".week-task-line[data-task-id], .week-task-line[data-entry-id], .month-task-line[data-task-id], .month-task-line[data-entry-id]") || [])];
+  return source.map(node => {
+    if (node.dataset.taskId) return listSelectionKey("task", node.dataset.taskId);
+    if (node.dataset.entryId) return listSelectionKey("entry", node.dataset.entryId);
+    return "";
+  }).filter(Boolean);
 }
 
 function paintListSelection() {
@@ -6477,12 +6800,91 @@ function paintListSelection() {
 }
 
 function toggleListSelection(kind, id) {
+  selectListItem(kind, id, { additive: true });
+}
+
+/** Ctrl/Cmd toggles; Shift selects a contiguous range from the anchor. */
+function selectListItem(kind, id, { additive = false, range = false } = {}) {
   if (!kind || !id) return;
   const keys = ensureListSelectionSet();
   const key = listSelectionKey(kind, id);
-  if (keys.has(key)) keys.delete(key);
-  else keys.add(key);
+  if (range) {
+    const ordered = visibleListSelectionKeys();
+    const anchor = state.listSelectionAnchorKey && ordered.includes(state.listSelectionAnchorKey)
+      ? state.listSelectionAnchorKey
+      : (ordered.includes(key) ? key : "");
+    const start = ordered.indexOf(anchor || key);
+    const end = ordered.indexOf(key);
+    if (start >= 0 && end >= 0) {
+      const lo = Math.min(start, end);
+      const hi = Math.max(start, end);
+      if (!additive) keys.clear();
+      for (let i = lo; i <= hi; i += 1) keys.add(ordered[i]);
+      if (!state.listSelectionAnchorKey) state.listSelectionAnchorKey = ordered[lo];
+      paintListSelection();
+      return;
+    }
+  }
+  if (additive) {
+    if (keys.has(key)) keys.delete(key);
+    else keys.add(key);
+  } else {
+    keys.clear();
+    keys.add(key);
+  }
+  state.listSelectionAnchorKey = key;
   paintListSelection();
+}
+
+function isListMultiSelectEvent(event) {
+  return Boolean(event && (event.ctrlKey || event.metaKey || event.shiftKey));
+}
+
+/**
+ * Apply multi-select on pointerdown so draggable cards do not swallow Ctrl/Shift+click.
+ * Returns true when the event was handled as multi-select.
+ */
+function applyListMultiSelectEvent(event, kind, id) {
+  if (!isListMultiSelectEvent(event) || event.button != null && event.button !== 0) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  selectListItem(kind, id, {
+    additive: event.ctrlKey || event.metaKey,
+    range: event.shiftKey
+  });
+  return true;
+}
+
+function bindListSelectableCard(card, kind, id, { onActivate = null, ignoreSelector = ".task-check, .task-setup-warning, .task-menu, button, a, input, select, textarea" } = {}) {
+  if (!card || !kind || !id) return;
+  let suppressActivate = false;
+  card.addEventListener("pointerdown", event => {
+    if (event.target?.closest?.(ignoreSelector)) return;
+    if (!applyListMultiSelectEvent(event, kind, id)) return;
+    suppressActivate = true;
+  });
+  card.addEventListener("dragstart", event => {
+    if (suppressActivate || isListMultiSelectEvent(event)) {
+      event.preventDefault();
+      return;
+    }
+  }, true);
+  card.addEventListener("click", event => {
+    if (event.target?.closest?.(ignoreSelector)) return;
+    if (suppressActivate) {
+      suppressActivate = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (isListMultiSelectEvent(event)) {
+      applyListMultiSelectEvent(event, kind, id);
+      return;
+    }
+    clearListSelection();
+    state.listSelectionAnchorKey = listSelectionKey(kind, id);
+    if (typeof onActivate === "function") onActivate(event);
+  });
 }
 
 function paintGanttSelection() {
@@ -6499,17 +6901,49 @@ function paintGanttSelection() {
   });
 }
 
+function visibleGanttTaskIds() {
+  const labels = el.timeline?.querySelectorAll?.(".project-gantt-row-label[data-task-id]") || [];
+  return [...labels].map(node => node.dataset.taskId).filter(Boolean);
+}
+
 function selectGanttTaskRow(taskId, options = {}) {
   const nextId = String(taskId || "");
   const ids = ensureGanttSelectionSet();
   const additive = Boolean(options.additive);
-  if (!additive) {
+  const range = Boolean(options.range);
+  if (!nextId) {
     ids.clear();
-    if (nextId) ids.add(nextId);
-  } else if (nextId) {
+    state.selectedGanttTaskId = "";
+    state.ganttSelectionAnchorId = "";
+    paintGanttSelection();
+    return;
+  }
+  if (range) {
+    const ordered = visibleGanttTaskIds();
+    const anchor = state.ganttSelectionAnchorId && ordered.includes(state.ganttSelectionAnchorId)
+      ? state.ganttSelectionAnchorId
+      : nextId;
+    const start = ordered.indexOf(anchor);
+    const end = ordered.indexOf(nextId);
+    if (start >= 0 && end >= 0) {
+      const lo = Math.min(start, end);
+      const hi = Math.max(start, end);
+      if (!additive) ids.clear();
+      for (let i = lo; i <= hi; i += 1) ids.add(ordered[i]);
+      if (!state.ganttSelectionAnchorId) state.ganttSelectionAnchorId = ordered[lo];
+      state.selectedGanttTaskId = nextId;
+      paintGanttSelection();
+      return;
+    }
+  }
+  if (additive) {
     if (ids.has(nextId)) ids.delete(nextId);
     else ids.add(nextId);
+  } else {
+    ids.clear();
+    ids.add(nextId);
   }
+  state.ganttSelectionAnchorId = nextId;
   state.selectedGanttTaskId = nextId || [...ids][0] || "";
   paintGanttSelection();
 }
@@ -6722,7 +7156,10 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   const openTask = () => openTaskDialog(task);
   const selectRow = event => {
     if (event.target?.closest?.(".task-tree-toggle, .gantt-add-child")) return;
-    selectGanttTaskRow(task.id, { additive: event.ctrlKey || event.metaKey });
+    selectGanttTaskRow(task.id, {
+      additive: event.ctrlKey || event.metaKey,
+      range: event.shiftKey
+    });
   };
   labelRow.querySelector(".task-tree-toggle")?.addEventListener("click", event => {
     event.stopPropagation();
@@ -6858,9 +7295,16 @@ function ensureGanttContextMenu() {
     event.stopPropagation();
     const action = button.dataset.ganttAction;
     const task = findTask(ganttContextMenuTaskId)?.task;
+    const mergeIds = fromList
+      ? listKeys.filter(key => String(key).startsWith("task:")).map(key => String(key).slice(5)).filter(Boolean)
+      : [...ganttTaskIds];
     hideGanttContextMenu();
     if (action === "add-root") {
       openTaskDialog(null, { createKind: "task" });
+      return;
+    }
+    if (action === "merge-selection") {
+      mergeSelectedTasksIntoNew(mergeIds);
       return;
     }
     if (!task) return;
@@ -6905,12 +7349,13 @@ function hideGanttContextMenu() {
   listContextMenuOpen = null;
 }
 
-function taskContextActionsMenuHtml({ multi = false, ended = false } = {}) {
+function taskContextActionsMenuHtml({ multi = false, ended = false, canMerge = false } = {}) {
   return `
     ${multi ? "" : `<button type="button" role="menuitem" data-gantt-action="edit">编辑</button>
     <button type="button" role="menuitem" data-gantt-action="add-child">新建子任务</button>`}
     ${categoryMenuFlyoutHtml()}
     ${priorityMenuFlyoutHtml()}
+    ${canMerge ? `<button type="button" role="menuitem" data-gantt-action="merge-selection">合并为一条…</button>` : ""}
     ${multi ? "" : `<button type="button" role="menuitem" data-gantt-action="close">${ended ? "恢复任务" : "关闭任务"}</button>
     <button type="button" role="menuitem" data-gantt-action="delete" class="is-danger">删除…</button>`}`;
 }
@@ -6933,9 +7378,15 @@ function showListItemContextMenu(event, focus = {}) {
     const task = findTask(focus.id)?.task;
     ganttContextMenuTaskId = focus.id;
     listContextMenuOpen = null;
+    const selectedTaskIds = keys
+      .filter(key => String(key).startsWith("task:"))
+      .map(key => String(key).slice(5))
+      .filter(Boolean);
+    const mergeableCount = selectedTaskIds.filter(id => isTodoListTask(findTask(id)?.task)).length;
     menu.innerHTML = taskContextActionsMenuHtml({
       multi,
-      ended: TaskStatusPolicy.isEndedStatus?.(task?.status)
+      ended: TaskStatusPolicy.isEndedStatus?.(task?.status),
+      canMerge: mergeableCount >= 2
     });
   } else {
     ganttContextMenuTaskId = "";
@@ -6957,9 +7408,11 @@ function showGanttContextMenu(event, task) {
   ganttContextMenuTaskId = task.id;
   contextMenuListKeys = null;
   listContextMenuOpen = null;
+  const mergeableCount = [...ids].filter(id => isTodoListTask(findTask(id)?.task)).length;
   menu.innerHTML = taskContextActionsMenuHtml({
     multi: ids.size > 1,
-    ended: TaskStatusPolicy.isEndedStatus?.(task.status)
+    ended: TaskStatusPolicy.isEndedStatus?.(task.status),
+    canMerge: mergeableCount >= 2
   });
   positionGanttContextMenu(menu, event);
 }
@@ -7394,12 +7847,17 @@ function taskActualTimelineParts(task, buckets, scale = "day", options = {}) {
   const investedDateKeys = options.investedDateKeys || investedItems.map(item => item.dateKey);
   const segments = mapEntryGanttSegments(investedItems, buckets, scale);
   const isEnded = ["done", "closed"].includes(task.status) || Boolean(task.completedAt);
+  const createdDateKey = task.createdAtIso || task.createdAt
+    ? toDateKey(new Date(task.createdAtIso || task.createdAt))
+    : "";
   const boundary = ProjectViewPolicy.boundaryDateKeys({
     investedDateKeys,
     startedDateKey: task.startOverrideAt || task.startedAt
       ? toDateKey(new Date(task.startOverrideAt || task.startedAt))
       : "",
     completedDateKey: task.completedAt ? toDateKey(new Date(task.completedAt)) : "",
+    createdDateKey,
+    dueDateKey: task.dueDate || "",
     isEnded
   });
   const progress = options.progress ?? ProjectSummaryPolicy.taskProgressPercent({
@@ -7893,12 +8351,22 @@ function bindDayOverviewList(container, options = {}) {
         if (task) openTaskDialog(task);
       }
     };
+    item.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || !isListMultiSelectEvent(event)) return;
+      const kind = item.dataset.taskId ? "task" : (item.dataset.entryId ? "entry" : "");
+      const id = item.dataset.taskId || item.dataset.entryId || "";
+      if (!kind || !id) return;
+      applyListMultiSelectEvent(event, kind, id);
+      item.dataset.multiSelecting = "1";
+    });
     item.addEventListener("click", event => {
       event.stopPropagation();
-      if (event.ctrlKey || event.metaKey) {
+      if (item.dataset.multiSelecting === "1" || isListMultiSelectEvent(event)) {
+        delete item.dataset.multiSelecting;
         event.preventDefault();
-        if (item.dataset.taskId) toggleListSelection("task", item.dataset.taskId);
-        else if (item.dataset.entryId) toggleListSelection("entry", item.dataset.entryId);
+        const kind = item.dataset.taskId ? "task" : (item.dataset.entryId ? "entry" : "");
+        const id = item.dataset.taskId || item.dataset.entryId || "";
+        if (kind && id && isListMultiSelectEvent(event)) applyListMultiSelectEvent(event, kind, id);
         return;
       }
       if (selectDateKey && selectDateKey !== state.selectedDate) {
@@ -8814,27 +9282,35 @@ function openTaskMergeDialog() {
   if (!source) return;
   const allTasks = uniqueTasks(getAllTasks().map(({ task }) => task));
   // Include done/closed leaves so duplicate ended tasks can merge into each other.
+  const sourceTitle = TodoListPolicy.normalizeTitle(source.title);
   taskMergeCandidates = allTasks
-    .filter(task => task.id !== source.id && isTodoListTask(task) && !isHiddenRecurringCatalogInstance(task));
+    .filter(task => task.id !== source.id && isTodoListTask(task) && !isHiddenRecurringCatalogInstance(task))
+    .sort((a, b) => {
+      const aSame = Number(TodoListPolicy.normalizeTitle(a.title) === sourceTitle);
+      const bSame = Number(TodoListPolicy.normalizeTitle(b.title) === sourceTitle);
+      return bSame - aSame || String(a.title || "").localeCompare(String(b.title || ""));
+    });
   if (!taskMergeCandidates.length) return showToast("没有可合并的目标待办");
-  el.taskMergeMessage.textContent = `将把「${source.title}」的所有任务投入合并到另一个待办，并关闭当前待办。`;
   const sameTitle = taskMergeCandidates.filter(task =>
-    TodoListPolicy.normalizeTitle(task.title) === TodoListPolicy.normalizeTitle(source.title)
+    TodoListPolicy.normalizeTitle(task.title) === sourceTitle
   );
+  el.taskMergeMessage.textContent = sameTitle.length
+    ? `发现 ${sameTitle.length} 条同名待办。可将「${source.title}」合并到其中一条，并关闭当前待办。`
+    : `将把「${source.title}」的所有任务投入合并到另一个待办，并关闭当前待办。`;
   const preferredId = sameTitle[0]?.id || taskMergeCandidates[0]?.id || "";
   el.taskMergeTarget.innerHTML = taskMergeCandidates.map(task => {
     const path = TaskOptionPolicy.taskHierarchyPath({ task, tasks: allTasks, separator: " › " });
-    return `<option value="${escapeHtml(task.id)}">${escapeHtml(path || task.title)}</option>`;
+    const same = TodoListPolicy.normalizeTitle(task.title) === sourceTitle ? "（同名）" : "";
+    return `<option value="${escapeHtml(task.id)}">${escapeHtml((path || task.title) + same)}</option>`;
   }).join("");
   el.taskMergeTarget.value = preferredId;
-  const initialQuery = String(source.title || "").trim();
-  if (el.taskMergeSearch) el.taskMergeSearch.value = initialQuery;
+  // Prefer empty search so same-title peers always list; user can still type to filter.
+  if (el.taskMergeSearch) el.taskMergeSearch.value = "";
   taskMergeActiveIndex = 0;
-  renderTaskMergeOptions(initialQuery);
+  renderTaskMergeOptions("");
   el.taskMergeDialog.showModal();
   setTimeout(() => {
     el.taskMergeSearch?.focus();
-    el.taskMergeSearch?.select?.();
   }, 20);
 }
 
@@ -8843,9 +9319,11 @@ function renderTaskMergeOptions(query = "") {
   const allTasks = uniqueTasks(getAllTasks().map(({ task }) => task));
   const selectedId = el.taskMergeTarget?.value || "";
   const candidateIds = new Set(taskMergeCandidates.map(task => task.id));
-  const results = TaskOptionPolicy.searchTaskCandidates({
+  const sourceTitle = TodoListPolicy.normalizeTitle(findTask(state.editingTaskId)?.task?.title);
+  const trimmed = String(query || "").trim();
+  let results = TaskOptionPolicy.searchTaskCandidates({
     tasks: allTasks,
-    query,
+    query: trimmed,
     selectedId,
     includeEnded: true,
     leafOnly: false,
@@ -8854,15 +9332,34 @@ function renderTaskMergeOptions(query = "") {
     statusText: task => statusLabel(task.status),
     dateText: task => (task.dueDate ? task.dueDate.slice(5) : "未计划")
   }).filter(item => candidateIds.has(item.task.id));
+  // Fallback: fuzzy match by normalized title when token search misses duplicates.
+  if (!results.length && taskMergeCandidates.length) {
+    const qNorm = TodoListPolicy.normalizeTitle(trimmed);
+    results = taskMergeCandidates
+      .filter(task => !qNorm || TodoListPolicy.normalizeTitle(task.title).includes(qNorm))
+      .map(task => ({
+        task,
+        meta: TaskOptionPolicy.hierarchyMeta({ task, tasks: allTasks }),
+        rank: sourceTitle && TodoListPolicy.normalizeTitle(task.title) === sourceTitle ? 0 : 1
+      }))
+      .sort((a, b) => a.rank - b.rank || a.meta.path.localeCompare(b.meta.path));
+  } else {
+    results = results.slice().sort((a, b) => {
+      const aSame = Number(sourceTitle && TodoListPolicy.normalizeTitle(a.task.title) === sourceTitle);
+      const bSame = Number(sourceTitle && TodoListPolicy.normalizeTitle(b.task.title) === sourceTitle);
+      return bSame - aSame || (a.rank - b.rank);
+    });
+  }
   if (!results.length) {
-    el.taskMergeOptions.innerHTML = `<div class="entry-task-no-results">${String(query || "").trim() ? "没有匹配的目标待办" : "暂无可合并的目标待办"}</div>`;
+    el.taskMergeOptions.innerHTML = `<div class="entry-task-no-results">${trimmed ? "没有匹配的目标待办" : "暂无可合并的目标待办"}</div>`;
     return;
   }
   el.taskMergeOptions.innerHTML = results.map(({ task, meta }) => {
     const selected = selectedId === task.id;
     const date = task.dueDate ? task.dueDate.slice(5) : "未计划";
+    const same = sourceTitle && TodoListPolicy.normalizeTitle(task.title) === sourceTitle;
     return `<button type="button" class="entry-task-option${selected ? " active" : ""}" role="option" aria-selected="${selected}" data-value="${escapeHtml(task.id)}" title="${escapeHtml(meta.path)}">
-      <strong>${escapeHtml(task.title)}</strong>
+      <strong>${escapeHtml(task.title)}${same ? " · 同名" : ""}</strong>
       <span><b>第${meta.depth}层叶子</b>${meta.parentPath ? ` · ${escapeHtml(meta.parentPath)}` : ""}</span>
       <small>${escapeHtml(statusLabel(task.status))} · ${escapeHtml(date)}${selected ? " · ✓ 已选择" : ""}</small>
     </button>`;
@@ -8909,6 +9406,104 @@ function mergeTaskIntoTarget(sourceId, targetId) {
   saveData();
   render();
   showToast(`已合并到「${target.title}」`);
+}
+
+/** Multi-select merge: delete N leaf tasks and create one new task with combined fields + reassigned entries. */
+function mergeSelectedTasksIntoNew(taskIds = []) {
+  const uniqueIds = [...new Set((taskIds || []).filter(Boolean))];
+  const items = uniqueIds.map(id => findTask(id)).filter(Boolean);
+  const leafItems = items.filter(({ task }) => isTodoListTask(task) && !isHiddenRecurringCatalogInstance(task));
+  if (leafItems.length < 2) {
+    showToast(items.length >= 2 ? "只能合并叶子待办（请勿选中父级）" : "请至少多选 2 条待办再合并");
+    return false;
+  }
+  const titles = [...new Set(leafItems.map(({ task }) => String(task.title || "").trim()).filter(Boolean))];
+  const titleHint = titles.length === 1 ? `「${titles[0]}」` : `${leafItems.length} 条待办`;
+  if (!window.confirm(`将选中的 ${leafItems.length} 条${titleHint}合并为一条新待办，并删除原待办。\n关联日程会挂到新待办上。继续？`)) {
+    return false;
+  }
+
+  const primary = leafItems[0];
+  const sourceIds = new Set(leafItems.map(({ task }) => task.id));
+  const now = new Date();
+  const pickText = values => {
+    const parts = [];
+    (values || []).forEach(value => {
+      const text = String(value || "").trim();
+      if (!text || parts.includes(text)) return;
+      parts.push(text);
+    });
+    return parts.join("\n\n");
+  };
+  const dueDates = leafItems.map(({ task }) => task.dueDate).filter(Boolean).sort();
+  const progress = Math.max(0, ...leafItems.map(({ task }) => Number(task.progress) || 0));
+  const anyOpen = leafItems.some(({ task }) => !TaskStatusPolicy.isEndedStatus?.(task.status));
+  const allDone = leafItems.every(({ task }) => task.status === "done");
+  const status = anyOpen
+    ? (progress > 0 && primary.task.status !== "unplanned" ? "in_progress" : (primary.task.status === "unplanned" ? "unplanned" : "planned"))
+    : (allDone ? "done" : "closed");
+  const parentIds = [...new Set(leafItems.map(({ task }) => task.parentId || ""))];
+  const category = typeof TaskCategoryPolicy?.resolveTaskCategory === "function"
+    ? TaskCategoryPolicy.resolveTaskCategory(primary.task)
+    : (primary.task.category || "work");
+  const color = typeof TaskCategoryPolicy?.colorForCategory === "function"
+    ? TaskCategoryPolicy.colorForCategory(category)
+    : (primary.task.color || "sage");
+
+  const merged = {
+    id: crypto.randomUUID(),
+    title: primary.task.title || titles[0] || "合并待办",
+    dueDate: dueDates[0] || primary.task.dueDate || "",
+    dueTime: primary.task.dueTime || "",
+    owner: primary.task.owner || getDefaultOwner(),
+    parentId: parentIds.length === 1 ? parentIds[0] : (primary.task.parentId || ""),
+    description: pickText(leafItems.map(({ task }) => task.description)),
+    category,
+    color,
+    priority: primary.task.priority || "general_daily",
+    progress,
+    status,
+    startedAt: leafItems.map(({ task }) => task.startedAt).filter(Boolean).sort()[0] || "",
+    startOverrideAt: primary.task.startOverrideAt || "",
+    completedAt: anyOpen
+      ? ""
+      : (leafItems.map(({ task }) => task.completedAt).filter(Boolean).sort().slice(-1)[0] || now.toISOString()),
+    businessBackground: pickText(leafItems.map(({ task }) => task.businessBackground)),
+    problemReason: pickText(leafItems.map(({ task }) => task.problemReason)),
+    deliveryNote: pickText(leafItems.map(({ task }) => task.deliveryNote)),
+    recurrence: null,
+    recurrenceGroupId: "",
+    createdAtIso: leafItems.map(({ task }) => task.createdAtIso).filter(Boolean).sort()[0] || now.toISOString(),
+    updatedAt: now.toISOString(),
+    createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+  };
+
+  getDay(primary.dateKey).tasks.push(merged);
+
+  Object.values(state.data).forEach(day => {
+    (day.entries || []).forEach(entry => {
+      if (sourceIds.has(entry.taskId)) entry.taskId = merged.id;
+    });
+  });
+
+  getAllTasks().forEach(({ task }) => {
+    if (sourceIds.has(task.parentId)) task.parentId = merged.id;
+  });
+
+  leafItems.forEach(({ task, dateKey }) => {
+    const day = state.data[dateKey];
+    if (!day) return;
+    day.tasks = (day.tasks || []).filter(item => item.id !== task.id);
+    if (state.editingTaskId === task.id) state.editingTaskId = null;
+  });
+
+  clearListSelection();
+  selectGanttTaskRow("");
+  saveData();
+  render();
+  openTaskDialog(merged);
+  showToast(`已合并为「${merged.title}」`);
+  return true;
 }
 
 function createTaskFromEntryPayload(entryPayload, dateKey = state.selectedDate, description = "从当日日程快速创建，可在待办中继续补充。") {

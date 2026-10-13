@@ -8,12 +8,12 @@ const buckets = [
 assert.strictEqual(policy.anchorIndex(buckets, "2026-08-01"), 2);
 assert.strictEqual(policy.anchorScrollLeft({ buckets, anchorKey: "2026-08-01", labelWidth: 180, bucketWidth: 72 }), 144);
 assert.strictEqual(policy.anchorScrollLeft({ buckets, anchorKey: "missing", labelWidth: 180, bucketWidth: 72 }), 0);
-assert.strictEqual(policy.visibleBucketCount("day"), 7);
-assert.strictEqual(policy.visibleBucketCount("week"), 4);
-assert.strictEqual(policy.visibleBucketCount("month"), 3);
-assert.strictEqual(policy.futureBucketCount("day"), 7);
-assert.strictEqual(policy.futureBucketCount("week"), 4);
-assert.strictEqual(policy.futureBucketCount("month"), 3);
+assert.strictEqual(policy.visibleBucketCount("day"), 1);
+assert.strictEqual(policy.visibleBucketCount("week"), 7);
+assert.strictEqual(policy.visibleBucketCount("year"), 12);
+assert.strictEqual(policy.futureBucketCount("day"), 1);
+assert.strictEqual(policy.futureBucketCount("week"), 7);
+assert.strictEqual(policy.futureBucketCount("year"), 12);
 assert.strictEqual(policy.anchorScrollLeft({ buckets, anchorKey: "2026-08-01", bucketWidth: 72 }), 144);
 assert.ok(policy.anchorScrollLeft({ buckets, anchorKey: "2026-08-01", bucketWidth: 72 }) < 216);
 
@@ -76,10 +76,6 @@ assert.deepStrictEqual(policy.entryInvestmentSegments({
   scale: "day"
 }), []);
 
-const weekBuckets = [
-  { key: "2026-07-06" },
-  { key: "2026-07-13" }
-];
 const getMonday = date => {
   const next = new Date(date);
   const offset = (next.getDay() + 6) % 7;
@@ -90,22 +86,23 @@ const fromDateKey = key => {
   const [year, month, day] = String(key).split("-").map(Number);
   return new Date(year, month - 1, day);
 };
-const weekBucketKey = dateKey => {
-  const monday = getMonday(fromDateKey(dateKey));
-  return `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
-};
+// Week scale now uses one column per calendar day (Mon–Sun).
+const weekBuckets = [
+  "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09",
+  "2026-07-10", "2026-07-11", "2026-07-12"
+].map(key => ({ key, dayCount: 1 }));
 const weekSegments = policy.investmentSegments({
-  investedDateKeys: ["2026-07-09", "2026-07-16"],
+  investedDateKeys: ["2026-07-09", "2026-07-11"],
   buckets: weekBuckets,
-  projectBucketKey: weekBucketKey,
+  projectBucketKey: identity,
   scale: "week",
   getMonday,
   fromDateKey
 });
 assert.strictEqual(weekSegments.length, 2);
-assert.ok(weekSegments.every(segment => segment.widthRatio < 1 / weekBuckets.length));
-assert.ok(Math.abs(weekSegments[0].widthRatio - (1 / 7 / weekBuckets.length)) < 0.001);
-assert.ok(Math.abs(weekSegments[1].leftRatio - ((1 + 3 / 7) / weekBuckets.length)) < 0.001);
+assert.ok(Math.abs(weekSegments[0].leftRatio - (3 / 7)) < 0.001);
+assert.ok(Math.abs(weekSegments[0].widthRatio - (1 / 7)) < 0.001);
+assert.ok(Math.abs(weekSegments[1].leftRatio - (5 / 7)) < 0.001);
 
 assert.strictEqual(policy.markerRatio({ dateKey: "2026-07-01", buckets: dayBuckets, projectBucketKey: identity }), 0.1);
 assert.strictEqual(policy.markerRatio({ dateKey: "2026-07-05", buckets: dayBuckets, projectBucketKey: identity }), 0.9);
@@ -190,7 +187,7 @@ assert.deepStrictEqual(policy.initialGanttWindow({
   getMonday,
   fromDateKey,
   toDateKey
-}), { startKey: "2026-08-12", endKey: "2026-08-18" });
+}), { startKey: "2026-08-15", endKey: "2026-08-15" });
 
 assert.deepStrictEqual(policy.initialGanttWindow({
   scale: "week",
@@ -199,24 +196,59 @@ assert.deepStrictEqual(policy.initialGanttWindow({
   getMonday,
   fromDateKey,
   toDateKey
-}), { startKey: "2026-08-03", endKey: "2026-08-24" });
+}), { startKey: "2026-08-10", endKey: "2026-08-16" });
 
 assert.deepStrictEqual(policy.initialGanttWindow({
   scale: "month",
+  centerDateKey: "2026-08-15",
+  visibleDayCount: 31,
+  addDays,
+  getMonday,
+  fromDateKey,
+  toDateKey
+}), { startKey: "2026-07-31", endKey: "2026-08-30" });
+
+// Quarter = 12 week columns from Monday of the natural quarter.
+assert.deepStrictEqual(policy.initialGanttWindow({
+  scale: "quarter",
   centerDateKey: "2026-08-15",
   addDays,
   getMonday,
   fromDateKey,
   toDateKey
-}), { startKey: "2026-07", endKey: "2026-09" });
+}), { startKey: "2026-06-29", endKey: "2026-09-20" });
+assert.strictEqual(policy.visibleBucketCount("quarter"), 12);
+assert.strictEqual(policy.resolveGeometryScale("quarter"), "week");
+assert.strictEqual(
+  policy.currentBucketKey("2026-08-15", "quarter", { getMonday, fromDateKey, toDateKey }),
+  "2026-08-10"
+);
+assert.ok(policy.visibleDayCountForViewport(880, 44) >= 7);
+assert.strictEqual(policy.axisLayout({ scale: "day", bucketCount: 1, viewportWidth: 600 }).fillWidth, true);
+assert.strictEqual(policy.axisLayout({ scale: "week", bucketCount: 7, viewportWidth: 200, minDayPx: 44 }).mode, "scroll");
+assert.strictEqual(policy.axisLayout({ scale: "week", bucketCount: 7, viewportWidth: 200, minDayPx: 44 }).contentWidth, 44 * 7);
 
-// Month columns are day-weighted: Sep(30) / Oct(31) / Nov(30).
+assert.deepStrictEqual(policy.initialGanttWindow({
+  scale: "year",
+  centerDateKey: "2026-08-15",
+  addDays,
+  getMonday,
+  fromDateKey,
+  toDateKey
+}), { startKey: "2026-01", endKey: "2026-12" });
+
+assert.strictEqual(policy.resolveGeometryScale("week"), "day");
+assert.strictEqual(policy.resolveGeometryScale("year"), "month");
+assert.strictEqual(policy.currentBucketKey("2026-08-15", "week"), "2026-08-15");
+assert.strictEqual(policy.currentBucketKey("2026-08-15", "year"), "2026-08");
+
+// Year view month columns are day-weighted: Sep(30) / Oct(31) / Nov(30).
 const monthBuckets = [
   { key: "2026-09", label: "9月" },
   { key: "2026-10", label: "10月" },
   { key: "2026-11", label: "11月" }
 ];
-const monthMetrics = policy.axisMetrics(monthBuckets, "month");
+const monthMetrics = policy.axisMetrics(monthBuckets, "year");
 assert.strictEqual(monthMetrics.totalDays, 30 + 31 + 30);
 assert.deepStrictEqual(monthMetrics.dayCounts, [30, 31, 30]);
 assert.strictEqual(monthMetrics.gridTemplateColumns, "30fr 31fr 30fr");
@@ -228,7 +260,7 @@ const octFirst = policy.markerRatio({
   buckets: monthBuckets,
   projectBucketKey: monthBucketKey,
   edge: "start",
-  scale: "month",
+  scale: "year",
   getMonday,
   fromDateKey
 });
@@ -237,7 +269,7 @@ const novFirst = policy.markerRatio({
   buckets: monthBuckets,
   projectBucketKey: monthBucketKey,
   edge: "start",
-  scale: "month",
+  scale: "year",
   getMonday,
   fromDateKey
 });
@@ -247,23 +279,50 @@ assert.ok(novFirst - octFirst > 30 / 91, "October column must be wider than a 30
 
 assert.deepStrictEqual(policy.shiftGanttWindow({
   scale: "day",
-  startKey: "2026-08-12",
-  endKey: "2026-08-18",
+  startKey: "2026-08-15",
+  endKey: "2026-08-15",
   direction: "future",
   addDays,
   fromDateKey,
   toDateKey
-}), { startKey: "2026-08-13", endKey: "2026-08-19" });
+}), { startKey: "2026-08-16", endKey: "2026-08-16" });
 
 assert.deepStrictEqual(policy.shiftGanttWindow({
   scale: "month",
-  startKey: "2026-07",
-  endKey: "2026-09",
+  startKey: "2026-07-31",
+  endKey: "2026-08-30",
   direction: "past",
+  visibleDayCount: 31,
   addDays,
   fromDateKey,
   toDateKey
-}), { startKey: "2026-06", endKey: "2026-08" });
+}), { startKey: "2026-06-30", endKey: "2026-07-30" });
+
+assert.deepStrictEqual(policy.shiftGanttWindow({
+  scale: "year",
+  startKey: "2026-01",
+  endKey: "2026-12",
+  direction: "future",
+  addDays,
+  fromDateKey,
+  toDateKey
+}), { startKey: "2027-01", endKey: "2027-12" });
+
+const clamped = policy.progressSpan({
+  startDateKey: "2026-07-01",
+  endDateKey: "2026-09-30",
+  isEnded: true,
+  progress: 50,
+  buckets: [
+    { key: "2026-08-01", dayCount: 1 },
+    { key: "2026-08-02", dayCount: 1 }
+  ],
+  projectBucketKey: key => key,
+  scale: "month",
+  getMonday,
+  fromDateKey
+});
+assert.ok(clamped && clamped.widthRatio > 0, "progress span should clamp into the visible window");
 
 assert.strictEqual(policy.displayMarkerDateKey("2026-08-15", -1, addDays, fromDateKey, toDateKey), "2026-08-14");
 assert.strictEqual(policy.centeredScrollLeft({
