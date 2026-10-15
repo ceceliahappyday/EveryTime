@@ -113,6 +113,30 @@ assert.equal(policy.taskHasInvestedInWindow({
   endKey: "2026-12",
   scale: "year"
 }), true);
+assert.equal(policy.taskHasInvestedInWindow({
+  investedDateKeys: ["2026-10-10", "2026-10-20"],
+  startKey: "2026-10-12",
+  endKey: "2026-10-18",
+  scale: "week"
+}), false, "week invested-only must ignore investment outside the visible week");
+assert.equal(policy.taskHasInvestedInWindow({
+  investedDateKeys: ["2026-10-10", "2026-10-15"],
+  startKey: "2026-10-12",
+  endKey: "2026-10-18",
+  scale: "week"
+}), true);
+assert.equal(policy.taskHasInvestedInWindow({
+  investedDateKeys: ["2026-10-15"],
+  startKey: "2026-10-15",
+  endKey: "2026-10-15",
+  scale: "day"
+}), true);
+assert.equal(policy.taskHasInvestedInWindow({
+  investedDateKeys: ["2026-10-14"],
+  startKey: "2026-10-15",
+  endKey: "2026-10-15",
+  scale: "day"
+}), false);
 
 const tree = policy.filterProjectTree({
   parent: { id: "root", parentId: "", status: "planned", owner: "A" },

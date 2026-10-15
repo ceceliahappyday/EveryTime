@@ -241,6 +241,12 @@ if (!styles.includes("is-hscroll-sync") || !app.includes("is-hscroll-sync")) {
 if (!app.includes("data-invested-only")) {
   throw new Error("gantt must support invested-time filter");
 }
+if (!app.includes("meetingHasInvestedInGanttWindow") || !app.includes("meetingInvestedDateKeys")) {
+  throw new Error("invested-only must also filter calendar meetings by the visible gantt window");
+}
+if (!app.includes("ganttView.investedOnly && meetings.length")) {
+  throw new Error("calendar meetings must respect invested-only against the current scale window");
+}
 if (!app.includes("filterContextOnly") || !styles.includes("is-filter-context")) {
   throw new Error("filtered gantt trees must keep ancestor context rows");
 }

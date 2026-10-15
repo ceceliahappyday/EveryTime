@@ -6730,6 +6730,25 @@ function taskInvestedDateKeys(task) {
     .map(item => item.dateKey);
 }
 
+function meetingInvestedDateKeys(meeting) {
+  return (meeting?.entries || [])
+    .filter(({ dateKey, entry }) => getEntryInvestedHours(dateKey, entry) > 0)
+    .map(({ dateKey }) => dateKey);
+}
+
+function meetingHasInvestedInGanttWindow(meeting, windowInfo = {}) {
+  const investedDateKeys = meetingInvestedDateKeys(meeting);
+  if (typeof GanttViewPolicy?.taskHasInvestedInWindow === "function") {
+    return GanttViewPolicy.taskHasInvestedInWindow({
+      investedDateKeys,
+      startKey: windowInfo.startKey || state.projectWindowStart || "",
+      endKey: windowInfo.endKey || state.projectWindowEnd || "",
+      scale: windowInfo.scale || state.projectScale
+    });
+  }
+  return investedDateKeys.length > 0;
+}
+
 function taskMatchesGanttViewFilters(task, ganttView = {}, windowInfo = {}) {
   if (typeof GanttViewPolicy?.taskMatchesFilters === "function") {
     const members = typeof GanttViewPolicy.effectiveMemberFilters === "function"
@@ -6868,13 +6887,17 @@ function renderProjectSchedule() {
   // Gantt shows every status group by default; left-panel status tabs do not apply here.
   const statusProjects = ProjectCollapsePolicy.filterProjectsForStatus(allProjects, "all");
   if (!state.projectWindowStart || !state.projectWindowEnd) resetProjectGanttWindow(state.projectScale);
-  const projects = filterProjectsByGanttView(statusProjects, ganttView, {
+  const windowInfo = {
     startKey: state.projectWindowStart,
     endKey: state.projectWindowEnd,
     scale: state.projectScale
-  });
+  };
+  const projects = filterProjectsByGanttView(statusProjects, ganttView, windowInfo);
   const sourceMeetings = getCalendarMeetingSummaries();
-  const meetings = ganttView.showMeetings === false ? [] : sourceMeetings;
+  let meetings = ganttView.showMeetings === false ? [] : sourceMeetings;
+  if (ganttView.investedOnly && meetings.length) {
+    meetings = meetings.filter(meeting => meetingHasInvestedInGanttWindow(meeting, windowInfo));
+  }
   el.timeline.innerHTML = "";
   el.timeline.className = "project-gantt";
   // Keep toolbar/filter even when the filtered result is empty, so users can recover.
