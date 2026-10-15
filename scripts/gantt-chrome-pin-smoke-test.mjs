@@ -46,13 +46,14 @@ const report = await evaluate(`(async () => {
   await wait(120);
   const chromeAfter = chrome?.getBoundingClientRect().left ?? 0;
   const titleAfter = title?.getBoundingClientRect().left ?? 0;
-  const legendStart = getComputedStyle(document.querySelector(".gantt-legend i.legend-start")).backgroundColor;
+  const legendInvested = getComputedStyle(document.querySelector(".gantt-legend i.legend-invested")).backgroundImage
+    || getComputedStyle(document.querySelector(".gantt-legend i.legend-invested")).backgroundColor;
   return {
     chromeFixed: Math.round(chromeBefore) === Math.round(chromeAfter),
     titlePinned: Math.abs(titleBefore - titleAfter) < 2,
     chromeOutsideScroll: !scroller?.querySelector(".project-gantt-toolbar") && Boolean(chrome?.querySelector(".project-gantt-toolbar")),
     scaleSwitcherVisible: Boolean(chrome?.querySelector(".project-scale-switcher")),
-    legendStartColor: legendStart,
+    legendInvestedColor: legendInvested,
     titleIsSiblingOfLane: row?.querySelector(".project-gantt-lane")?.previousElementSibling?.classList.contains("project-gantt-title"),
     hasGanttRows: document.querySelectorAll(".project-gantt-row").length
   };

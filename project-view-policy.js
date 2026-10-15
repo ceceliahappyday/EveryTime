@@ -115,7 +115,7 @@
 
   /**
    * Pixel layout for axis columns.
-   * Day/month/year fill the viewport; week/quarter use fixed min width and scroll when needed.
+   * Day/year fill the viewport; week/month/quarter use fixed min width and scroll when needed.
    */
   function axisLayout({
     scale = "day",
@@ -129,13 +129,13 @@
     if (scale === "day") {
       return { mode: "fill", unitPx: vp, contentWidth: vp, fillWidth: true };
     }
-    if (scale === "month" || scale === "year") {
+    if (scale === "year") {
       return { mode: "fill", unitPx: vp / count, contentWidth: vp, fillWidth: true };
     }
-    if (scale === "week") {
-      const fixed = dayPx * 7;
+    if (scale === "week" || scale === "month") {
+      const fixed = dayPx * count;
       if (vp >= fixed) {
-        return { mode: "fill", unitPx: Math.floor(vp / 7), contentWidth: vp, fillWidth: true };
+        return { mode: "fill", unitPx: Math.floor(vp / count), contentWidth: vp, fillWidth: true };
       }
       return { mode: "scroll", unitPx: dayPx, contentWidth: fixed, fillWidth: false };
     }
@@ -197,7 +197,8 @@
       return weekDayBounds(centerDateKey, getMonday, fromDateKey, toDateKey, addDays);
     }
     if (scale === "month") {
-      return slidingDayBounds(centerDateKey, visibleDayCount, addDays, fromDateKey, toDateKey);
+      // Full calendar month; horizontal scroll when days do not fit the viewport.
+      return monthDayBounds(centerDateKey, fromDateKey, toDateKey);
     }
     if (scale === "quarter") {
       return quarterWeekBounds(centerDateKey, getMonday, fromDateKey, toDateKey, addDays);
@@ -232,10 +233,9 @@
       };
     }
     if (scale === "month") {
-      const span = Math.max(1, Math.round((fromDateKey(endKey) - fromDateKey(startKey)) / 86400000) + 1);
-      const count = Math.max(7, Number(visibleDayCount) || span);
-      const nextCenter = toDateKey(addDays(fromDateKey(startKey), step * count + Math.floor((count - 1) / 2)));
-      return slidingDayBounds(nextCenter, count, addDays, fromDateKey, toDateKey);
+      const base = fromDateKey(startKey) || fromDateKey(endKey);
+      const next = new Date(base.getFullYear(), base.getMonth() + step, 1);
+      return monthDayBounds(toDateKey(next), fromDateKey, toDateKey);
     }
     if (scale === "quarter") {
       return {
@@ -395,10 +395,15 @@
   // Returns 0–1 ratio on the day-weighted axis (not equal-bucket index space).
   function timelineFractionForDate(dateKey, buckets = [], projectBucketKey, scale = "day", getMonday, fromDateKey, edge = "start") {
     const pos = timelineDayPosForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, edge);
-    if (!pos) return null;
+    if (pos == null) return null;
     return dayPosToRatio(pos.dayPos, pos.totalDays);
   }
 
+  /**
+   * Continuity bars by axis bucket:
+   * week/month → consecutive day columns; quarter → consecutive weeks; year → consecutive months.
+   * Day-scale time slots use entryInvestmentSegments instead.
+   */
   function investmentSegments({
     investedDateKeys = [],
     buckets = [],
@@ -409,47 +414,25 @@
   } = {}) {
     if (!buckets.length) return [];
     const metrics = axisMetrics(buckets, scale);
-    const geo = resolveGeometryScale(scale);
-    if (geo === "day") {
-      const indexes = [...new Set(
-        investedDateKeys
-          .map(dateKey => bucketIndexOf(dateKey, buckets, projectBucketKey))
-          .filter(index => index >= 0)
-      )].sort((a, b) => a - b);
-      const segments = [];
-      indexes.forEach(index => {
-        const last = segments[segments.length - 1];
-        if (last && index === last.endIndex + 1) last.endIndex = index;
-        else segments.push({ startIndex: index, endIndex: index });
-      });
-      return segments.map(segment => {
-        const startDay = metrics.offsets[segment.startIndex];
-        const endDay = metrics.offsets[segment.endIndex] + metrics.dayCounts[segment.endIndex];
-        return Object.assign({}, segment, {
-          leftRatio: dayPosToRatio(startDay, metrics.totalDays),
-          widthRatio: dayPosToRatio(endDay - startDay, metrics.totalDays)
-        });
-      });
-    }
-    const ranges = investedDateKeys
-      .map(dateKey => {
-        const start = timelineDayPosForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, "start");
-        const end = timelineDayPosForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, "end");
-        if (!start || !end) return null;
-        return { start: start.dayPos, end: end.dayPos, totalDays: start.totalDays };
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.start - b.start);
-    const merged = [];
-    ranges.forEach(range => {
-      const last = merged[merged.length - 1];
-      if (last && Math.abs(range.start - last.end) < 0.000001) last.end = range.end;
-      else merged.push({ start: range.start, end: range.end, totalDays: range.totalDays });
+    const indexes = [...new Set(
+      investedDateKeys
+        .map(dateKey => bucketIndexOf(dateKey, buckets, projectBucketKey))
+        .filter(index => index >= 0)
+    )].sort((a, b) => a - b);
+    const segments = [];
+    indexes.forEach(index => {
+      const last = segments[segments.length - 1];
+      if (last && index === last.endIndex + 1) last.endIndex = index;
+      else segments.push({ startIndex: index, endIndex: index });
     });
-    return merged.map(range => ({
-      leftRatio: dayPosToRatio(range.start, range.totalDays),
-      widthRatio: dayPosToRatio(range.end - range.start, range.totalDays)
-    }));
+    return segments.map(segment => {
+      const startDay = metrics.offsets[segment.startIndex];
+      const endDay = metrics.offsets[segment.endIndex] + metrics.dayCounts[segment.endIndex];
+      return Object.assign({}, segment, {
+        leftRatio: dayPosToRatio(startDay, metrics.totalDays),
+        widthRatio: dayPosToRatio(endDay - startDay, metrics.totalDays)
+      });
+    });
   }
 
   /** Day column bounds in absolute day-space (0 … totalDays). */
@@ -599,6 +582,40 @@
     return timelineFractionForDate(dateKey, buckets, projectBucketKey, scale, getMonday, fromDateKey, edge);
   }
 
+  function maxDateKey(a = "", b = "") {
+    if (!a) return b || "";
+    if (!b) return a || "";
+    return a >= b ? a : b;
+  }
+
+  /**
+   * Single-track lifecycle trough:
+   * start = createdAt; end = completed ? max(due, completed)
+   *   : started ? max(due, today) : due.
+   */
+  function lifecycleRangeKeys({
+    createdDateKey = "",
+    plannedEndAt = "",
+    actualStartAt = "",
+    actualEndAt = "",
+    todayKey = ""
+  } = {}) {
+    const rangeStart = createdDateKey || actualStartAt || plannedEndAt || "";
+    if (!rangeStart) return { start: "", end: "" };
+    let rangeEnd = "";
+    if (actualEndAt) {
+      rangeEnd = maxDateKey(plannedEndAt, actualEndAt) || actualEndAt;
+    } else if (actualStartAt) {
+      rangeEnd = maxDateKey(plannedEndAt, todayKey) || plannedEndAt || todayKey;
+    } else {
+      rangeEnd = plannedEndAt || "";
+    }
+    if (!rangeEnd) rangeEnd = rangeStart;
+    if (rangeEnd < rangeStart) rangeEnd = rangeStart;
+    return { start: rangeStart, end: rangeEnd };
+  }
+
+  /** Legacy start/end markers (kept for older callers/tests). Prefer lifecycleRangeKeys. */
   function boundaryDateKeys({
     investedDateKeys = [],
     startedDateKey = "",
@@ -649,8 +666,9 @@
     };
   }
 
-  function shouldShowDueFlag(status) {
-    return status === "planned" || status === "in_progress" || status === "tracking";
+  function shouldShowDueFlag(_status) {
+    // Cutoff stays on the planned due date for every status (including done).
+    return true;
   }
 
   return {
@@ -679,6 +697,8 @@
     investmentSegments,
     entryInvestmentSegments,
     markerRatio,
+    maxDateKey,
+    lifecycleRangeKeys,
     boundaryDateKeys,
     progressSpan,
     shouldShowDueFlag,

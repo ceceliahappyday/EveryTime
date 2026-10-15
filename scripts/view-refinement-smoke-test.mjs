@@ -56,12 +56,12 @@ const result = await call("Runtime.evaluate", {
       taskLabelZ: stickyTaskLabel ? getComputedStyle(stickyTaskLabel).zIndex : "",
       laneZ: lane ? getComputedStyle(lane).zIndex : "",
       marker: (() => {
-        const node = document.querySelector(".gantt-start-marker");
+        const node = document.querySelector(".gantt-end-marker") || document.querySelector(".gantt-cutoff-flag");
         const style = node ? getComputedStyle(node) : null;
         return style ? { width: style.width, height: style.height, top: style.top } : null;
       })(),
       projectSummary: document.querySelector(".gantt-progress-pct")?.textContent.trim() || "",
-      progressOnBar: Boolean(document.querySelector(".gantt-progress-fill"))
+      progressOnBar: Boolean(document.querySelector(".gantt-span-track"))
     };
 
     document.querySelector("#todayButton").click();

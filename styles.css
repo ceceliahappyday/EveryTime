@@ -25,9 +25,11 @@
 .task-list::-webkit-scrollbar,
 .timeline-wrap::-webkit-scrollbar,
 .project-gantt-rows-wrap::-webkit-scrollbar,
+.project-gantt-chart-pane.is-hscroll::-webkit-scrollbar,
+.project-gantt-days-viewport.is-hscroll-sync::-webkit-scrollbar,
 .project-gantt-hscroll::-webkit-scrollbar,
 .project-gantt-scroll::-webkit-scrollbar,
-.week-schedule-day::-webkit-scrollbar,
+.week-schedule-day-body::-webkit-scrollbar,
 .task-trace-list.month::-webkit-scrollbar,
 .modal-scroll::-webkit-scrollbar,
 .entry-task-options::-webkit-scrollbar,
@@ -41,9 +43,11 @@
 .task-list::-webkit-scrollbar-button,
 .timeline-wrap::-webkit-scrollbar-button,
 .project-gantt-rows-wrap::-webkit-scrollbar-button,
+.project-gantt-chart-pane.is-hscroll::-webkit-scrollbar-button,
+.project-gantt-days-viewport.is-hscroll-sync::-webkit-scrollbar-button,
 .project-gantt-hscroll::-webkit-scrollbar-button,
 .project-gantt-scroll::-webkit-scrollbar-button,
-.week-schedule-day::-webkit-scrollbar-button,
+.week-schedule-day-body::-webkit-scrollbar-button,
 .task-trace-list.month::-webkit-scrollbar-button,
 .modal-scroll::-webkit-scrollbar-button,
 .entry-task-options::-webkit-scrollbar-button,
@@ -60,7 +64,7 @@
 .project-gantt-rows-wrap::-webkit-scrollbar-corner,
 .project-gantt-hscroll::-webkit-scrollbar-corner,
 .project-gantt-scroll::-webkit-scrollbar-corner,
-.week-schedule-day::-webkit-scrollbar-corner,
+.week-schedule-day-body::-webkit-scrollbar-corner,
 .task-trace-list.month::-webkit-scrollbar-corner,
 .modal-scroll::-webkit-scrollbar-corner,
 .entry-under-parent-options::-webkit-scrollbar-corner,
@@ -70,9 +74,11 @@
 .task-list::-webkit-scrollbar-track,
 .timeline-wrap::-webkit-scrollbar-track,
 .project-gantt-rows-wrap::-webkit-scrollbar-track,
+.project-gantt-chart-pane.is-hscroll::-webkit-scrollbar-track,
+.project-gantt-days-viewport.is-hscroll-sync::-webkit-scrollbar-track,
 .project-gantt-hscroll::-webkit-scrollbar-track,
 .project-gantt-scroll::-webkit-scrollbar-track,
-.week-schedule-day::-webkit-scrollbar-track,
+.week-schedule-day-body::-webkit-scrollbar-track,
 .task-trace-list.month::-webkit-scrollbar-track,
 .modal-scroll::-webkit-scrollbar-track,
 .entry-task-options::-webkit-scrollbar-track,
@@ -85,9 +91,11 @@
 .task-list::-webkit-scrollbar-thumb,
 .timeline-wrap::-webkit-scrollbar-thumb,
 .project-gantt-rows-wrap::-webkit-scrollbar-thumb,
+.project-gantt-chart-pane.is-hscroll::-webkit-scrollbar-thumb,
+.project-gantt-days-viewport.is-hscroll-sync::-webkit-scrollbar-thumb,
 .project-gantt-hscroll::-webkit-scrollbar-thumb,
 .project-gantt-scroll::-webkit-scrollbar-thumb,
-.week-schedule-day::-webkit-scrollbar-thumb,
+.week-schedule-day-body::-webkit-scrollbar-thumb,
 .task-trace-list.month::-webkit-scrollbar-thumb,
 .modal-scroll::-webkit-scrollbar-thumb,
 .entry-task-options::-webkit-scrollbar-thumb,
@@ -105,10 +113,11 @@
 .timeline-wrap:hover::-webkit-scrollbar-thumb,
 .timeline-wrap.is-scrolling::-webkit-scrollbar-thumb,
 .project-gantt-rows-wrap:hover::-webkit-scrollbar-thumb,
+.project-gantt-chart-pane.is-hscroll:hover::-webkit-scrollbar-thumb,
 .project-gantt-hscroll:hover::-webkit-scrollbar-thumb,
 .project-gantt-scroll:hover::-webkit-scrollbar-thumb,
 .project-gantt-scroll.is-scrolling::-webkit-scrollbar-thumb,
-.week-schedule-day:hover::-webkit-scrollbar-thumb,
+.week-schedule-day-body:hover::-webkit-scrollbar-thumb,
 .task-trace-list.month:hover::-webkit-scrollbar-thumb,
 .modal-scroll:hover::-webkit-scrollbar-thumb,
 .entry-under-parent-options:hover::-webkit-scrollbar-thumb,
@@ -2219,16 +2228,20 @@ button.task-group-heading {
 .project-gantt-resize-handle::before {
   content: "";
   position: absolute;
-  inset: 0 2px;
-  border-radius: 999px;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  border-radius: 0;
   background: var(--line-soft);
-  opacity: .85;
-  transition: background .15s ease, opacity .15s ease, inset .15s ease;
+  opacity: 1;
+  transition: background .15s ease, width .15s ease;
 }
 .project-gantt-resize-handle:hover::before,
 .project-gantt-resize-handle:focus-visible::before,
 .project-gantt-resize-handle.is-dragging::before {
-  inset: 0 1px;
+  width: 2px;
   background: var(--accent);
   opacity: 1;
 }
@@ -2243,18 +2256,85 @@ body.gantt-label-resizing * {
   display: flex;
   align-items: center;
   box-sizing: border-box;
-  height: 42px;
-  min-height: 42px;
-  max-height: 42px;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
   margin-bottom: 0;
-  padding: 7px 4px;
+  padding: 0 8px;
   border: 0;
-  border-bottom: 1px solid var(--line-soft);
   border-radius: 0;
   color: var(--muted);
-  background: rgba(248,247,243,.98);
+  background: transparent;
   font-size: 9px;
   font-weight: 800;
+}
+.project-gantt-label-header.has-columns,
+.project-gantt-row-label.has-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(var(--gantt-extra-cols, 0), minmax(48px, 64px));
+  column-gap: 0;
+  row-gap: 0;
+  align-items: center;
+  padding-right: 0;
+}
+.project-gantt-label-header.has-columns {
+  font-size: 10px;
+}
+.project-gantt-label-header.has-columns .gantt-label-col-title,
+.project-gantt-row-label.has-columns .project-gantt-title {
+  min-width: 0;
+  width: auto;
+  max-width: none;
+}
+.gantt-label-col {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gantt-label-col-head {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+.gantt-label-col-head.is-filterable {
+  padding: 0;
+}
+.gantt-col-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  width: 100%;
+  min-height: 22px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.gantt-col-filter-btn i {
+  font-style: normal;
+  opacity: 0.7;
+}
+.gantt-col-filter-btn.is-active {
+  color: var(--accent, #65b4b1);
+}
+.gantt-col-filter-panel {
+  max-height: min(320px, 50vh);
+  overflow: auto;
+}
+.project-gantt-row-label.has-columns .gantt-label-col {
+  color: var(--ink);
+  opacity: 0.86;
 }
 .project-gantt-label-body,
 .project-gantt-label-group { min-width: 0; }
@@ -2270,11 +2350,11 @@ body.gantt-label-resizing * {
   align-items: center;
   box-sizing: border-box;
   width: 100%;
-  height: 42px;
-  min-height: 42px;
-  max-height: 42px;
-  margin: 12px 0 8px;
-  padding: 8px 4px 8px calc(4px + var(--group-depth, 0) * 16px);
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
+  margin: 0;
+  padding: 0 2px 0 calc(2px + var(--group-depth, 0) * 12px);
   overflow: hidden;
   border: 0;
   border-bottom: 1px solid var(--line-soft);
@@ -2285,49 +2365,54 @@ body.gantt-label-resizing * {
   text-align: left;
 }
 .project-gantt-group-heading[data-depth="0"] {
-  margin-top: 12px;
+  margin-top: 0;
   font-size: 11px;
 }
 .project-gantt-group-heading[data-depth="1"],
 .project-gantt-group-heading[data-depth="2"],
 .project-gantt-group-heading[data-depth="3"] {
-  margin-top: 4px;
-  margin-bottom: 4px;
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
+  margin-top: 0;
+  margin-bottom: 0;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
   color: var(--ink);
   opacity: 0.88;
 }
 .project-gantt-group-chart-spacer {
   box-sizing: border-box;
-  height: 42px;
-  min-height: 42px;
-  max-height: 42px;
-  margin: 12px 0 8px;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
+  margin: 0;
 }
 .project-gantt-group-chart-spacer[data-depth="1"],
 .project-gantt-group-chart-spacer[data-depth="2"],
 .project-gantt-group-chart-spacer[data-depth="3"] {
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
-  margin: 4px 0;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
+  margin: 0;
 }
 .project-gantt-row-label,
 .project-gantt-row-chart {
   box-sizing: border-box;
-  height: 36px;
-  min-height: 36px;
-  max-height: 36px;
-  padding: 3px 0;
-  border-top: 1px solid var(--line-soft);
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+}
+.project-gantt-row-label.is-filter-context,
+.project-gantt-row-chart.is-filter-context {
+  opacity: 0.55;
 }
 .project-gantt-row-label {
   display: flex;
   align-items: center;
-  padding-right: 8px;
-  padding-left: calc(4px + var(--task-depth, 0) * 16px);
+  padding-right: 0;
+  padding-left: calc(2px + var(--task-depth, 0) * 12px);
   cursor: grab;
 }
 .project-gantt-row-label.dragging { opacity: .55; cursor: grabbing; }
@@ -2399,8 +2484,15 @@ body.gantt-label-resizing * {
 body.in-desktop.glass-mode .entry-parent-reuse-hint { color: #8fe0d7; }
 .entry-task-no-results { padding: 12px; color: var(--muted); font-size: 12px; }
 body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entry-task-popup { color: #f3f8fb; background: rgba(0,0,0,.78); border-color: rgba(181,218,239,.45); }
-.timeline-wrap:has(.week-schedule),
-.timeline-wrap:has(.schedule-month-calendar),
+.timeline-wrap:has(.week-schedule) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.timeline-wrap:has(.schedule-month-calendar) {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
 .timeline-wrap:has(.project-gantt) {
   overflow-x: hidden;
 }
@@ -2435,9 +2527,17 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   top: 0;
   width: 100%;
   min-width: 0;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
   z-index: 8;
   margin: 0;
-  background: var(--surface-strong, #fff);
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  /* Frosted opaque strip — covers scroll content, no outer frame. */
+  background: rgba(248, 247, 243, .96);
+  overflow: hidden;
 }
 .project-gantt-header-split .project-gantt-label-header {
   flex: 0 0 var(--gantt-label-width, 240px);
@@ -2446,7 +2546,7 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   position: static;
   top: auto;
   margin-bottom: 0;
-  background: rgba(248,247,243,.98);
+  background: transparent;
 }
 .project-gantt-days-viewport {
   flex: 1 1 auto;
@@ -2454,29 +2554,17 @@ body.in-desktop.glass-mode .entry-task-trigger, body.in-desktop.glass-mode .entr
   overflow: hidden;
 }
 .project-gantt-days-viewport.is-hscroll,
+.project-gantt-days-viewport.is-hscroll-sync,
 .project-gantt-chart-pane.is-hscroll {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
 }
-.project-gantt-days-viewport.has-gantt-nav {
-  position: relative;
-  display: block;
+/* Keep axis scrollable for sync, but hide its visible scrollbar. */
+.project-gantt-days-viewport.is-hscroll-sync::-webkit-scrollbar {
+  height: 0 !important;
+  display: none;
 }
-.project-gantt-days-viewport.has-gantt-nav .project-gantt-days-track {
-  width: 100%;
-  min-width: 0;
-}
-/* Overlay nav so axis width matches the chart track (keeps today-line aligned). */
-.project-gantt-days-viewport.has-gantt-nav .gantt-axis-nav {
-  position: absolute;
-  z-index: 9;
-  top: 50%;
-  transform: translateY(-50%);
-  flex: none;
-}
-.project-gantt-days-viewport.has-gantt-nav .gantt-axis-nav.is-prev { left: 4px; }
-.project-gantt-days-viewport.has-gantt-nav .gantt-axis-nav.is-next { right: 4px; }
 .gantt-axis-nav {
   flex: 0 0 28px;
   width: 28px;
@@ -2545,11 +2633,6 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   min-width: 0;
   overflow: hidden;
 }
-.project-gantt-days-viewport.is-hscroll,
-.project-gantt-chart-pane.is-hscroll {
-  overflow-x: auto;
-  overflow-y: hidden;
-}
 .project-gantt-chart-track {
   will-change: transform;
 }
@@ -2569,7 +2652,7 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   min-width: 0;
   overflow: hidden;
 }
-.week-schedule-day,
+.week-schedule-day-body,
 .task-trace-list.month {
   overflow: auto;
 }
@@ -2631,20 +2714,19 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   z-index: 7;
   display: grid;
   box-sizing: border-box;
-  height: 42px;
-  min-height: 42px;
-  max-height: 42px;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
   gap: 0;
   align-items: stretch;
+  justify-items: center;
   margin-bottom: 0;
   padding: 0;
   overflow: hidden;
-  /* No layout border — outline only, so columns match the chart track width. */
   border: 0;
-  border-radius: 10px;
-  outline: 1px solid var(--line-soft);
-  outline-offset: -1px;
-  background: rgba(248,247,243,.98);
+  border-radius: 0;
+  outline: none;
+  background: transparent;
   color: var(--muted);
   font-size: 9px;
   font-weight: 800;
@@ -2657,12 +2739,15 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   min-width: 0;
   width: 100%;
   height: 100%;
+  margin: 0;
   padding: 0 1px;
   text-align: center;
   white-space: nowrap;
-  border-right: 1px solid rgba(148, 163, 184, 0.12);
+  line-height: 1;
+  border-right: 0;
 }
-.project-gantt-days > span:last-child {
+.project-gantt-days.scale-day > span,
+.project-gantt-days.scale-year > span {
   border-right: 0;
 }
 .project-gantt-section {
@@ -2711,14 +2796,14 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   min-height: 22px;
-  padding: 0 8px 0 4px;
-  margin-left: 0;
+  padding: 0 2px;
+  margin: 0;
   color: var(--ink);
   white-space: nowrap;
   background: none;
@@ -2736,7 +2821,7 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
 .project-gantt-title.is-title-pin,
 .project-gantt-title.is-parent-pin {
   min-height: 18px;
-  padding: 2px 4px;
+  padding: 0 2px;
   border: 0;
   border-radius: 0;
   color: var(--ink);
@@ -2916,59 +3001,56 @@ body.in-desktop.glass-mode .month-task-line.is-selected {
   position: relative;
   z-index: 1;
   isolation: isolate;
-  min-height: 26px;
+  min-height: 32px;
+  height: 100%;
   overflow: visible;
   background: transparent;
 }
 .project-gantt-lane i {
   position: absolute;
-  top: 5px;
-  bottom: 5px;
-  min-width: 6px;
-  border-radius: 6px;
+  top: 2px;
+  bottom: 2px;
+  min-width: 4px;
+  border-radius: 999px;
 }
+/* Lifecycle trough; invested fills sit inside the same capsule track. */
 .project-gantt-lane i.gantt-span-track {
   z-index: 1;
-  background: rgba(8, 12, 16, .36);
-  border: 1px solid rgba(255,255,255,.08);
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,.16);
+  background: rgba(40, 52, 64, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 .project-gantt-lane i.gantt-progress-fill {
-  z-index: 2;
-  background: rgba(8, 12, 16, .18);
+  display: none;
 }
 .project-gantt-lane i.gantt-actual-bar {
   z-index: 3;
-  background: var(--entry, #4f8fd6);
-  border: 1px solid color-mix(in srgb, var(--entry, #4f8fd6) 55%, #fff);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.42),
-    inset 0 -1px 0 color-mix(in srgb, var(--entry, #4f8fd6) 35%, #000),
-    0 1px 2px rgba(0,0,0,.28);
+  background: color-mix(in srgb, var(--entry, #4f8fd6) 90%, transparent);
+  border: 0;
+  box-shadow: none;
+  border-radius: 999px;
 }
 .project-gantt-lane i.gantt-meeting-bar {
-  z-index: 3;
-  background: var(--entry, #c9923a);
-  border: 1px solid color-mix(in srgb, var(--entry, #c9923a) 55%, #fff);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.42),
-    inset 0 -1px 0 rgba(96, 58, 8, .28),
-    0 1px 2px rgba(0,0,0,.22);
+  z-index: 4;
+  background: color-mix(in srgb, #c9923a 92%, transparent);
+  border: 0;
+  box-shadow: none;
+  border-radius: 999px;
 }
 .project-gantt-lane .gantt-progress-pct {
   position: absolute;
   z-index: 4;
-  top: 5px;
-  bottom: 5px;
+  top: 2px;
+  bottom: 2px;
   display: block;
   box-sizing: border-box;
-  padding: 0 4px;
+  padding: 0 2px;
   overflow: hidden;
   color: #fff;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   letter-spacing: .02em;
-  line-height: 26px;
+  line-height: 28px;
   text-align: center;
   text-overflow: ellipsis;
   text-shadow: 0 1px 2px rgba(0,0,0,.45);
@@ -2993,9 +3075,8 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
   background: rgba(143, 224, 215, 0.14);
   box-shadow: inset 0 0 0 1px rgba(143, 224, 215, 0.42);
 }
-.project-gantt-lane u.gantt-start-marker,
 .project-gantt-lane u.gantt-end-marker,
-.project-gantt-lane u.gantt-cutoff-flag {
+.project-gantt-lane u.gantt-start-tick {
   position: absolute;
   z-index: 6;
   top: 50%;
@@ -3006,36 +3087,50 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
   text-decoration: none;
   pointer-events: none;
 }
-.project-gantt-lane u.gantt-start-marker::before,
+.project-gantt-lane u.gantt-cutoff-flag {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  left: 0;
+  width: 0;
+  height: calc(100% + 10px);
+  transform: translate(-50%, -50%);
+  border-left: 1.5px dashed #f0d06a;
+  background: transparent;
+  text-decoration: none;
+  pointer-events: none;
+}
 .project-gantt-lane u.gantt-end-marker::before,
-.project-gantt-lane u.gantt-cutoff-flag::before {
+.project-gantt-lane u.gantt-cutoff-flag::before,
+.project-gantt-lane u.gantt-start-tick::before {
   content: none;
 }
-/* 开始：绿色三角播放钮 */
-.project-gantt-lane u.gantt-start-marker::after {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 2px;
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 5px 0 5px 8px;
-  border-color: transparent transparent transparent #2fbf6b;
-  filter: drop-shadow(0 0 2px rgba(0, 0, 0, .45));
+.project-gantt-lane u.gantt-cutoff-flag::after {
+  content: none;
 }
-/* 结束：红色小勾 */
+/* 无工时记录时的开工降级点 */
+.project-gantt-lane u.gantt-start-tick {
+  width: 5px;
+  height: 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--entry, #4f8fd6) 90%, transparent);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
+}
+/* 结束对勾：按期浅灰 / 延期红色 */
 .project-gantt-lane u.gantt-end-marker::after {
   content: "✓";
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -54%);
-  color: #ff5a5a;
+  color: #c5ced6;
   font-size: 13px;
   font-weight: 800;
   line-height: 1;
   text-shadow: 0 0 3px rgba(0, 0, 0, .55);
+}
+.project-gantt-lane u.gantt-end-marker.is-late::after {
+  color: #ff5a5a;
 }
 .gantt-legend {
   display: flex;
@@ -3051,38 +3146,30 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
 .gantt-legend i.legend-span {
   width: 14px;
   height: 8px;
-  border-radius: 4px;
+  border-radius: 999px;
   background: rgba(8, 12, 16, .42);
-  border: 1px solid rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.18);
 }
 .gantt-legend i.legend-invested {
   width: 14px;
   height: 8px;
-  border-radius: 4px;
-  background: #4f8fd6;
-  border: 1px solid #8ec4f0;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.4);
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4f8fd6 0%, #8b6bc9 50%, #4db6a0 100%);
+  border: 0;
+  box-shadow: none;
 }
 .gantt-legend i.legend-meeting {
   width: 14px;
   height: 8px;
-  border-radius: 4px;
-  background: #c9923a;
-  border: 1px solid #e8c15a;
-}
-.gantt-legend i.legend-start {
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 5px 0 5px 8px;
-  border-color: transparent transparent transparent #2fbf6b;
-  background: none;
-  border-radius: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, #c9923a 78%, transparent);
+  border: 0;
+  box-shadow: none;
 }
 .gantt-legend i.legend-end {
   width: auto;
   height: auto;
-  color: #ff5a5a;
+  color: #c5ced6;
   font-size: 12px;
   font-weight: 800;
   font-style: normal;
@@ -3091,50 +3178,75 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
 }
 .gantt-legend i.legend-end::before { content: "✓"; }
 .gantt-legend i.legend-cutoff {
-  width: auto;
-  height: auto;
-  color: #f0d06a;
-  font-size: 12px;
-  font-weight: 800;
-  font-style: normal;
+  width: 0;
+  height: 12px;
+  border-left: 1.5px dashed #f0d06a;
   background: none;
-  border: 0;
+  border-radius: 0;
 }
-.gantt-legend i.legend-cutoff::before { content: "!"; }
 .gantt-legend i.legend-today {
   width: 0;
   height: 12px;
+  border-left: 1.5px dashed rgba(226, 232, 240, 0.85);
   border-radius: 0;
-  border-left: 2px solid #3b82f6;
-  background: none;
+  background: transparent;
 }
-.project-gantt-days span.is-today { color: #3b82f6; font-weight: 700; }
+.gantt-status-mark {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.gantt-status-mark.is-ontime { color: #7dcf9a; }
+.gantt-status-mark.is-late,
+.gantt-status-mark.is-overdue { color: #ff6b6b; }
+.gantt-status-mark.is-active { color: #6eb6f0; }
+.gantt-status-mark.is-idle { color: #9aa4ad; }
+.project-gantt-days span.is-today { color: #e2e8f0; font-weight: 700; }
 .project-gantt-days span.is-holiday {
   color: var(--muted, #8a9399);
   background: rgba(148, 163, 184, 0.14);
 }
-.project-gantt-days u.gantt-today-line,
+/* Week/month: uniform day columns — no weekend/holiday striping. */
+.project-gantt-days.scale-week span.is-holiday,
+.project-gantt-days.scale-month span.is-holiday {
+  color: inherit;
+  background: transparent;
+}
+.project-gantt-chart-pane.scale-week .gantt-holiday-lane i.is-holiday,
+.project-gantt-chart-pane.scale-month .gantt-holiday-lane i.is-holiday {
+  background: transparent;
+}
+/* Full circle inside the axis (avoids overflow clipping); hairline starts in the task pane. */
+.project-gantt-days u.gantt-today-dot {
+  position: absolute;
+  z-index: 9;
+  top: auto;
+  bottom: 3px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: rgba(226, 232, 240, 0.92);
+  box-shadow: 0 0 0 2px rgba(226, 232, 240, 0.18);
+  text-decoration: none;
+  pointer-events: none;
+}
 .project-gantt-chart-track > u.gantt-today-line.is-chart {
   position: absolute;
-  z-index: 8;
+  z-index: 2;
   top: 0;
   bottom: 0;
   width: 0;
-  border-left: 2px solid #3b82f6;
+  margin-left: 0;
+  border: 0;
+  border-left: 1.5px dashed rgba(226, 232, 240, 0.72);
+  background: transparent;
   text-decoration: none;
-  opacity: .95;
+  opacity: 0.95;
   pointer-events: none;
-}
-.project-gantt-days u.gantt-today-line.has-dot::before {
-  content: "";
-  position: absolute;
-  top: 5px;
-  left: -4px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
 }
 .project-gantt-chart-track {
   position: relative;
@@ -3148,11 +3260,8 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
 }
 .gantt-holiday-lane > i {
   box-sizing: border-box;
-  border-right: 1px solid rgba(148, 163, 184, 0.1);
-  min-width: 0;
-}
-.gantt-holiday-lane > i:last-child {
   border-right: 0;
+  min-width: 0;
 }
 .gantt-holiday-lane i.is-holiday {
   background: rgba(148, 163, 184, 0.08);
@@ -3160,6 +3269,114 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
 .project-gantt-chart-track > .project-gantt-body {
   position: relative;
   z-index: 1;
+}
+.gantt-period-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+.gantt-period-button {
+  min-width: 28px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.gantt-period-button.is-today {
+  min-width: 44px;
+  font-size: 12px;
+}
+.gantt-period-button:hover,
+.gantt-period-button:focus-visible {
+  border-color: var(--accent);
+  background: rgba(101, 180, 177, 0.16);
+  outline: none;
+}
+body.in-desktop.glass-mode .gantt-period-button {
+  color: #e8f4ff;
+  border-color: rgba(172, 211, 233, 0.35);
+  background: rgba(0, 0, 0, 0.28);
+}
+body.in-desktop.glass-mode .gantt-period-button:hover,
+body.in-desktop.glass-mode .gantt-period-button:focus-visible {
+  border-color: rgba(143, 224, 215, 0.7);
+  background: rgba(143, 224, 215, 0.14);
+}
+.gantt-owner-mark {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 72px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.in-desktop.glass-mode .gantt-owner-mark {
+  color: #9eb4c2;
+}
+.gantt-filter-subtitle {
+  display: block;
+  margin: 10px 0 4px;
+  font-size: 12px;
+}
+.gantt-filter-list.gantt-filter-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  max-height: none;
+}
+.gantt-filter-invested {
+  margin: 6px 0;
+}
+.gantt-arrange-panel select,
+.gantt-settings-field select {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid rgba(60, 72, 88, 0.22);
+  border-radius: 8px;
+  color: #1c2a33;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+body.in-desktop.glass-mode .gantt-arrange-panel select,
+body.in-desktop.glass-mode .gantt-settings-field select,
+body.in-desktop.glass-mode .gantt-arrange-depth select {
+  color: #ffffff !important;
+  background: rgba(0, 0, 0, 0.42) !important;
+  border-color: rgba(172, 211, 233, 0.55);
+}
+body.in-desktop.glass-mode .gantt-arrange-panel select option,
+body.in-desktop.glass-mode .gantt-settings-field select option {
+  color: #f4fbff;
+  background: #0c1824;
+}
+.gantt-empty-filtered {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  padding: 28px 16px;
+}
+.gantt-empty-filtered p {
+  margin: 0;
+  color: var(--muted);
+}
+.gantt-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
 }
 .gantt-filter-list {
   max-height: 240px;
@@ -3178,74 +3395,104 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
   margin: 10px 0;
   font-size: 12px;
 }
-/* 目标完成时间：黄色感叹号 */
-.project-gantt-lane u.gantt-cutoff-flag::after {
-  content: "!";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -54%);
-  color: #f0d06a;
-  font-size: 14px;
-  font-weight: 900;
-  line-height: 1;
-  text-shadow: 0 0 3px rgba(0, 0, 0, .55);
-}
 .project-gantt-row-chart.is-parent .project-gantt-lane i.gantt-span-track,
-.project-gantt-row-chart.is-parent .project-gantt-lane i.gantt-progress-fill,
-.project-gantt-row-chart.is-parent .project-gantt-lane i.gantt-actual-bar {
-  top: 7px;
-  bottom: 7px;
+.project-gantt-row-chart.is-parent .project-gantt-lane i.gantt-actual-bar,
+.project-gantt-row-chart.is-parent .project-gantt-lane i.gantt-meeting-bar {
+  top: 3px;
+  bottom: 3px;
 }
 .week-schedule {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  gap: 0;
+  flex: 1 1 auto;
   width: 100%;
   min-width: 0;
-  padding: 2px 4px 10px 2px;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: hidden;
 }
 .week-schedule-day {
-  height: calc(100vh - 336px);
-  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   min-width: 0;
-  padding: 10px 8px;
-  overflow-y: scroll;
-  overscroll-behavior: contain;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: #faf9f6;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-right: 1px solid rgba(105, 189, 183, .16);
+  border-radius: 0;
+  background: transparent;
 }
-.week-schedule-day.selected { border-color: var(--accent); }
+.week-schedule-day:last-child { border-right: 0; }
+.week-schedule-day-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.week-schedule-day.selected { background: rgba(101, 180, 177, .06); }
 .week-schedule-day.drag-over,
 .schedule-month-cell.drag-over {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent), 0 0 18px rgba(101,180,177,.18);
+  background: rgba(101, 180, 177, .10);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
-.week-schedule-day h4 { position: sticky; top: 0; margin: 0 0 10px; padding: 5px; background: #faf9f6; font-size: 11px; }
-.week-add-task {
-  width: 100%;
-  margin: -4px 0 9px;
+.week-schedule-day h4 {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 3;
+  box-sizing: border-box;
+  margin: 0;
   padding: 6px 8px;
-  border: 1px dashed var(--line);
-  border-radius: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: rgba(250, 249, 246, .96);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+}
+.week-add-task {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-bottom: 1px dashed var(--line-soft);
+  border-radius: 0;
   color: var(--accent);
-  background: rgba(255,255,255,.44);
+  background: transparent;
   font-size: 10px;
   text-align: left;
 }
 .week-add-task:hover {
-  border-style: solid;
-  background: var(--accent-soft);
+  border-style: dashed;
+  background: rgba(101, 180, 177, .08);
 }
 .deadline-pill,
 .due-task-list {
-  margin: -2px 0 9px;
-  padding: 6px 8px;
-  border: 1px solid rgba(170, 123, 57, .28);
-  border-radius: 8px;
+  margin: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-bottom: 1px solid rgba(170, 123, 57, .18);
+  border-radius: 0;
   color: #8a6130;
-  background: rgba(244, 234, 216, .72);
+  background: rgba(244, 234, 216, .42);
   font-size: 10px;
   font-weight: 700;
 }
@@ -3260,11 +3507,11 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
 .due-task-more {
   display: flex;
   align-items: center;
-  min-height: 22px;
-  margin-top: 4px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: rgba(255,255,255,.54);
+  min-height: 20px;
+  margin-top: 0;
+  padding: 2px 0;
+  border-radius: 0;
+  background: transparent;
   color: #5f421f;
   font-size: 9px;
   line-height: 1.35;
@@ -3287,31 +3534,32 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
   text-overflow: ellipsis;
 }
 .due-task-item:hover {
-  background: rgba(255,255,255,.80);
+  background: rgba(255,255,255,.28);
 }
 .due-task-more {
   justify-content: center;
   color: #7b5a2b;
   background: transparent;
-  border: 1px dashed rgba(170,123,57,.34);
+  border: 0;
 }
 .completed-task-list {
-  margin: -2px 0 9px;
-  padding: 6px 8px;
-  border: 1px solid rgba(76, 132, 91, .28);
-  border-radius: 8px;
+  margin: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-bottom: 1px solid rgba(76, 132, 91, .18);
+  border-radius: 0;
   color: #3f714c;
-  background: rgba(221, 239, 225, .76);
+  background: rgba(221, 239, 225, .42);
   font-size: 10px;
   font-weight: 700;
 }
 .completed-task-item {
   display: flex;
   align-items: center;
-  min-height: 22px;
-  margin-top: 4px;
-  padding: 4px 6px;
-  border-radius: 6px;
+  min-height: 20px;
+  margin-top: 0;
+  padding: 2px 0;
+  border-radius: 0;
   color: #315c3b;
   background: rgba(255,255,255,.58);
   font-size: 9px;
@@ -3367,40 +3615,50 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
   text-overflow: ellipsis;
   font-size: 9px;
 }
-.week-entry { margin: 6px 0; padding: 8px; border-left: 3px solid var(--accent); border-radius: 7px; background: var(--accent-soft); font-size: 9px; cursor: pointer; }
-.week-entry strong { display: block; margin-bottom: 3px; font-size: 10px; }
+.week-entry {
+  margin: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-bottom: 1px solid rgba(105, 189, 183, .18);
+  border-left: 2px solid var(--accent);
+  border-radius: 0;
+  background: transparent;
+  font-size: 9px;
+  cursor: pointer;
+}
+.week-entry strong { display: block; margin-bottom: 1px; font-size: 10px; }
 .week-entry span { display: block; color: var(--muted); font-size: 8px; }
-.week-entry p { margin: 5px 0 0; color: var(--ink); font-size: 8px; line-height: 1.45; }
+.week-entry p { margin: 2px 0 0; color: var(--ink); font-size: 8px; line-height: 1.35; }
 .week-entry.task-entry { border-left-color: #5d7f9e; }
-.week-task-list { margin: 5px 0; }
+.week-task-list { margin: 0; }
 .week-task-line {
   display: grid;
   grid-template-columns: 2em minmax(0, 1fr);
-  column-gap: 6px;
+  column-gap: 4px;
   align-items: start;
   min-width: 0;
-  padding: 6px 2px;
-  border-bottom: 1px solid rgba(105,189,183,.30);
+  margin: 0;
+  padding: 3px 6px;
+  border: 0;
+  border-bottom: 1px solid rgba(105,189,183,.16);
+  border-left: 2px solid var(--chip, #638576);
+  border-radius: 0;
   cursor: pointer;
 }
-.week-task-line:hover { background: rgba(61, 161, 167, .12); }
+.week-task-line:hover { background: rgba(61, 161, 167, .10); }
 .week-task-line b {
   min-width: 0;
   overflow: hidden;
   color: #348e7d;
   font-size: 10px;
   font-weight: 800;
-  line-height: 1.35;
+  line-height: 1.3;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .week-task-line.planned b { color: #bb8844; }
 .week-task-line.tracking b { color: #7a6a9a; }
 .week-task-line.meeting b { color: #aa7b39; }
-.week-task-line {
-  border-left: 3px solid var(--chip, #638576);
-  padding-left: 5px;
-}
 .week-task-line span {
   min-width: 0;
   overflow: hidden;
@@ -3438,8 +3696,11 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
 .schedule-month-calendar {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
   min-width: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
 }
 .schedule-month-weekdays {
   position: sticky;
@@ -3447,51 +3708,67 @@ body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
   z-index: 6;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
+  align-items: stretch;
+  gap: 0;
   margin: 0;
-  padding: 0 0 4px;
-  background: var(--surface-strong, #fff);
-  box-shadow: 0 8px 12px -8px rgba(0, 0, 0, .18);
+  padding: 0;
+  background: rgba(250, 249, 246, .96);
+  box-shadow: none;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
 }
 .schedule-month-weekday {
   position: static;
   z-index: auto;
-  padding: 8px 4px;
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 6px 2px;
+  border: 0;
+  border-right: 1px solid rgba(105, 189, 183, .12);
+  border-radius: 0;
   color: var(--muted);
-  background: rgba(248,247,243,.98);
+  background: transparent;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: .08em;
+  letter-spacing: .04em;
+  line-height: 1.3;
 }
+.schedule-month-weekday:last-child { border-right: 0; }
 .schedule-month-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  grid-template-rows: repeat(6, 136px);
-  gap: 6px;
+  grid-template-rows: repeat(6, minmax(112px, 1fr));
+  gap: 0;
 }
 .schedule-month-cell {
   position: relative;
   min-width: 0;
-  height: 136px;
-  min-height: 136px;
-  max-height: 136px;
-  padding: 7px 6px;
+  height: auto;
+  min-height: 112px;
+  max-height: none;
+  padding: 2px 4px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
+  border: 0;
+  border-right: 1px solid rgba(105, 189, 183, .14);
+  border-bottom: 1px solid rgba(105, 189, 183, .14);
+  border-radius: 0;
   background: transparent;
   cursor: pointer;
   box-sizing: border-box;
 }
+.schedule-month-cell:nth-child(7n) { border-right: 0; }
 .schedule-month-cell.weekend {
   background: rgba(101, 180, 177, .03);
 }
-.schedule-month-cell:hover, .schedule-month-cell.selected { background: rgba(101,180,177,.08); border-color: var(--accent); }
+.schedule-month-cell:hover,
+.schedule-month-cell.selected {
+  background: rgba(101,180,177,.08);
+}
 .month-add-task {
   position: absolute;
   inset: 0;
@@ -3534,36 +3811,46 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
   color: var(--accent);
 }
 .schedule-month-cell.today {
-  border-color: rgba(101, 180, 177, .92);
-  box-shadow: inset 3px 0 0 rgba(101,180,177,.72);
+  box-shadow: inset 2px 0 0 rgba(101,180,177,.85);
+  background: rgba(101, 180, 177, .05);
 }
 .schedule-month-cell.today header span:first-child {
   display: inline-grid;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   place-items: center;
   color: #fff;
   background: var(--accent);
-  border-radius: 8px;
+  border-radius: 0;
 }
 .schedule-month-cell.outside { opacity: .38; }
 .schedule-month-cell header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
   min-width: 0;
+  min-height: 28px;
   font-size: 12px;
   font-weight: 700;
+  text-align: center;
+}
+.schedule-month-cell header span:first-child {
+  flex: 0 0 auto;
+  text-align: center;
 }
 .schedule-month-cell header span:last-child {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  text-align: center;
 }
 .month-task-list {
   flex: 1 1 auto;
   min-height: 0;
-  margin-top: 5px;
+  margin-top: 2px;
   overflow: hidden;
 }
 .schedule-month-cell.selected .month-task-list {
@@ -3573,11 +3860,15 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
 .month-task-line {
   display: grid;
   grid-template-columns: 2em minmax(0, 1fr);
-  column-gap: 6px;
+  column-gap: 4px;
   align-items: start;
   min-width: 0;
-  min-height: 20px;
-  padding: 2px 0;
+  min-height: 18px;
+  margin: 0;
+  padding: 1px 0 1px 4px;
+  border: 0;
+  border-left: 2px solid var(--chip, #638576);
+  border-radius: 0;
   color: var(--ink);
   font-size: 11px;
   cursor: pointer;
@@ -3588,17 +3879,13 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
   color: #348e7d;
   font-size: 10px;
   font-weight: 800;
-  line-height: 1.35;
+  line-height: 1.3;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .month-task-line.planned b { color: #bb8844; }
 .month-task-line.tracking b { color: #7a6a9a; }
 .month-task-line.meeting b { color: #aa7b39; }
-.month-task-line {
-  border-left: 3px solid var(--chip, #638576);
-  padding-left: 4px;
-}
 .month-task-line span {
   min-width: 0;
   overflow: hidden;
@@ -3619,10 +3906,10 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
 .holiday-badge {
   display: inline-flex;
   max-width: 100%;
-  padding: 2px 6px;
-  border-radius: 999px;
+  padding: 0 2px;
+  border-radius: 0;
   color: #8a4f2b;
-  background: rgba(249, 223, 196, .78);
+  background: transparent;
   font-size: 10px;
   font-style: normal;
   font-weight: 800;
@@ -3631,17 +3918,18 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
 }
 .holiday-badge.workday {
   color: #496c8b;
-  background: rgba(214, 231, 245, .78);
+  background: transparent;
 }
 .month-deadline-pill,
 .due-task-list.month {
-  margin-top: 6px;
-  padding: 4px 7px;
-  max-height: 56px;
+  margin-top: 2px;
+  padding: 2px 4px;
+  max-height: 48px;
   overflow: hidden;
-  border-radius: 6px;
+  border: 0;
+  border-radius: 0;
   color: #8a6130;
-  background: rgba(244, 234, 216, .78);
+  background: rgba(244, 234, 216, .42);
   font-size: 10px;
   font-weight: 700;
 }
@@ -3719,8 +4007,24 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
 .calendar-entry-item strong { min-width: 0; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .calendar-entry-item.month { grid-template-columns: 1fr; gap: 2px; padding: 4px 5px; }
 .calendar-entry-item.month small { display: block; }
-.schedule-month-item { margin-top: 5px; padding: 4px 6px; overflow: hidden; border-radius: 5px; color: #466357; background: #e1ece5; font-size: 8px; white-space: nowrap; text-overflow: ellipsis; }
-.schedule-month-item.task-entry { color: #395c78; background: #e0edf6; }
+.schedule-month-item {
+  margin-top: 0;
+  padding: 1px 4px;
+  overflow: hidden;
+  border: 0;
+  border-left: 2px solid #638576;
+  border-radius: 0;
+  color: #466357;
+  background: transparent;
+  font-size: 8px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.schedule-month-item.task-entry {
+  color: #395c78;
+  background: transparent;
+  border-left-color: #5d7f9e;
+}
 .time-row {
   position: relative;
   height: var(--hour-height);
@@ -3782,26 +4086,28 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
   z-index: 3;
   --entry: #638576;
   --entry-bg: #e3eee7;
-  --entry-left: 76px;
+  --entry-left: 68px;
   left: var(--entry-left);
-  right: 10px;
+  right: 0;
   width: auto;
-  min-height: 40px;
-  padding: 10px 13px;
+  min-height: 28px;
+  padding: 4px 8px;
   overflow: hidden;
-  border-radius: 9px;
-  border-left: 4px solid var(--entry);
-  background: var(--entry-bg);
+  border: 0;
+  border-radius: 0;
+  border-left: 2px solid var(--entry);
+  background: color-mix(in srgb, var(--entry-bg) 84%, transparent);
+  box-shadow: none;
   cursor: pointer;
-  transition: filter .15s, transform .15s, box-shadow .15s;
+  transition: filter .12s, background .12s;
 }
 /* Fantastical / Apple Calendar：重叠全宽叠放，色块交叠混合，不左右错开 */
 .schedule-entry.is-overlap {
-  background: color-mix(in srgb, var(--entry-bg) 78%, transparent);
+  background: color-mix(in srgb, var(--entry-bg) 70%, transparent);
   mix-blend-mode: multiply;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--entry) 22%, transparent);
+  box-shadow: none;
 }
-.schedule-entry:hover { z-index: 12; filter: brightness(.98); transform: translateX(1px); mix-blend-mode: normal; }
+.schedule-entry:hover { z-index: 12; filter: brightness(.98); transform: none; mix-blend-mode: normal; }
 .schedule-entry strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
 .schedule-entry.done strong,
 .schedule-entry.closed strong {
@@ -3813,10 +4119,11 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
 .schedule-entry-type {
   display: inline-block;
   margin-left: 4px;
-  padding: 1px 4px;
-  border: 1px solid rgba(255,255,255,.26);
-  border-radius: 999px;
-  color: rgba(255,255,255,.78);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  opacity: .78;
   font-size: 8px;
   font-weight: 700;
   vertical-align: middle;
@@ -4122,30 +4429,63 @@ body.in-desktop.glass-mode .datetime-input-wrap input[type="text"]::placeholder 
   display: grid;
   gap: 6px;
 }
-.gantt-arrange-list li {
+.gantt-arrange-list li,
+.gantt-arrange-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 6px 8px 6px 6px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(60, 72, 88, 0.1);
+  position: relative;
+}
+.gantt-arrange-row.is-dragging { opacity: 0.45; }
+.gantt-arrange-row.drop-before::before,
+.gantt-arrange-row.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.gantt-arrange-row.drop-before::before { top: -2px; }
+.gantt-arrange-row.drop-after::after { bottom: -2px; }
+.gantt-arrange-drag {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  line-height: 0;
+  cursor: grab;
+  user-select: none;
+}
+.gantt-arrange-drag svg { fill: currentColor; display: block; }
+.gantt-arrange-drag:active { cursor: grabbing; }
+.gantt-arrange-drag:hover {
+  color: var(--ink);
+  background: rgba(60, 102, 85, .08);
 }
 .gantt-arrange-list label {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
   font-size: 13px;
   font-weight: 600;
-}
-.gantt-arrange-move button {
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  padding: 2px 4px;
-  color: inherit;
-  opacity: 0.75;
 }
 .gantt-arrange-depth {
   display: grid;
@@ -4174,10 +4514,18 @@ body.in-desktop.glass-mode .gantt-arrange-panel {
 body.in-desktop.glass-mode .gantt-arrange-panel .form-hint {
   color: #9eb4c2 !important;
 }
-body.in-desktop.glass-mode .gantt-arrange-list li {
+body.in-desktop.glass-mode .gantt-arrange-list li,
+body.in-desktop.glass-mode .gantt-arrange-row {
   background: rgba(0, 0, 0, 0.28);
   border-color: rgba(172, 211, 233, 0.28);
   color: #f4fbff;
+}
+body.in-desktop.glass-mode .gantt-arrange-drag {
+  color: #9eb4c2;
+}
+body.in-desktop.glass-mode .gantt-arrange-drag:hover {
+  color: #f4fbff;
+  background: rgba(143, 224, 215, 0.12);
 }
 body.in-desktop.glass-mode .gantt-arrange-depth select {
   color: #ffffff;
@@ -4830,10 +5178,40 @@ body.in-desktop.glass-mode .date-picker-button {
   border-color: rgba(219,238,249,.28);
   box-shadow: none;
 }
+body.in-desktop.glass-mode .week-schedule {
+  border: 0;
+  background: transparent;
+}
 body.in-desktop.glass-mode .week-schedule-day {
   background: transparent;
-  border-color: rgba(219, 238, 249, .16);
+  border-right: 1px solid rgba(172, 211, 233, .18);
   box-shadow: none;
+}
+body.in-desktop.glass-mode .week-schedule-day:last-child {
+  border-right: 0;
+}
+body.in-desktop.glass-mode .week-schedule-day.selected {
+  background: rgba(101, 180, 177, .08);
+}
+body.in-desktop.glass-mode .week-schedule-day h4 {
+  color: #f4fbff;
+  border-bottom-color: rgba(172, 211, 233, .22);
+  background: rgba(8, 22, 36, .78);
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .45);
+}
+body.in-desktop.glass-mode .week-add-task {
+  color: #8fe0d7;
+  background: transparent;
+  border-bottom: 1px dashed rgba(143, 224, 215, .40);
+  text-align: left;
+  text-shadow: none;
+}
+body.in-desktop.glass-mode .week-add-task:hover {
+  background: rgba(143, 224, 215, .10);
+  border-bottom-color: rgba(143, 224, 215, .70);
 }
 body.in-desktop.glass-mode .quick-add-new-btn {
   color: rgba(232, 244, 252, .88);
@@ -5021,6 +5399,14 @@ body.in-desktop.glass-mode .form-hint,
 body.in-desktop.glass-mode .month-weekday,
 body.in-desktop.glass-mode .month-more,
 body.in-desktop.glass-mode .project-gantt-days,
+body.in-desktop.glass-mode .gantt-label-col,
+body.in-desktop.glass-mode .gantt-label-col-head {
+  color: #cfe0ea;
+}
+body.in-desktop.glass-mode .project-gantt-row-label.has-columns .gantt-label-col {
+  color: #e8f4ff;
+  opacity: 0.9;
+}
 body.in-desktop.glass-mode .project-gantt-label-header,
 body.in-desktop.glass-mode .gantt-legend,
 body.in-desktop.glass-mode .entry-task-option span,
@@ -5164,15 +5550,6 @@ body.in-desktop.glass-mode .header-more-menu .header-tools .soft-button {
 }
 body.in-desktop.glass-mode.desktop-locked .app-shell { opacity: .58; }
 /* Tabs stay underline-style in glass (do not re-box). */
-body.in-desktop.glass-mode .week-schedule-day h4 {
-  color: #f4fbff;
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid rgba(219, 238, 249, .18);
-  border-radius: 0;
-  box-shadow: none;
-  text-shadow: 0 1px 3px rgba(0,0,0,.90);
-}
 body.in-desktop.glass-mode .week-entry {
   color: #edf8fb;
   background: rgba(62,154,154,.22);
@@ -5184,16 +5561,6 @@ body.in-desktop.glass-mode .week-entry p { color: #d8e8ef; }
 body.in-desktop.glass-mode .week-entry.task-entry {
   background: rgba(91, 143, 190, .20);
   border-color: #8db9e7;
-}
-body.in-desktop.glass-mode .week-add-task {
-  color: #8fe0d7;
-  background: rgba(0,0,0,.28);
-  border-color: rgba(143,224,215,.38);
-  text-shadow: 0 1px 3px rgba(0,0,0,.78);
-}
-body.in-desktop.glass-mode .week-add-task:hover {
-  background: rgba(143,224,215,.14);
-  border-color: rgba(143,224,215,.70);
 }
 body.in-desktop.glass-mode .deadline-pill,
 body.in-desktop.glass-mode .month-deadline-pill,
@@ -5262,7 +5629,9 @@ body.in-desktop.glass-mode .task-trace-item strong {
 }
 body.in-desktop.glass-mode .schedule-month-cell header {
   color: #f4fbff;
-  text-shadow: 0 1px 3px rgba(0,0,0,.86);
+  text-shadow: none;
+  justify-content: center;
+  text-align: center;
 }
 body.in-desktop.glass-mode .holiday-badge {
   color: #ffe0c2;
@@ -5276,54 +5645,64 @@ body.in-desktop.glass-mode .holiday-badge.workday {
   border-color: rgba(180, 223, 249, .22);
 }
 body.in-desktop.glass-mode .schedule-month-cell.today {
-  border-color: rgba(143, 224, 215, .95);
-  box-shadow:
-    0 0 0 1px rgba(143,224,215,.46),
-    0 0 22px rgba(143,224,215,.28),
-    inset 0 0 0 1px rgba(255,255,255,.08);
+  box-shadow: inset 2px 0 0 rgba(143,224,215,.82);
+  background: rgba(101, 180, 177, .08);
 }
 body.in-desktop.glass-mode .schedule-month-cell.today header span:first-child {
   color: #02242b;
   background: #8fe0d7;
   text-shadow: none;
-  box-shadow: 0 0 16px rgba(143,224,215,.48);
+  box-shadow: none;
 }
 body.in-desktop.glass-mode .schedule-month-weekdays {
-  background: rgba(6, 16, 28, .92);
-  box-shadow: 0 10px 14px -10px rgba(0, 0, 0, .55);
+  background: rgba(8, 22, 36, .78);
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  box-shadow: none;
+  border-bottom-color: rgba(172, 211, 233, .22);
 }
 body.in-desktop.glass-mode .schedule-month-weekday {
   color: #d8e8ef;
-  background: rgba(8, 22, 36, .88);
-  border-color: rgba(219,238,249,.34);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
-  text-shadow: 0 1px 3px rgba(0,0,0,.86);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid rgba(172, 211, 233, .14);
+  box-shadow: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .4);
 }
 body.in-desktop.glass-mode .schedule-month-item {
   color: #edf8fb;
-  background: rgba(62,154,154,.24);
-  text-shadow: 0 1px 3px rgba(0,0,0,.70);
+  background: transparent;
+  border: 0;
+  border-left: 2px solid rgba(143, 224, 215, 0.55);
+  text-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 body.in-desktop.glass-mode .schedule-month-item.task-entry {
   color: #e8f4ff;
-  background: rgba(91,143,190,.24);
+  background: transparent;
+  border-left-color: rgba(141, 185, 231, 0.65);
 }
 body.in-desktop.glass-mode .schedule-entry {
   color: #f3f8fb;
-  text-shadow: 0 1px 3px rgba(0,0,0,.72);
-  /* Do not rely on possibly-stale light --entry-bg from pre-glass paint. */
-  background: color-mix(in srgb, var(--entry, #76c4b8) 42%, rgba(8, 18, 28, 0.9));
-  border-left-color: var(--entry, #76c4b8);
+  text-shadow: none;
+  background: color-mix(in srgb, var(--entry, #76c4b8) 36%, rgba(8, 18, 28, 0.42));
+  border: 0;
+  border-left: 2px solid var(--entry, #76c4b8);
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
-body.in-desktop.glass-mode .schedule-entry.sage { --entry: #76c4b8; --entry-bg: rgba(43,112,106,.46); }
-body.in-desktop.glass-mode .schedule-entry.blue { --entry: #8db9e7; --entry-bg: rgba(40,84,122,.46); }
-body.in-desktop.glass-mode .schedule-entry.amber { --entry: #e0b56a; --entry-bg: rgba(118,78,28,.46); }
-body.in-desktop.glass-mode .schedule-entry.rose { --entry: #e09aa0; --entry-bg: rgba(118,52,58,.46); }
-body.in-desktop.glass-mode .schedule-entry.violet { --entry: #b5a8e0; --entry-bg: rgba(72,60,118,.46); }
+body.in-desktop.glass-mode .schedule-entry.sage { --entry: #76c4b8; --entry-bg: rgba(43,112,106,.42); }
+body.in-desktop.glass-mode .schedule-entry.blue { --entry: #8db9e7; --entry-bg: rgba(40,84,122,.42); }
+body.in-desktop.glass-mode .schedule-entry.amber { --entry: #e0b56a; --entry-bg: rgba(118,78,28,.42); }
+body.in-desktop.glass-mode .schedule-entry.rose { --entry: #e09aa0; --entry-bg: rgba(118,52,58,.42); }
+body.in-desktop.glass-mode .schedule-entry.violet { --entry: #b5a8e0; --entry-bg: rgba(72,60,118,.42); }
 body.in-desktop.glass-mode .schedule-entry.is-overlap {
   mix-blend-mode: normal;
-  background: color-mix(in srgb, var(--entry, #76c4b8) 34%, rgba(8, 18, 28, 0.78));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--entry, #76c4b8) 35%, transparent);
+  background: color-mix(in srgb, var(--entry, #76c4b8) 36%, rgba(8, 18, 28, 0.48));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--entry, #76c4b8) 34%, transparent);
 }
 body.in-desktop.glass-mode .schedule-entry span,
 body.in-desktop.glass-mode .schedule-entry p,
@@ -5338,7 +5717,19 @@ body.in-desktop.glass-mode .time-slot { border-color: rgba(190,218,234,.40); }
 body.in-desktop.glass-mode .progress-track,
 body.in-desktop.glass-mode .task-progress-track { background: rgba(205,226,236,.18); }
 body.in-desktop.glass-mode .project-gantt-header-split {
-  background: rgba(6, 16, 28, .92);
+  background: rgba(8, 22, 36, .78);
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  border: 0;
+  border-bottom: 1px solid rgba(172, 211, 233, .22);
+}
+body.in-desktop.glass-mode .project-gantt-resize-handle::before {
+  background: rgba(172, 211, 233, .34);
+}
+body.in-desktop.glass-mode .project-gantt-resize-handle:hover::before,
+body.in-desktop.glass-mode .project-gantt-resize-handle:focus-visible::before,
+body.in-desktop.glass-mode .project-gantt-resize-handle.is-dragging::before {
+  background: #8fe0d7;
 }
 body.in-desktop.glass-mode .project-card,
 body.in-desktop.glass-mode .project-gantt-chrome,
@@ -5348,15 +5739,16 @@ body.in-desktop.glass-mode .project-gantt-toolbar {
 }
 body.in-desktop.glass-mode .project-gantt-days,
 body.in-desktop.glass-mode .project-gantt-label-header {
-  background: rgba(8, 22, 36, .88);
-  border-color: rgba(172,211,233,.32);
+  background: transparent;
+  border: 0;
+  outline: none;
 }
-body.in-desktop.glass-mode .project-gantt-days {
-  outline-color: rgba(172,211,233,.32);
+body.in-desktop.glass-mode .project-gantt-days-viewport {
+  background: transparent;
 }
 body.in-desktop.glass-mode .project-gantt-days > span,
 body.in-desktop.glass-mode .gantt-holiday-lane > i {
-  border-right-color: rgba(172, 211, 233, 0.12);
+  border-right-color: transparent;
 }
 body.in-desktop.glass-mode .project-gantt-label-pane,
 body.in-desktop.glass-mode .project-gantt-group-heading {
@@ -5416,40 +5808,80 @@ body.in-desktop.glass-mode .project-gantt-resize-handle.is-dragging::before {
   background: rgba(143, 224, 215, .95);
 }
 body.in-desktop.glass-mode .project-gantt-lane i.gantt-span-track {
-  background: rgba(0, 10, 18, .40);
-  border-color: rgba(255,255,255,.10);
+  background: rgba(220, 236, 248, 0.10);
+  border-color: rgba(220, 236, 248, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
-body.in-desktop.glass-mode .project-gantt-lane i.gantt-progress-fill { background: rgba(0, 10, 18, .20); }
-body.in-desktop.glass-mode .project-gantt-lane i.gantt-meeting-bar { background: var(--entry, #c9923a); }
+body.in-desktop.glass-mode .project-gantt-lane i.gantt-progress-fill {
+  display: none;
+}
+body.in-desktop.glass-mode .project-gantt-lane i.gantt-meeting-bar {
+  background: color-mix(in srgb, #c9923a 90%, transparent);
+  border: 0;
+  box-shadow: none;
+}
 body.in-desktop.glass-mode .gantt-legend i.legend-meeting { background: #c9923a; }
-body.in-desktop.glass-mode .project-gantt-lane i.gantt-actual-bar { background: var(--entry, #4f8fd6); }
+body.in-desktop.glass-mode .project-gantt-lane i.gantt-actual-bar {
+  background: color-mix(in srgb, var(--entry, #4f8fd6) 88%, transparent);
+  border: 0;
+  box-shadow: none;
+}
+body.in-desktop.glass-mode .project-gantt-days {
+  background: transparent;
+  outline: none;
+}
+body.in-desktop.glass-mode .project-gantt-days-track {
+  background: transparent;
+}
 body.in-desktop.glass-mode .gantt-legend { color: #cfe0ea; }
-body.in-desktop.glass-mode .gantt-legend i.legend-start {
-  border-color: transparent transparent transparent #52c97a;
+body.in-desktop.glass-mode .gantt-legend i.legend-end,
+body.in-desktop.glass-mode .project-gantt-lane u.gantt-end-marker.is-ontime::after { color: #c5ced6; background: none; }
+body.in-desktop.glass-mode .project-gantt-lane u.gantt-end-marker.is-late::after { color: #ff7a7a; background: none; }
+body.in-desktop.glass-mode .gantt-legend i.legend-cutoff,
+body.in-desktop.glass-mode .project-gantt-lane u.gantt-cutoff-flag {
+  border-left-color: #f0d06a;
   background: none;
 }
-body.in-desktop.glass-mode .project-gantt-lane u.gantt-start-marker::after {
-  border-color: transparent transparent transparent #52c97a;
-}
-body.in-desktop.glass-mode .gantt-legend i.legend-end,
-body.in-desktop.glass-mode .project-gantt-lane u.gantt-end-marker::after { color: #ff7a7a; background: none; }
-body.in-desktop.glass-mode .gantt-legend i.legend-cutoff,
-body.in-desktop.glass-mode .project-gantt-lane u.gantt-cutoff-flag::after { color: #f0d06a; background: none; }
 body.in-desktop.glass-mode .gantt-legend i.legend-today,
-body.in-desktop.glass-mode .project-gantt-days u.gantt-today-line,
 body.in-desktop.glass-mode .project-gantt-chart-track > u.gantt-today-line.is-chart {
-  border-left-color: #60a5fa;
+  background: transparent;
+  border-left-color: rgba(226, 232, 240, 0.78);
 }
-body.in-desktop.glass-mode .project-gantt-days span.is-today { color: #93c5fd; }
+body.in-desktop.glass-mode .project-gantt-days u.gantt-today-dot {
+  background: rgba(226, 232, 240, 0.92);
+  border-left-color: transparent;
+}
+body.in-desktop.glass-mode .project-gantt-days span.is-today { color: #e2e8f0; }
+body.in-desktop.glass-mode .gantt-status-mark.is-ontime { color: #8fd9a8; }
+body.in-desktop.glass-mode .gantt-status-mark.is-late,
+body.in-desktop.glass-mode .gantt-status-mark.is-overdue { color: #ff8a8a; }
+body.in-desktop.glass-mode .gantt-status-mark.is-active { color: #8ec8f5; }
+body.in-desktop.glass-mode .gantt-status-mark.is-idle { color: #a8b4be; }
 body.in-desktop.glass-mode .project-gantt-days span.is-holiday,
 body.in-desktop.glass-mode .gantt-holiday-lane i.is-holiday {
   background: rgba(148, 163, 184, 0.16);
 }
+body.in-desktop.glass-mode .project-gantt-days.scale-week span.is-holiday,
+body.in-desktop.glass-mode .project-gantt-days.scale-month span.is-holiday,
+body.in-desktop.glass-mode .project-gantt-chart-pane.scale-week .gantt-holiday-lane i.is-holiday,
+body.in-desktop.glass-mode .project-gantt-chart-pane.scale-month .gantt-holiday-lane i.is-holiday {
+  background: transparent;
+}
 body.in-desktop.glass-mode .project-gantt-days span.is-today { color: #ff8a6a; }
+body.in-desktop.glass-mode .schedule-month-calendar {
+  border: 0;
+}
+body.in-desktop.glass-mode .schedule-month-weekday:last-child {
+  border-right: 0;
+}
 body.in-desktop.glass-mode .schedule-month-cell {
-  border-color: rgba(172,211,233,.22);
+  border-right: 1px solid rgba(172, 211, 233, .16);
+  border-bottom: 1px solid rgba(172, 211, 233, .16);
   background: transparent;
   box-shadow: none;
+}
+body.in-desktop.glass-mode .schedule-month-cell:nth-child(7n) {
+  border-right: 0;
 }
 body.in-desktop.glass-mode .schedule-month-cell.weekend {
   background: rgba(255, 255, 255, .03);
@@ -5464,10 +5896,6 @@ body.in-desktop.glass-mode .month-add-task {
 body.in-desktop.glass-mode .month-add-task:hover {
   border-color: #fff;
   color: #fff;
-}
-body.in-desktop.glass-mode .schedule-month-cell.today {
-  border-color: rgba(143,224,215,.60);
-  box-shadow: inset 3px 0 0 rgba(143,224,215,.82);
 }
 body.in-desktop.glass-mode .month-task-line { color: #f1f8fb; }
 body.in-desktop.glass-mode .month-task-line b { color: #72e1c9; }

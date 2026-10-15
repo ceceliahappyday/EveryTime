@@ -169,9 +169,36 @@ assert.strictEqual(policy.progressSpan({
 
 assert.strictEqual(policy.shouldShowDueFlag("planned"), true);
 assert.strictEqual(policy.shouldShowDueFlag("in_progress"), true);
-assert.strictEqual(policy.shouldShowDueFlag("done"), false);
-assert.strictEqual(policy.shouldShowDueFlag("closed"), false);
+assert.strictEqual(policy.shouldShowDueFlag("done"), true);
+assert.strictEqual(policy.shouldShowDueFlag("closed"), true);
 assert.strictEqual(policy.shouldShowDueFlag("tracking"), true);
+
+// Single-track lifecycle: create → max(due, completed|today)
+assert.deepStrictEqual(policy.lifecycleRangeKeys({
+  createdDateKey: "2026-10-01",
+  plannedEndAt: "2026-10-10",
+  todayKey: "2026-10-08"
+}), { start: "2026-10-01", end: "2026-10-10" });
+assert.deepStrictEqual(policy.lifecycleRangeKeys({
+  createdDateKey: "2026-10-01",
+  plannedEndAt: "2026-10-10",
+  actualStartAt: "2026-10-03",
+  todayKey: "2026-10-12"
+}), { start: "2026-10-01", end: "2026-10-12" });
+assert.deepStrictEqual(policy.lifecycleRangeKeys({
+  createdDateKey: "2026-10-01",
+  plannedEndAt: "2026-10-10",
+  actualStartAt: "2026-10-03",
+  actualEndAt: "2026-10-15",
+  todayKey: "2026-10-20"
+}), { start: "2026-10-01", end: "2026-10-15" });
+assert.deepStrictEqual(policy.lifecycleRangeKeys({
+  createdDateKey: "2026-10-01",
+  plannedEndAt: "2026-10-20",
+  actualEndAt: "2026-10-12",
+  todayKey: "2026-10-20"
+}), { start: "2026-10-01", end: "2026-10-20" });
+assert.deepStrictEqual(policy.lifecycleRangeKeys({}), { start: "", end: "" });
 
 const addDays = (date, amount) => {
   const next = new Date(date);
@@ -206,7 +233,11 @@ assert.deepStrictEqual(policy.initialGanttWindow({
   getMonday,
   fromDateKey,
   toDateKey
-}), { startKey: "2026-07-31", endKey: "2026-08-30" });
+}), { startKey: "2026-08-01", endKey: "2026-08-31" });
+assert.strictEqual(
+  policy.axisLayout({ scale: "month", bucketCount: 31, viewportWidth: 600, minDayPx: 44 }).mode,
+  "scroll"
+);
 
 // Quarter = 12 week columns from Monday of the natural quarter.
 assert.deepStrictEqual(policy.initialGanttWindow({
@@ -289,14 +320,14 @@ assert.deepStrictEqual(policy.shiftGanttWindow({
 
 assert.deepStrictEqual(policy.shiftGanttWindow({
   scale: "month",
-  startKey: "2026-07-31",
-  endKey: "2026-08-30",
+  startKey: "2026-08-01",
+  endKey: "2026-08-31",
   direction: "past",
   visibleDayCount: 31,
   addDays,
   fromDateKey,
   toDateKey
-}), { startKey: "2026-06-30", endKey: "2026-07-30" });
+}), { startKey: "2026-07-01", endKey: "2026-07-31" });
 
 assert.deepStrictEqual(policy.shiftGanttWindow({
   scale: "year",

@@ -40,15 +40,21 @@ const report = await evaluate(`(async () => {
     const rows = [...document.querySelectorAll(".project-gantt-row")].slice(0, 8).map(row => ({
       title: row.querySelector(".project-gantt-title strong")?.textContent.replace(/\\s+/g, " ").trim().slice(0, 24),
       progress: row.querySelector(".gantt-progress-pct")?.textContent.trim() || "",
-      fill: row.querySelector(".gantt-progress-fill")?.style.width || "",
+      span: row.querySelector(".gantt-span-track")?.style.width || "",
       segments: [...row.querySelectorAll(".gantt-actual-bar")].map(bar => ({
         left: bar.style.left,
         width: bar.style.width,
         title: bar.title
       })),
-      start: row.querySelector(".gantt-start-marker")?.title || "",
+      meetings: [...row.querySelectorAll(".gantt-meeting-bar")].map(bar => ({
+        left: bar.style.left,
+        width: bar.style.width,
+        title: bar.title
+      })),
+      startTick: row.querySelector(".gantt-start-tick")?.title || "",
       end: row.querySelector(".gantt-end-marker")?.title || "",
-      cutoff: row.querySelector(".gantt-cutoff-flag")?.title || ""
+      cutoff: row.querySelector(".gantt-cutoff-flag")?.title || "",
+      status: row.querySelector(".gantt-status-mark")?.textContent.trim() || ""
     }));
     return { scale, buckets: document.querySelectorAll(".project-gantt-days span").length, rows };
   };

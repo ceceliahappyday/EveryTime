@@ -100,16 +100,16 @@
     return `#${[r, g, b].map(n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
   }
 
-  /** 日程块浅底：约 18% 色 + 82% 白 */
+  /** 日程块浅底：约 24% 色 + 76% 白 */
   function softBackground(hex) {
     const { r, g, b } = hexToRgb(hex);
-    const mix = channel => channel * 0.18 + 255 * 0.82;
+    const mix = channel => channel * 0.24 + 255 * 0.76;
     return rgbToHex(mix(r), mix(g), mix(b));
   }
 
   function glassBackground(hex) {
     const { r, g, b } = hexToRgb(hex);
-    return `rgba(${r},${g},${b},0.46)`;
+    return `rgba(${r},${g},${b},0.58)`;
   }
 
   function colorTokens(color, { glass = false } = {}) {

@@ -72,6 +72,15 @@ const state = {
   ganttArrangePreview: null,
   ganttArrangeAbort: null,
   ganttArrangeKeepOpen: false,
+  ganttViewPreview: null,
+  ganttFilterKeepOpen: false,
+  ganttColumnsKeepOpen: false,
+  ganttSettingsKeepOpen: false,
+  ganttColFilterKeepOpen: "",
+  ganttFilterAbort: null,
+  ganttColumnsAbort: null,
+  ganttSettingsAbort: null,
+  ganttColFilterAbort: null,
   projectCollapsedSections: new Set(),
   projectCollapsedTasks: new Set(),
   todoCollapsedSections: new Set(),
@@ -3923,9 +3932,15 @@ function shiftProjectGanttWindow(direction = "future") {
   });
   state.projectWindowStart = shifted.startKey;
   state.projectWindowEnd = shifted.endKey;
-  state.projectAnchorDate = state.projectScale === "year"
-    ? `${shifted.startKey}-01`
-    : shifted.startKey;
+  if (state.projectScale === "year") {
+    state.projectAnchorDate = `${shifted.startKey}-01`;
+  } else if (state.projectScale === "month") {
+    // Anchor mid-month so the full calendar month window stays stable.
+    const mid = addDays(fromDateKey(shifted.startKey), 14);
+    state.projectAnchorDate = toDateKey(mid);
+  } else {
+    state.projectAnchorDate = shifted.startKey;
+  }
   state.projectViewNeedsAnchor = false;
   state.projectScrollLeft = 0;
   renderSchedule();
@@ -5597,6 +5612,61 @@ function clearProjectGanttChrome() {
   el.projectGanttChrome.classList.add("hidden");
 }
 
+function mountProjectGanttToolbar(statusProjects = [], ganttView = getGanttViewConfig()) {
+  const toolbar = document.createElement("div");
+  toolbar.className = "project-gantt-toolbar";
+  toolbar.innerHTML = `<div class="project-gantt-toolbar-main">
+      <strong>甘特粒度</strong>
+      <div class="project-scale-switcher">
+        <button type="button" data-scale="day">日</button>
+        <button type="button" data-scale="week">周</button>
+        <button type="button" data-scale="month">月</button>
+        <button type="button" data-scale="quarter">季</button>
+        <button type="button" data-scale="year">年</button>
+      </div>
+      <div class="gantt-period-nav" role="group" aria-label="时间窗口">
+        <button type="button" class="gantt-period-button" data-period="past" title="${escapeHtml(ganttAxisNavTitle(state.projectScale, "past"))}">‹</button>
+        <button type="button" class="gantt-period-button is-today" data-period="today" title="回到今天">今天</button>
+        <button type="button" class="gantt-period-button" data-period="future" title="${escapeHtml(ganttAxisNavTitle(state.projectScale, "future"))}">›</button>
+      </div>
+    </div>
+    <div class="gantt-legend">
+      <span><i class="legend-span"></i>起止区间</span>
+      <span><i class="legend-invested"></i>实际投入</span>
+      <span><i class="legend-meeting"></i>会议投入</span>
+      <span><i class="legend-end"></i>结束</span>
+      <span><i class="legend-cutoff"></i>目标截止</span>
+      <span><i class="legend-today"></i>今天</span>
+    </div>`;
+  toolbar.querySelectorAll(".project-scale-switcher button").forEach(button => {
+    button.classList.toggle("active", button.dataset.scale === state.projectScale);
+    button.addEventListener("click", () => {
+      state.projectScale = button.dataset.scale;
+      state.projectAnchorDate = toDateKey(new Date());
+      state.projectViewNeedsAnchor = true;
+      state.projectWindowStart = null;
+      state.projectWindowEnd = null;
+      state.projectGanttLastExtend = null;
+      state.projectScrollLeft = 0;
+      renderSchedule();
+    });
+  });
+  toolbar.querySelectorAll("[data-period]").forEach(button => {
+    button.addEventListener("click", () => {
+      if (button.dataset.period === "today") jumpProjectGanttToToday();
+      else shiftProjectGanttWindow(button.dataset.period === "past" ? "past" : "future");
+    });
+  });
+  bindGanttFilterPanel(toolbar, statusProjects, ganttView);
+  bindGanttColumnsPanel(toolbar, ganttView);
+  bindGanttSettingsPanel(toolbar, ganttView);
+  bindGanttArrangePanel(toolbar);
+  el.projectGanttChrome.innerHTML = "";
+  el.projectGanttChrome.appendChild(toolbar);
+  el.projectGanttChrome.classList.remove("hidden");
+  return toolbar;
+}
+
 function renderSchedule() {
   el.timeline.className = "timeline";
   // Week view sets an inline column count; clear it so day/month/project regain CSS layout.
@@ -5861,33 +5931,144 @@ function buildGanttArrangeSections(projects, meetings = []) {
 }
 
 function bindGanttFilterPanel(toolbar, projects = [], ganttView = getGanttViewConfig()) {
+  if (state.ganttFilterAbort) state.ganttFilterAbort.abort();
+  state.ganttFilterAbort = new AbortController();
+  const { signal } = state.ganttFilterAbort;
   document.querySelectorAll("body > .gantt-filter-panel").forEach(node => node.remove());
-  const owners = typeof GanttViewPolicy?.collectOwners === "function"
-    ? GanttViewPolicy.collectOwners(
-      projects.flatMap(project => [project.parent, ...(project.children || [])]),
-      TaskOptionPolicy?.splitOwnerMembers
-    )
-    : [];
-  const selected = new Set(ganttView.ownerFilter || []);
+  const keepOpen = Boolean(state.ganttFilterKeepOpen);
+  state.ganttFilterKeepOpen = false;
+  const draftSource = keepOpen && state.ganttViewPreview ? state.ganttViewPreview : getSavedGanttViewConfig();
+  const investedOnly = Boolean(draftSource.investedOnly);
+  const showMeetings = draftSource.showMeetings !== false;
+  let activeCount = 0;
+  if (Boolean(ganttView.investedOnly)) activeCount += 1;
+  if (ganttView.showMeetings === false) activeCount += 1;
   const wrap = document.createElement("div");
   wrap.className = "gantt-arrange-wrap gantt-filter-wrap";
   wrap.innerHTML = `
-    <button type="button" class="gantt-arrange-button" aria-expanded="false" aria-haspopup="true">筛选${selected.size ? ` · ${selected.size}` : ""}</button>
+    <button type="button" class="gantt-arrange-button" aria-expanded="false" aria-haspopup="true">筛选${activeCount ? ` · ${activeCount}` : ""}</button>
     <div class="gantt-arrange-panel gantt-filter-panel" hidden>
-      <strong>按责任人员筛选</strong>
-      <p class="form-hint">不勾选表示显示全部。会议行始终显示。</p>
-      <ul class="gantt-filter-list">
-        ${owners.length
-    ? owners.map(name => `<li><label><input type="checkbox" data-owner="${escapeHtml(name)}" ${selected.has(name) ? "checked" : ""}/> ${escapeHtml(name)}</label></li>`).join("")
-    : `<li class="form-hint">暂无责任人员</li>`}
-      </ul>
+      <strong>时间与会议</strong>
+      <p class="form-hint">状态 / 分类 / 责任人 / 优先级请在「显示列」开启后，于左侧列头筛选。</p>
+      <label class="checkbox-setting gantt-filter-invested">
+        <input type="checkbox" data-invested-only ${investedOnly ? "checked" : ""}/>
+        <span>仅显示当前窗口内有投入时间的任务</span>
+      </label>
+      <label class="checkbox-setting">
+        <input type="checkbox" data-show-meetings ${showMeetings ? "checked" : ""}/>
+        <span>显示会议行</span>
+      </label>
       <div class="gantt-arrange-actions">
-        <button type="button" class="soft-button" data-filter-clear>清空</button>
+        <button type="button" class="soft-button" data-filter-clear>恢复默认</button>
         <button type="button" class="primary-button" data-filter-apply>应用</button>
       </div>
     </div>`;
   const button = wrap.querySelector(".gantt-arrange-button");
   const panel = wrap.querySelector(".gantt-filter-panel");
+  const positionPanel = () => {
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(320, Math.max(260, window.innerWidth - 24));
+    let left = Math.min(Math.round(rect.left), Math.max(8, window.innerWidth - width - 8));
+    panel.style.position = "fixed";
+    panel.style.left = `${left}px`;
+    panel.style.top = `${Math.round(rect.bottom + 6)}px`;
+    panel.style.width = `${width}px`;
+    panel.style.zIndex = "6000";
+  };
+  const closePanel = () => {
+    panel.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    if (panel.parentElement === document.body) wrap.appendChild(panel);
+  };
+  const showPanel = () => {
+    document.body.appendChild(panel);
+    panel.hidden = false;
+    positionPanel();
+    button.setAttribute("aria-expanded", "true");
+  };
+  const readDraft = () => ({
+    investedOnly: Boolean(panel.querySelector("[data-invested-only]")?.checked),
+    showMeetings: Boolean(panel.querySelector("[data-show-meetings]")?.checked)
+  });
+  const previewFromPanel = () => {
+    state.ganttFilterKeepOpen = true;
+    previewGanttViewConfig(readDraft());
+  };
+  const discardAndClose = () => {
+    closePanel();
+    discardGanttViewPreview();
+  };
+  const applyDraft = () => {
+    state.ganttFilterKeepOpen = false;
+    commitGanttViewPreview(readDraft());
+    closePanel();
+    renderSchedule();
+  };
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    if (panel.hidden) showPanel();
+    else discardAndClose();
+  }, { signal });
+  panel.querySelector("[data-filter-clear]")?.addEventListener("click", () => {
+    const invested = panel.querySelector("[data-invested-only]");
+    if (invested) invested.checked = false;
+    const meetings = panel.querySelector("[data-show-meetings]");
+    if (meetings) meetings.checked = true;
+    previewFromPanel();
+  }, { signal });
+  panel.querySelector("[data-filter-apply]")?.addEventListener("click", () => {
+    applyDraft();
+  }, { signal });
+  panel.addEventListener("change", event => {
+    if (!event.target.closest("[data-invested-only], [data-show-meetings]")) return;
+    previewFromPanel();
+  }, { signal });
+  document.addEventListener("pointerdown", event => {
+    if (panel.hidden || !panel.isConnected) return;
+    if (panel.contains(event.target) || button.contains(event.target)) return;
+    discardAndClose();
+  }, { capture: true, signal });
+  toolbar.querySelector(".project-gantt-toolbar-main")?.appendChild(wrap);
+  if (keepOpen) requestAnimationFrame(() => showPanel());
+}
+
+function bindGanttColumnsPanel(toolbar, ganttView = getGanttViewConfig()) {
+  if (state.ganttColumnsAbort) state.ganttColumnsAbort.abort();
+  state.ganttColumnsAbort = new AbortController();
+  const { signal } = state.ganttColumnsAbort;
+  document.querySelectorAll("body > .gantt-columns-panel").forEach(node => node.remove());
+  const keepOpen = Boolean(state.ganttColumnsKeepOpen);
+  state.ganttColumnsKeepOpen = false;
+  const columnOptions = GanttViewPolicy?.LABEL_COLUMN_OPTIONS || [
+    { id: "status", label: "状态" },
+    { id: "priority", label: "优先级" },
+    { id: "owner", label: "责任人" },
+    { id: "category", label: "分类" }
+  ];
+  const draftSource = keepOpen && state.ganttViewPreview ? state.ganttViewPreview : getSavedGanttViewConfig();
+  const columns = typeof GanttViewPolicy?.normalizeLabelColumns === "function"
+    ? GanttViewPolicy.normalizeLabelColumns(draftSource.labelColumns)
+    : { status: false, priority: false, owner: false, category: false };
+  const activeCount = typeof GanttViewPolicy?.activeLabelColumnCount === "function"
+    ? GanttViewPolicy.activeLabelColumnCount(ganttView)
+    : columnOptions.filter(item => columns[item.id]).length;
+  const wrap = document.createElement("div");
+  wrap.className = "gantt-arrange-wrap gantt-columns-wrap";
+  wrap.innerHTML = `
+    <button type="button" class="gantt-arrange-button" aria-expanded="false" aria-haspopup="true">显示列${activeCount ? ` · ${activeCount}` : ""}</button>
+    <div class="gantt-arrange-panel gantt-columns-panel" hidden>
+      <strong>左侧显示列</strong>
+      <p class="form-hint">勾选后即时预览；点「应用」才保存，关闭未应用则恢复。</p>
+      <ul class="gantt-filter-list gantt-filter-inline">
+        ${columnOptions.map(item => `<li><label><input type="checkbox" data-label-column="${escapeHtml(item.id)}" ${columns[item.id] ? "checked" : ""}/> ${escapeHtml(item.label)}</label></li>`).join("")}
+      </ul>
+      <div class="gantt-arrange-actions">
+        <button type="button" class="soft-button" data-columns-clear>仅任务名</button>
+        <button type="button" class="primary-button" data-columns-apply>应用</button>
+      </div>
+    </div>`;
+  const button = wrap.querySelector(".gantt-arrange-button");
+  const panel = wrap.querySelector(".gantt-columns-panel");
   const positionPanel = () => {
     const rect = button.getBoundingClientRect();
     const width = Math.min(300, Math.max(240, window.innerWidth - 24));
@@ -5903,34 +6084,225 @@ function bindGanttFilterPanel(toolbar, projects = [], ganttView = getGanttViewCo
     button.setAttribute("aria-expanded", "false");
     if (panel.parentElement === document.body) wrap.appendChild(panel);
   };
-  button.addEventListener("click", event => {
-    event.stopPropagation();
-    if (panel.hidden) {
-      document.body.appendChild(panel);
-      panel.hidden = false;
-      positionPanel();
-      button.setAttribute("aria-expanded", "true");
-    } else closePanel();
-  });
-  panel.querySelector("[data-filter-clear]")?.addEventListener("click", () => {
-    panel.querySelectorAll("[data-owner]").forEach(input => { input.checked = false; });
-  });
-  panel.querySelector("[data-filter-apply]")?.addEventListener("click", () => {
-    const ownerFilter = [...panel.querySelectorAll("[data-owner]:checked")].map(input => input.dataset.owner);
-    saveGanttViewConfig({ ownerFilter });
+  const showPanel = () => {
+    document.body.appendChild(panel);
+    panel.hidden = false;
+    positionPanel();
+    button.setAttribute("aria-expanded", "true");
+  };
+  const readColumns = () => {
+    const next = { status: false, priority: false, owner: false, category: false };
+    panel.querySelectorAll("[data-label-column]:checked").forEach(input => {
+      if (input.dataset.labelColumn in next) next[input.dataset.labelColumn] = true;
+    });
+    return next;
+  };
+  const buildColumnsPatch = (next) => {
+    const base = state.ganttViewPreview || getSavedGanttViewConfig();
+    const prevCols = typeof GanttViewPolicy?.normalizeLabelColumns === "function"
+      ? GanttViewPolicy.normalizeLabelColumns(base.labelColumns)
+      : {};
+    const patch = { labelColumns: next };
+    if (!next.status) patch.statusFilter = [];
+    else if (!prevCols.status && next.status && !(base.statusFilter || []).length) {
+      patch.statusFilter = [...(GanttViewPolicy?.DEFAULT_STATUS_FILTER || ["planned", "in_progress"])];
+    }
+    if (!next.owner) patch.ownerFilter = [];
+    if (!next.category) patch.categoryFilter = [];
+    if (!next.priority) patch.priorityFilter = [];
+    return patch;
+  };
+  const previewFromPanel = () => {
+    state.ganttColumnsKeepOpen = true;
+    previewGanttViewConfig(buildColumnsPatch(readColumns()));
+  };
+  const discardAndClose = () => {
+    closePanel();
+    discardGanttViewPreview();
+  };
+  const applyDraft = () => {
+    state.ganttColumnsKeepOpen = false;
+    commitGanttViewPreview(buildColumnsPatch(readColumns()));
     closePanel();
     renderSchedule();
-  });
-  document.addEventListener("click", event => {
-    if (panel.hidden) return;
+  };
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    if (panel.hidden) showPanel();
+    else discardAndClose();
+  }, { signal });
+  panel.querySelector("[data-columns-clear]")?.addEventListener("click", () => {
+    panel.querySelectorAll("[data-label-column]").forEach(input => { input.checked = false; });
+    previewFromPanel();
+  }, { signal });
+  panel.querySelector("[data-columns-apply]")?.addEventListener("click", () => {
+    applyDraft();
+  }, { signal });
+  panel.addEventListener("change", event => {
+    if (!event.target.closest("[data-label-column]")) return;
+    previewFromPanel();
+  }, { signal });
+  document.addEventListener("pointerdown", event => {
+    if (panel.hidden || !panel.isConnected) return;
     if (panel.contains(event.target) || button.contains(event.target)) return;
-    closePanel();
-  }, true);
+    discardAndClose();
+  }, { capture: true, signal });
   toolbar.querySelector(".project-gantt-toolbar-main")?.appendChild(wrap);
+  if (keepOpen) requestAnimationFrame(() => showPanel());
+}
+
+function ganttColumnFilterOptions(columnId, projects = []) {
+  if (columnId === "status") {
+    return (GanttViewPolicy?.STATUS_FILTER_OPTIONS || []).map(item => ({ id: item.id, label: item.label }));
+  }
+  if (columnId === "priority") {
+    return (GanttViewPolicy?.PRIORITY_FILTER_OPTIONS || []).map(item => ({ id: item.id, label: item.label }));
+  }
+  if (columnId === "category") {
+    const categories = typeof TaskCategoryPolicy?.listCategories === "function"
+      ? TaskCategoryPolicy.listCategories().filter(item => item.id !== "meeting")
+      : [];
+    return categories.map(item => ({ id: item.id, label: item.label }));
+  }
+  if (columnId === "owner") {
+    const allTasks = projects.flatMap(project => [project.parent, ...(project.children || [])]);
+    const owners = typeof GanttViewPolicy?.collectOwners === "function"
+      ? GanttViewPolicy.collectOwners(allTasks, TaskOptionPolicy?.splitOwnerMembers)
+      : [];
+    return owners.map(name => ({ id: name, label: name }));
+  }
+  return [];
+}
+
+function ganttColumnSelectedFilterIds(columnId, ganttView = getGanttViewConfig()) {
+  if (columnId === "status") return [...(ganttView.statusFilter || [])];
+  if (columnId === "priority") return [...(ganttView.priorityFilter || [])];
+  if (columnId === "category") return [...(ganttView.categoryFilter || [])];
+  if (columnId === "owner") return [...(ganttView.ownerFilter || [])];
+  return [];
+}
+
+function bindGanttLabelColumnFilters(labelHeader, projects = [], ganttView = getGanttViewConfig()) {
+  document.querySelectorAll("body > .gantt-col-filter-panel").forEach(node => node.remove());
+  const reopenId = String(state.ganttColFilterKeepOpen || "");
+  state.ganttColFilterKeepOpen = "";
+  labelHeader.querySelectorAll(".gantt-label-col-head[data-label-column]").forEach(head => {
+    const columnId = head.dataset.labelColumn;
+    const label = head.textContent.trim();
+    const active = typeof GanttViewPolicy?.columnFilterActiveCount === "function"
+      ? GanttViewPolicy.columnFilterActiveCount(ganttView, columnId)
+      : 0;
+    head.classList.add("is-filterable");
+    head.innerHTML = `<button type="button" class="gantt-col-filter-btn${active ? " is-active" : ""}" data-col-filter="${escapeHtml(columnId)}" title="筛选${escapeHtml(label)}">
+      <span>${escapeHtml(label)}</span>
+      <i aria-hidden="true">${active ? "▾" : "▾"}</i>
+    </button>`;
+    const button = head.querySelector(".gantt-col-filter-btn");
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      openGanttColumnFilterPanel(button, columnId, projects, ganttView);
+    });
+  });
+  if (reopenId) {
+    const button = labelHeader.querySelector(`[data-col-filter="${reopenId}"]`);
+    if (button) {
+      requestAnimationFrame(() => openGanttColumnFilterPanel(button, reopenId, projects, getGanttViewConfig()));
+    }
+  }
+}
+
+function openGanttColumnFilterPanel(anchor, columnId, projects = [], ganttView = getGanttViewConfig()) {
+  if (state.ganttColFilterAbort) state.ganttColFilterAbort.abort();
+  state.ganttColFilterAbort = new AbortController();
+  const { signal } = state.ganttColFilterAbort;
+  document.querySelectorAll("body > .gantt-col-filter-panel").forEach(node => node.remove());
+  const options = ganttColumnFilterOptions(columnId, projects);
+  const selected = new Set(ganttColumnSelectedFilterIds(columnId, ganttView));
+  const panel = document.createElement("div");
+  panel.className = "gantt-arrange-panel gantt-col-filter-panel";
+  panel.innerHTML = `
+    <strong>筛选${escapeHtml((GanttViewPolicy?.LABEL_COLUMN_OPTIONS || []).find(item => item.id === columnId)?.label || "")}</strong>
+    <ul class="gantt-filter-list">
+      ${options.length
+    ? options.map(item => `<li><label><input type="checkbox" data-filter-id="${escapeHtml(item.id)}" ${selected.has(item.id) ? "checked" : ""}/> ${escapeHtml(item.label)}</label></li>`).join("")
+    : `<li class="form-hint">暂无可选项</li>`}
+    </ul>
+    <div class="gantt-arrange-actions">
+      <button type="button" class="soft-button" data-col-filter-clear>全部</button>
+      <button type="button" class="primary-button" data-col-filter-apply>应用</button>
+    </div>`;
+  document.body.appendChild(panel);
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.min(240, Math.max(180, window.innerWidth - 24));
+  panel.style.position = "fixed";
+  panel.style.width = `${width}px`;
+  panel.style.left = `${Math.min(Math.round(rect.left), Math.max(8, window.innerWidth - width - 8))}px`;
+  panel.style.top = `${Math.round(rect.bottom + 4)}px`;
+  panel.style.zIndex = "6100";
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    panel.remove();
+    if (state.ganttColFilterAbort) {
+      state.ganttColFilterAbort.abort();
+      state.ganttColFilterAbort = null;
+    }
+  };
+  const readIds = () => [...panel.querySelectorAll("[data-filter-id]:checked")].map(input => input.dataset.filterId);
+  const buildPatch = (ids) => {
+    const patch = {};
+    if (columnId === "status") patch.statusFilter = ids;
+    if (columnId === "priority") patch.priorityFilter = ids;
+    if (columnId === "category") patch.categoryFilter = ids;
+    if (columnId === "owner") patch.ownerFilter = ids;
+    return patch;
+  };
+  const previewFromPanel = () => {
+    state.ganttColFilterKeepOpen = columnId;
+    previewGanttViewConfig(buildPatch(readIds()));
+  };
+  const discardAndClose = () => {
+    close();
+    discardGanttViewPreview();
+  };
+  const applyDraft = () => {
+    state.ganttColFilterKeepOpen = "";
+    commitGanttViewPreview(buildPatch(readIds()));
+    close();
+    renderSchedule();
+  };
+  panel.querySelector("[data-col-filter-clear]")?.addEventListener("click", () => {
+    panel.querySelectorAll("[data-filter-id]").forEach(input => { input.checked = false; });
+    previewFromPanel();
+  }, { signal });
+  panel.querySelector("[data-col-filter-apply]")?.addEventListener("click", () => {
+    applyDraft();
+  }, { signal });
+  panel.addEventListener("change", event => {
+    if (!event.target.closest("[data-filter-id]")) return;
+    previewFromPanel();
+  }, { signal });
+  const onDoc = event => {
+    if (!panel.isConnected) return;
+    if (panel.contains(event.target) || anchor.contains(event.target)) return;
+    discardAndClose();
+  };
+  setTimeout(() => {
+    if (signal.aborted) return;
+    document.addEventListener("pointerdown", onDoc, { capture: true, signal });
+  }, 0);
 }
 
 function bindGanttSettingsPanel(toolbar, ganttView = getGanttViewConfig()) {
+  if (state.ganttSettingsAbort) state.ganttSettingsAbort.abort();
+  state.ganttSettingsAbort = new AbortController();
+  const { signal } = state.ganttSettingsAbort;
   document.querySelectorAll("body > .gantt-settings-panel").forEach(node => node.remove());
+  const keepOpen = Boolean(state.ganttSettingsKeepOpen);
+  state.ganttSettingsKeepOpen = false;
+  const draftSource = keepOpen && state.ganttViewPreview ? state.ganttViewPreview : getSavedGanttViewConfig();
   const modes = GanttViewPolicy?.HOLIDAY_MODES || [];
   const wrap = document.createElement("div");
   wrap.className = "gantt-arrange-wrap gantt-settings-wrap";
@@ -5940,14 +6312,14 @@ function bindGanttSettingsPanel(toolbar, ganttView = getGanttViewConfig()) {
       <strong>假期显示</strong>
       <label class="gantt-settings-field">模式
         <select data-holiday-mode>
-          ${modes.map(item => `<option value="${item.id}" ${item.id === ganttView.holidayMode ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}
+          ${modes.map(item => `<option value="${item.id}" ${item.id === draftSource.holidayMode ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}
         </select>
       </label>
       <label class="checkbox-setting">
-        <input type="checkbox" data-exclude-holidays ${ganttView.excludeHolidaysFromDays ? "checked" : ""}/>
+        <input type="checkbox" data-exclude-holidays ${draftSource.excludeHolidaysFromDays ? "checked" : ""}/>
         <span>计算天数时排除假期</span>
       </label>
-      <p class="form-hint">起点 / 终点与计划、实际投入逻辑保持不变。</p>
+      <p class="form-hint">勾选或切换后即时预览；点「应用」才保存。</p>
       <div class="gantt-arrange-actions">
         <button type="button" class="primary-button" data-settings-apply>应用</button>
       </div>
@@ -5969,29 +6341,49 @@ function bindGanttSettingsPanel(toolbar, ganttView = getGanttViewConfig()) {
     button.setAttribute("aria-expanded", "false");
     if (panel.parentElement === document.body) wrap.appendChild(panel);
   };
-  button.addEventListener("click", event => {
-    event.stopPropagation();
-    if (panel.hidden) {
-      document.body.appendChild(panel);
-      panel.hidden = false;
-      positionPanel();
-      button.setAttribute("aria-expanded", "true");
-    } else closePanel();
+  const showPanel = () => {
+    document.body.appendChild(panel);
+    panel.hidden = false;
+    positionPanel();
+    button.setAttribute("aria-expanded", "true");
+  };
+  const readDraft = () => ({
+    holidayMode: panel.querySelector("[data-holiday-mode]")?.value || "weekend_holiday",
+    excludeHolidaysFromDays: Boolean(panel.querySelector("[data-exclude-holidays]")?.checked)
   });
-  panel.querySelector("[data-settings-apply]")?.addEventListener("click", () => {
-    saveGanttViewConfig({
-      holidayMode: panel.querySelector("[data-holiday-mode]")?.value || "weekend_holiday",
-      excludeHolidaysFromDays: Boolean(panel.querySelector("[data-exclude-holidays]")?.checked)
-    });
+  const previewFromPanel = () => {
+    state.ganttSettingsKeepOpen = true;
+    previewGanttViewConfig(readDraft());
+  };
+  const discardAndClose = () => {
+    closePanel();
+    discardGanttViewPreview();
+  };
+  const applyDraft = () => {
+    state.ganttSettingsKeepOpen = false;
+    commitGanttViewPreview(readDraft());
     closePanel();
     renderSchedule();
-  });
-  document.addEventListener("click", event => {
-    if (panel.hidden) return;
+  };
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    if (panel.hidden) showPanel();
+    else discardAndClose();
+  }, { signal });
+  panel.querySelector("[data-settings-apply]")?.addEventListener("click", () => {
+    applyDraft();
+  }, { signal });
+  panel.addEventListener("change", event => {
+    if (!event.target.closest("[data-holiday-mode], [data-exclude-holidays]")) return;
+    previewFromPanel();
+  }, { signal });
+  document.addEventListener("pointerdown", event => {
+    if (panel.hidden || !panel.isConnected) return;
     if (panel.contains(event.target) || button.contains(event.target)) return;
-    closePanel();
-  }, true);
+    discardAndClose();
+  }, { capture: true, signal });
   toolbar.querySelector(".project-gantt-toolbar-main")?.appendChild(wrap);
+  if (keepOpen) requestAnimationFrame(() => showPanel());
 }
 
 function bindGanttArrangePanel(toolbar) {
@@ -5999,7 +6391,7 @@ function bindGanttArrangePanel(toolbar) {
   state.ganttArrangeAbort = new AbortController();
   const { signal } = state.ganttArrangeAbort;
   // 面板曾挂到 body，重绘时可能留下无监听的孤儿层（勿清筛选/设置面板）
-  document.querySelectorAll("body > .gantt-arrange-panel:not(.gantt-filter-panel):not(.gantt-settings-panel)")
+  document.querySelectorAll("body > .gantt-arrange-panel:not(.gantt-filter-panel):not(.gantt-settings-panel):not(.gantt-columns-panel)")
     .forEach(node => node.remove());
   const wrap = document.createElement("div");
   wrap.className = "gantt-arrange-wrap";
@@ -6011,7 +6403,7 @@ function bindGanttArrangePanel(toolbar) {
   wrap.innerHTML = `
     <button type="button" class="gantt-arrange-button" aria-expanded="false" aria-haspopup="true">排列</button>
     <div class="gantt-arrange-panel" hidden>
-      <strong>显示字段（可勾选 / 调整顺序）</strong>
+      <strong>显示字段（可勾选 / 拖动调整顺序）</strong>
       <ul class="gantt-arrange-list"></ul>
       <label class="gantt-arrange-depth">展开深度
         <select data-arrange-depth>
@@ -6034,16 +6426,15 @@ function bindGanttArrangePanel(toolbar) {
   const resetButton = panel.querySelector("[data-arrange-reset]");
   const applyButton = panel.querySelector("[data-arrange-apply]");
   let draft = GanttArrangePolicy.normalizeConfig(initial);
+  let arrangeDragId = "";
+  const dragHandleSvg = `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><circle cx="5" cy="3.5" r="1.35"/><circle cx="11" cy="3.5" r="1.35"/><circle cx="5" cy="8" r="1.35"/><circle cx="11" cy="8" r="1.35"/><circle cx="5" cy="12.5" r="1.35"/><circle cx="11" cy="12.5" r="1.35"/></svg>`;
 
   const renderList = () => {
-    list.innerHTML = draft.dimensions.map((dim, index) => {
+    list.innerHTML = draft.dimensions.map(dim => {
       const meta = GanttArrangePolicy.dimensionMeta(dim.id);
-      return `<li data-dim-id="${dim.id}">
+      return `<li class="gantt-arrange-row" data-dim-id="${dim.id}" draggable="false">
+        <span class="gantt-arrange-drag" data-arrange-drag role="button" tabindex="0" aria-label="拖动调整顺序" title="拖动调整顺序">${dragHandleSvg}</span>
         <label><input type="checkbox" data-dim-enabled ${dim.enabled ? "checked" : ""}/> ${escapeHtml(meta.label)}</label>
-        <span class="gantt-arrange-move">
-          <button type="button" data-move="-1" ${index === 0 ? "disabled" : ""} aria-label="上移">↑</button>
-          <button type="button" data-move="1" ${index === draft.dimensions.length - 1 ? "disabled" : ""} aria-label="下移">↓</button>
-        </span>
       </li>`;
     }).join("");
     depthSelect.value = draft.treeDepth == null ? "all" : String(draft.treeDepth);
@@ -6125,24 +6516,76 @@ function bindGanttArrangePanel(toolbar) {
   window.addEventListener("resize", () => {
     if (!panel.hidden) positionPanel();
   }, { signal });
-  list.addEventListener("click", event => {
-    const moveBtn = event.target.closest("[data-move]");
-    if (!moveBtn) return;
+  const clearArrangeRowDraggable = () => {
+    list.querySelectorAll(".gantt-arrange-row[draggable='true']").forEach(row => {
+      if (!row.classList.contains("is-dragging")) row.draggable = false;
+    });
+  };
+  list.addEventListener("pointerdown", event => {
+    const handle = event.target.closest?.("[data-arrange-drag]");
+    const row = event.target.closest?.(".gantt-arrange-row");
+    if (!handle || !row) return;
+    row.draggable = true;
+  }, { signal });
+  list.addEventListener("pointerup", clearArrangeRowDraggable, { signal });
+  list.addEventListener("pointercancel", clearArrangeRowDraggable, { signal });
+  list.addEventListener("dragstart", event => {
+    const row = event.target.closest?.(".gantt-arrange-row");
+    if (!row || !list.contains(row) || !row.draggable) {
+      event.preventDefault();
+      return;
+    }
+    arrangeDragId = row.dataset.dimId || "";
+    if (!arrangeDragId) {
+      event.preventDefault();
+      return;
+    }
+    row.classList.add("is-dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", arrangeDragId);
+  }, { signal });
+  list.addEventListener("dragend", event => {
+    const row = event.target.closest?.(".gantt-arrange-row");
+    row?.classList.remove("is-dragging");
+    if (row) row.draggable = false;
+    list.querySelectorAll(".gantt-arrange-row.is-drop-target").forEach(item => {
+      item.classList.remove("is-drop-target", "drop-before", "drop-after");
+    });
+    arrangeDragId = "";
+  }, { signal });
+  list.addEventListener("dragover", event => {
+    const row = event.target.closest?.(".gantt-arrange-row");
+    if (!row || !arrangeDragId || row.dataset.dimId === arrangeDragId) return;
     event.preventDefault();
-    event.stopPropagation();
-    const item = moveBtn.closest("[data-dim-id]");
-    const id = item?.dataset.dimId;
-    const delta = Number(moveBtn.dataset.move);
-    const index = draft.dimensions.findIndex(dim => dim.id === id);
-    const next = index + delta;
-    if (index < 0 || next < 0 || next >= draft.dimensions.length) return;
+    event.dataTransfer.dropEffect = "move";
+    const rect = row.getBoundingClientRect();
+    const before = event.clientY < rect.top + rect.height / 2;
+    list.querySelectorAll(".gantt-arrange-row.is-drop-target").forEach(item => {
+      item.classList.remove("is-drop-target", "drop-before", "drop-after");
+    });
+    row.classList.add("is-drop-target", before ? "drop-before" : "drop-after");
+  }, { signal });
+  list.addEventListener("drop", event => {
+    const row = event.target.closest?.(".gantt-arrange-row");
+    if (!row || !arrangeDragId) return;
+    event.preventDefault();
+    const targetId = row.dataset.dimId;
+    if (!targetId || targetId === arrangeDragId) return;
+    const ids = draft.dimensions.map(dim => dim.id);
+    const from = ids.indexOf(arrangeDragId);
+    let to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    const rect = row.getBoundingClientRect();
+    const before = event.clientY < rect.top + rect.height / 2;
     const copy = draft.dimensions.slice();
-    const [row] = copy.splice(index, 1);
-    copy.splice(next, 0, row);
+    const [moved] = copy.splice(from, 1);
+    to = copy.findIndex(dim => dim.id === targetId);
+    if (to < 0) return;
+    copy.splice(before ? to : to + 1, 0, moved);
     draft = { ...draft, dimensions: copy };
     renderList();
     previewDraft();
-  });
+  }, { signal });
   list.addEventListener("change", event => {
     const input = event.target.closest("[data-dim-enabled]");
     if (!input) return;
@@ -6152,60 +6595,220 @@ function bindGanttArrangePanel(toolbar) {
       dimensions: draft.dimensions.map(dim => dim.id === id ? { ...dim, enabled: input.checked } : dim)
     };
     previewDraft();
-  });
+  }, { signal });
   depthSelect.addEventListener("change", () => {
     draft = {
       ...draft,
       treeDepth: depthSelect.value === "all" ? null : Number(depthSelect.value)
     };
     previewDraft();
-  });
+  }, { signal });
   resetButton?.addEventListener("click", event => {
     event.preventDefault();
     event.stopPropagation();
     draft = GanttArrangePolicy.defaultConfig();
     applyDraft();
-  });
+  }, { signal });
   applyButton?.addEventListener("click", event => {
     event.preventDefault();
     event.stopPropagation();
     applyDraft();
-  });
-  panel.addEventListener("pointerdown", event => event.stopPropagation());
-  panel.addEventListener("click", event => event.stopPropagation());
+  }, { signal });
+  panel.addEventListener("pointerdown", event => event.stopPropagation(), { signal });
+  panel.addEventListener("click", event => event.stopPropagation(), { signal });
   toolbar.querySelector(".project-gantt-toolbar-main")?.appendChild(wrap);
   if (keepOpen) requestAnimationFrame(() => showPanel());
 }
 
-function getGanttViewConfig() {
+function getSavedGanttViewConfig() {
   return typeof GanttViewPolicy?.loadConfig === "function"
     ? GanttViewPolicy.loadConfig()
-    : { holidayMode: "weekend_holiday", excludeHolidaysFromDays: false, ownerFilter: [] };
+    : {
+      holidayMode: "weekend_holiday",
+      excludeHolidaysFromDays: false,
+      ownerFilter: [],
+      categoryFilter: [],
+      statusFilter: ["planned", "in_progress"],
+      priorityFilter: [],
+      investedOnly: false,
+      showMeetings: true,
+      labelColumns: { status: false, priority: false, owner: false, category: false }
+    };
 }
 
-function saveGanttViewConfig(patch = {}) {
-  const next = GanttViewPolicy?.normalizeConfig?.({
-    ...getGanttViewConfig(),
-    ...patch
-  }) || { ...getGanttViewConfig(), ...patch };
+function getGanttViewConfig() {
+  if (state.ganttViewPreview) {
+    return typeof GanttViewPolicy?.normalizeConfig === "function"
+      ? GanttViewPolicy.normalizeConfig(state.ganttViewPreview)
+      : state.ganttViewPreview;
+  }
+  return getSavedGanttViewConfig();
+}
+
+function clearGanttViewPreviewFlags() {
+  state.ganttViewPreview = null;
+  state.ganttFilterKeepOpen = false;
+  state.ganttColumnsKeepOpen = false;
+  state.ganttSettingsKeepOpen = false;
+  state.ganttColFilterKeepOpen = "";
+}
+
+function previewGanttViewConfig(patch = {}) {
+  const base = state.ganttViewPreview || getSavedGanttViewConfig();
+  state.ganttViewPreview = typeof GanttViewPolicy?.normalizeConfig === "function"
+    ? GanttViewPolicy.normalizeConfig({ ...base, ...patch })
+    : { ...base, ...patch };
+  renderSchedule();
+  return state.ganttViewPreview;
+}
+
+function commitGanttViewPreview(patch = {}) {
+  const base = state.ganttViewPreview || getSavedGanttViewConfig();
+  const next = typeof GanttViewPolicy?.normalizeConfig === "function"
+    ? GanttViewPolicy.normalizeConfig({ ...base, ...patch })
+    : { ...base, ...patch };
+  clearGanttViewPreviewFlags();
   GanttViewPolicy?.saveConfig?.(next);
   return next;
 }
 
+function discardGanttViewPreview() {
+  if (!state.ganttViewPreview) return false;
+  clearGanttViewPreviewFlags();
+  renderSchedule();
+  return true;
+}
+
+function getEnabledGanttLabelColumns(ganttView = getGanttViewConfig()) {
+  return typeof GanttViewPolicy?.enabledLabelColumns === "function"
+    ? GanttViewPolicy.enabledLabelColumns(ganttView)
+    : [];
+}
+
+function getEffectiveGanttLabelWidth(ganttView = getGanttViewConfig()) {
+  const base = getGanttLabelWidth();
+  const extra = getEnabledGanttLabelColumns(ganttView).length * 72;
+  return Math.min(GANTT_LABEL_WIDTH_MAX, Math.max(base, GANTT_LABEL_WIDTH_MIN + extra));
+}
+
+function ganttLabelColumnCellsHtml(valuesById = {}, enabledColumns = []) {
+  return enabledColumns.map(col => {
+    const text = String(valuesById[col.id] || "").trim() || "—";
+    return `<span class="gantt-label-col" data-label-column="${escapeHtml(col.id)}" title="${escapeHtml(text)}">${escapeHtml(text)}</span>`;
+  }).join("");
+}
+
+function ganttTaskLabelColumnValues(task) {
+  const categoryId = typeof TaskCategoryPolicy?.resolveTaskCategory === "function"
+    ? TaskCategoryPolicy.resolveTaskCategory(task)
+    : (task?.category || "");
+  const categoryText = typeof TaskCategoryPolicy?.labelForCategory === "function"
+    ? TaskCategoryPolicy.labelForCategory(categoryId)
+    : categoryId;
+  return {
+    status: statusLabel(task?.status || "planned"),
+    priority: priorityShortLabel(task?.priority || "general_daily"),
+    owner: String(task?.owner || "").trim() || "—",
+    category: String(categoryText || "").trim() || "—"
+  };
+}
+
+function saveGanttViewConfig(patch = {}) {
+  const base = getSavedGanttViewConfig();
+  const next = GanttViewPolicy?.normalizeConfig?.({
+    ...base,
+    ...patch
+  }) || { ...base, ...patch };
+  clearGanttViewPreviewFlags();
+  GanttViewPolicy?.saveConfig?.(next);
+  return next;
+}
+
+function taskInvestedDateKeys(task) {
+  return getTaskScheduleEntries(task?.id)
+    .filter(item => getEntryInvestedHours(item.dateKey, item.entry) > 0)
+    .map(item => item.dateKey);
+}
+
+function taskMatchesGanttViewFilters(task, ganttView = {}, windowInfo = {}) {
+  if (typeof GanttViewPolicy?.taskMatchesFilters === "function") {
+    const members = typeof GanttViewPolicy.effectiveMemberFilters === "function"
+      ? GanttViewPolicy.effectiveMemberFilters(ganttView)
+      : {
+        ownerFilter: ganttView.ownerFilter || [],
+        categoryFilter: ganttView.categoryFilter || [],
+        statusFilter: ganttView.statusFilter || [],
+        priorityFilter: ganttView.priorityFilter || []
+      };
+    return GanttViewPolicy.taskMatchesFilters(task, {
+      ...members,
+      investedOnly: Boolean(ganttView.investedOnly),
+      investedDateKeys: taskInvestedDateKeys(task),
+      startKey: windowInfo.startKey || state.projectWindowStart || "",
+      endKey: windowInfo.endKey || state.projectWindowEnd || "",
+      scale: windowInfo.scale || state.projectScale,
+      splitOwnerMembers: TaskOptionPolicy?.splitOwnerMembers,
+      resolveCategory: taskItem => (
+        typeof TaskCategoryPolicy?.resolveTaskCategory === "function"
+          ? TaskCategoryPolicy.resolveTaskCategory(taskItem)
+          : (taskItem?.category || "")
+      )
+    });
+  }
+  return true;
+}
+
+function filterProjectsByGanttView(projects, ganttView = getGanttViewConfig(), windowInfo = {}) {
+  return projects.map(project => {
+    if (typeof GanttViewPolicy?.filterProjectTree === "function") {
+      const filtered = GanttViewPolicy.filterProjectTree({
+        parent: project.parent,
+        children: project.children || [],
+        matchesTask: task => taskMatchesGanttViewFilters(task, ganttView, windowInfo)
+      });
+      if (!filtered.keep) return null;
+      return {
+        ...project,
+        children: filtered.children,
+        ganttMatchIds: filtered.matchIds,
+        ganttContextIds: filtered.contextIds
+      };
+    }
+    const children = (project.children || []).filter(task =>
+      taskMatchesGanttViewFilters(task, ganttView, windowInfo)
+    );
+    const parentMatches = taskMatchesGanttViewFilters(project.parent, ganttView, windowInfo);
+    if (!parentMatches && !children.length) return null;
+    return { ...project, children };
+  }).filter(Boolean);
+}
+
 function filterProjectsByGanttOwner(projects, ownerFilter = []) {
-  if (!ownerFilter.length || typeof GanttViewPolicy?.taskMatchesOwnerFilter !== "function") return projects;
-  const split = TaskOptionPolicy?.splitOwnerMembers;
-  return projects.filter(project => {
-    const tasks = [project.parent, ...(project.children || [])];
-    return tasks.some(task => GanttViewPolicy.taskMatchesOwnerFilter(task, ownerFilter, split));
+  return filterProjectsByGanttView(projects, {
+    ...getGanttViewConfig(),
+    ownerFilter,
+    categoryFilter: [],
+    priorityFilter: [],
+    statusFilter: [],
+    investedOnly: false
   });
+}
+
+function jumpProjectGanttToToday() {
+  state.projectAnchorDate = toDateKey(new Date());
+  state.projectViewNeedsAnchor = true;
+  state.projectWindowStart = null;
+  state.projectWindowEnd = null;
+  state.projectGanttLastExtend = null;
+  state.projectScrollLeft = 0;
+  renderSchedule();
 }
 
 function ganttAxisNavTitle(scale, direction = "future") {
   const past = direction === "past";
   if (scale === "year") return past ? "上一年" : "下一年";
   if (scale === "quarter") return past ? "上一季（12周）" : "下一季（12周）";
-  if (scale === "month") return past ? "前一段日期" : "后一段日期";
+  if (scale === "month") return past ? "上一月" : "下一月";
   if (scale === "week") return past ? "上一周" : "下一周";
   return past ? "前一天" : "后一天";
 }
@@ -6264,16 +6867,52 @@ function renderProjectSchedule() {
   const allProjects = getProjectSummaries();
   // Gantt shows every status group by default; left-panel status tabs do not apply here.
   const statusProjects = ProjectCollapsePolicy.filterProjectsForStatus(allProjects, "all");
-  const projects = filterProjectsByGanttOwner(statusProjects, ganttView.ownerFilter);
-  const meetings = getCalendarMeetingSummaries();
+  if (!state.projectWindowStart || !state.projectWindowEnd) resetProjectGanttWindow(state.projectScale);
+  const projects = filterProjectsByGanttView(statusProjects, ganttView, {
+    startKey: state.projectWindowStart,
+    endKey: state.projectWindowEnd,
+    scale: state.projectScale
+  });
+  const sourceMeetings = getCalendarMeetingSummaries();
+  const meetings = ganttView.showMeetings === false ? [] : sourceMeetings;
   el.timeline.innerHTML = "";
   el.timeline.className = "project-gantt";
+  // Keep toolbar/filter even when the filtered result is empty, so users can recover.
+  mountProjectGanttToolbar(statusProjects, ganttView);
   if (!projects.length && !meetings.length) {
     el.projectGanttScroll = null;
     el.projectGanttChartTrack = null;
     el.projectGanttDaysTrack = null;
-    clearProjectGanttChrome();
-    el.timeline.innerHTML = `<div class="empty-state">当前状态下还没有可展示的项目进度</div>`;
+    const hasSource = statusProjects.length > 0 || sourceMeetings.length > 0;
+    const filterActive = typeof GanttViewPolicy?.activeFilterCount === "function"
+      ? GanttViewPolicy.activeFilterCount(ganttView) > 0
+      : false;
+    if (hasSource || filterActive) {
+      el.timeline.innerHTML = `<div class="empty-state gantt-empty-filtered">
+        <p>当前筛选下没有可展示的任务</p>
+        <div class="gantt-empty-actions">
+          <button type="button" class="soft-button" data-gantt-open-filter>调整筛选</button>
+          <button type="button" class="primary-button" data-gantt-reset-filters>恢复默认筛选</button>
+        </div>
+      </div>`;
+      el.timeline.querySelector("[data-gantt-reset-filters]")?.addEventListener("click", () => {
+        const defaults = GanttViewPolicy?.defaultConfig?.() || {};
+        saveGanttViewConfig({
+          ownerFilter: [],
+          categoryFilter: [],
+          priorityFilter: [],
+          statusFilter: defaults.statusFilter || ["planned", "in_progress"],
+          investedOnly: false,
+          showMeetings: true
+        });
+        renderSchedule();
+      });
+      el.timeline.querySelector("[data-gantt-open-filter]")?.addEventListener("click", () => {
+        el.projectGanttChrome?.querySelector?.(".gantt-filter-wrap .gantt-arrange-button")?.click();
+      });
+    } else {
+      el.timeline.innerHTML = `<div class="empty-state">当前状态下还没有可展示的项目进度</div>`;
+    }
     el.loggedHours.textContent = "0h";
     el.freeHours.textContent = "—";
     return;
@@ -6285,56 +6924,30 @@ function renderProjectSchedule() {
   el.freeHours.textContent = meetings.length
     ? `${projects.length} 项 · ${meetings.length} 会议`
     : `${projects.length} 项`;
-  const toolbar = document.createElement("div");
-  toolbar.className = "project-gantt-toolbar";
-  toolbar.innerHTML = `<div class="project-gantt-toolbar-main">
-      <strong>甘特粒度</strong>
-      <div class="project-scale-switcher">
-        <button type="button" data-scale="day">日</button>
-        <button type="button" data-scale="week">周</button>
-        <button type="button" data-scale="month">月</button>
-        <button type="button" data-scale="quarter">季</button>
-        <button type="button" data-scale="year">年</button>
-      </div>
-    </div>
-    <div class="gantt-legend">
-      <span><i class="legend-span"></i>起止区间</span>
-      <span><i class="legend-invested"></i>实际投入</span>
-      <span><i class="legend-meeting"></i>会议投入</span>
-      <span><i class="legend-start"></i>开始</span>
-      <span><i class="legend-end"></i>结束</span>
-      <span><i class="legend-cutoff"></i>目标截止</span>
-      <span><i class="legend-today"></i>今天</span>
-    </div>`;
-  toolbar.querySelectorAll(".project-scale-switcher button").forEach(button => {
-    button.classList.toggle("active", button.dataset.scale === state.projectScale);
-    button.addEventListener("click", () => {
-      state.projectScale = button.dataset.scale;
-      state.projectViewNeedsAnchor = true;
-      state.projectWindowStart = null;
-      state.projectWindowEnd = null;
-      state.projectGanttLastExtend = null;
-      renderSchedule();
-    });
-  });
-  bindGanttFilterPanel(toolbar, statusProjects, ganttView);
-  bindGanttSettingsPanel(toolbar, ganttView);
-  bindGanttArrangePanel(toolbar);
-  el.projectGanttChrome.innerHTML = "";
-  el.projectGanttChrome.appendChild(toolbar);
-  el.projectGanttChrome.classList.remove("hidden");
 
   const ganttRoot = document.createElement("div");
   ganttRoot.className = "project-gantt-root";
-  const labelWidthCss = `${getGanttLabelWidth()}px`;
+  const enabledLabelColumns = getEnabledGanttLabelColumns(ganttView);
+  const labelWidthCss = `${getEffectiveGanttLabelWidth(ganttView)}px`;
 
   const headerSplit = document.createElement("div");
   headerSplit.className = "project-gantt-header-split";
   headerSplit.style.setProperty("--gantt-label-width", labelWidthCss);
+  headerSplit.style.setProperty("--gantt-extra-cols", String(enabledLabelColumns.length));
 
   const labelHeader = document.createElement("div");
-  labelHeader.className = "project-gantt-label-header";
-  labelHeader.textContent = "项目 / 任务";
+  labelHeader.className = `project-gantt-label-header${enabledLabelColumns.length ? " has-columns" : ""}`;
+  labelHeader.style.setProperty("--gantt-extra-cols", String(enabledLabelColumns.length));
+  if (enabledLabelColumns.length) {
+    labelHeader.innerHTML = `<span class="gantt-label-col gantt-label-col-title">任务</span>${
+      enabledLabelColumns.map(col =>
+        `<span class="gantt-label-col gantt-label-col-head" data-label-column="${escapeHtml(col.id)}">${escapeHtml(col.label)}</span>`
+      ).join("")
+    }`;
+    bindGanttLabelColumnFilters(labelHeader, statusProjects, ganttView);
+  } else {
+    labelHeader.textContent = "项目 / 任务";
+  }
 
   const headerResize = document.createElement("div");
   headerResize.className = "project-gantt-resize-handle";
@@ -6344,26 +6957,12 @@ function renderProjectSchedule() {
   headerResize.setAttribute("aria-label", "调整甘特任务栏宽度");
 
   const daysViewport = document.createElement("div");
-  daysViewport.className = "project-gantt-days-viewport has-gantt-nav";
-  const navPrev = document.createElement("button");
-  navPrev.type = "button";
-  navPrev.className = "gantt-axis-nav is-prev";
-  navPrev.title = ganttAxisNavTitle(state.projectScale, "past");
-  navPrev.setAttribute("aria-label", navPrev.title);
-  navPrev.textContent = "‹";
-  navPrev.addEventListener("click", () => shiftProjectGanttWindow("past"));
-  const navNext = document.createElement("button");
-  navNext.type = "button";
-  navNext.className = "gantt-axis-nav is-next";
-  navNext.title = ganttAxisNavTitle(state.projectScale, "future");
-  navNext.setAttribute("aria-label", navNext.title);
-  navNext.textContent = "›";
-  navNext.addEventListener("click", () => shiftProjectGanttWindow("future"));
+  daysViewport.className = "project-gantt-days-viewport";
   const daysTrack = document.createElement("div");
   daysTrack.className = "project-gantt-days-track";
   el.projectGanttDaysTrack = daysTrack;
   const header = document.createElement("div");
-  header.className = "project-gantt-days";
+  header.className = `project-gantt-days scale-${state.projectScale}`;
   const ganttContentWidth = getGanttChartViewportWidth();
   const axisMetrics = ProjectViewPolicy.axisMetrics?.(buckets, state.projectScale) || {
     totalDays: buckets.length || 1,
@@ -6386,8 +6985,8 @@ function renderProjectSchedule() {
   const todayBucketKey = projectBucketKey(todayKey, state.projectScale);
   const todayOffset = taskTimelineOffset(todayKey, buckets, state.projectScale);
   const holidayMode = ganttView.holidayMode;
-  // Header + chart share the same content width / scrollLeft so the today markers stay colinear.
-  header.innerHTML = `${todayOffset === null ? "" : `<u class="gantt-today-line has-dot" style="left:${todayOffset}%" title="今天"></u>`}${buckets.map(bucket => {
+  // Dot sits on the axis seam; the thin line lives only in the task chart (avoids a split line).
+  header.innerHTML = `${todayOffset === null ? "" : `<u class="gantt-today-dot" style="left:${todayOffset}%" title="今天"></u>`}${buckets.map(bucket => {
     const classes = [
       bucket.key === todayBucketKey ? "is-today" : "",
       ganttBucketHolidayClass(bucket, holidayMode, state.projectScale).trim()
@@ -6395,7 +6994,7 @@ function renderProjectSchedule() {
     return `<span${classes ? ` class="${classes}"` : ""}>${bucket.label}</span>`;
   }).join("")}`;
   daysTrack.appendChild(header);
-  daysViewport.append(navPrev, daysTrack, navNext);
+  daysViewport.appendChild(daysTrack);
   headerSplit.append(labelHeader, headerResize, daysViewport);
 
   const rowsWrap = document.createElement("div");
@@ -6407,10 +7006,12 @@ function renderProjectSchedule() {
   const split = document.createElement("div");
   split.className = "project-gantt-split";
   split.style.setProperty("--gantt-label-width", labelWidthCss);
+  split.style.setProperty("--gantt-extra-cols", String(enabledLabelColumns.length));
   bindGanttLabelResize(headerResize, [headerSplit, split]);
 
   const labelPane = document.createElement("div");
-  labelPane.className = "project-gantt-label-pane";
+  labelPane.className = `project-gantt-label-pane${enabledLabelColumns.length ? " has-columns" : ""}`;
+  labelPane.style.setProperty("--gantt-extra-cols", String(enabledLabelColumns.length));
   const labelBody = document.createElement("div");
   labelBody.className = "project-gantt-label-body";
   labelPane.appendChild(labelBody);
@@ -6424,8 +7025,9 @@ function renderProjectSchedule() {
   bindGanttLabelResize(resizeHandle, [headerSplit, split]);
 
   const chartPane = document.createElement("div");
-  chartPane.className = `project-gantt-chart-pane${layout.fillWidth ? "" : " is-hscroll"}`;
-  daysViewport.classList.toggle("is-hscroll", !layout.fillWidth);
+  chartPane.className = `project-gantt-chart-pane scale-${state.projectScale}${layout.fillWidth ? "" : " is-hscroll"}`;
+  // Axis follows chart scroll; hide its own bar to avoid double scrollbars.
+  daysViewport.classList.toggle("is-hscroll-sync", !layout.fillWidth);
 
   const chartTrack = document.createElement("div");
   chartTrack.className = "project-gantt-chart-track";
@@ -6461,6 +7063,9 @@ function renderProjectSchedule() {
     gridTemplateColumns
   });
 
+  const contextOnlyIds = new Set(
+    projects.flatMap(project => [...(project.ganttContextIds || [])])
+  );
   const ganttSections = buildGanttArrangeSections(projects, meetings);
   const appendSectionRows = (rows, labelGroup, chartGroup, indentBase = 0) => {
     (rows || []).forEach(row => {
@@ -6470,16 +7075,16 @@ function renderProjectSchedule() {
           chartGroup,
           createCalendarGanttRow(row.meeting, buckets, state.projectScale, {
             indentBase,
-            category: row.task?.category
+            category: row.task?.category,
+            enabledLabelColumns
           })
         );
         return;
       }
-      const investedDateKeys = row.isParent
+      const investedItems = row.isParent
         ? [row.task, ...(row.descendantTasks || [])].flatMap(task =>
           getTaskScheduleEntries(task.id)
             .filter(item => getEntryInvestedHours(item.dateKey, item.entry) > 0)
-            .map(item => item.dateKey)
         )
         : undefined;
       appendGanttRowPair(labelGroup, chartGroup, createProjectGanttRow(
@@ -6489,10 +7094,12 @@ function renderProjectSchedule() {
         row.rootId || row.task.id,
         {
           progress: row.progress,
-          investedDateKeys,
+          investedItems,
           isParent: Boolean(row.isParent),
           collapsed: Boolean(row.collapsed),
-          indentBase
+          indentBase,
+          filterContextOnly: contextOnlyIds.has(row.task.id),
+          enabledLabelColumns
         }
       ));
     });
@@ -6545,9 +7152,22 @@ function renderProjectSchedule() {
   el.timeline.appendChild(ganttRoot);
   if (!layout.fillWidth) {
     bindGanttSyncedHorizontalScroll(daysViewport, chartPane);
-    const restoreLeft = Math.max(0, Number(state.projectScrollLeft) || 0);
+    let restoreLeft = Math.max(0, Number(state.projectScrollLeft) || 0);
+    // First paint / scale change: prefer centering today inside a scrollable month/week.
+    if (state.projectViewNeedsAnchor && todayBucketKey) {
+      const todayIndex = buckets.findIndex(bucket => bucket.key === todayBucketKey);
+      if (todayIndex >= 0 && typeof ProjectViewPolicy.centeredScrollLeft === "function") {
+        restoreLeft = ProjectViewPolicy.centeredScrollLeft({
+          buckets,
+          anchorKey: todayBucketKey,
+          bucketWidth: layout.unitPx,
+          viewportWidth: ganttContentWidth
+        });
+      }
+    }
     daysViewport.scrollLeft = restoreLeft;
     chartPane.scrollLeft = restoreLeft;
+    state.projectScrollLeft = restoreLeft;
   } else {
     state.projectScrollLeft = 0;
   }
@@ -6559,28 +7179,6 @@ function renderProjectSchedule() {
     bindProjectDrop(body, buckets, contentWidth, state.projectScale);
   };
   syncBucketDropWidth();
-  // Month scale: resize changes visible day count instead of compressing columns.
-  if (state.projectScale === "month" && typeof ResizeObserver === "function") {
-    let resizeTimer = 0;
-    const observer = new ResizeObserver(() => {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        if (state.taskView !== "project" || state.projectScale !== "month") return;
-        const nextCount = ProjectViewPolicy.visibleDayCountForViewport?.(
-          getGanttChartViewportWidth(),
-          ProjectViewPolicy.GANTT_MIN_DAY_PX
-        );
-        const currentCount = buckets.length;
-        if (!nextCount || nextCount === currentCount) return;
-        state.projectAnchorDate = state.projectAnchorDate || toDateKey(new Date());
-        state.projectWindowStart = null;
-        state.projectWindowEnd = null;
-        renderSchedule();
-      }, 120);
-    });
-    observer.observe(chartPane);
-    ganttRoot._ganttResizeObserver = observer;
-  }
   requestAnimationFrame(() => {
     syncBucketDropWidth();
     restoreProjectGanttRowsScroll(state.projectRowsScrollTop);
@@ -7103,15 +7701,18 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
     progress: progressInfo.progress
   });
   const cutoff = task.dueDate ? taskTimelineOffset(task.dueDate, buckets, scale) : null;
-  const showDueFlag = ProjectViewPolicy.shouldShowDueFlag(task.status) && cutoff !== null;
+  const showDueFlag = cutoff !== null;
   const hasChildren = isParentRow;
   const collapsed = options.isParent ? Boolean(options.collapsed) : state.projectCollapsedTasks.has(task.id);
   const progressText = ganttProgressBarText(progressInfo);
   const selected = ensureGanttSelectionSet().has(task.id) || state.selectedGanttTaskId === task.id;
+  const filterContextOnly = Boolean(options.filterContextOnly);
+  const enabledLabelColumns = options.enabledLabelColumns || getEnabledGanttLabelColumns();
   const labelRow = document.createElement("div");
   const depth = getTaskDepth(task, rootId) + Math.max(0, Number(options.indentBase) || 0);
-  labelRow.className = `project-gantt-row-label ${task.status}${isParentRow ? " is-parent" : ""}${selected ? " is-selected" : ""}`;
+  labelRow.className = `project-gantt-row-label ${task.status}${isParentRow ? " is-parent" : ""}${selected ? " is-selected" : ""}${filterContextOnly ? " is-filter-context" : ""}${enabledLabelColumns.length ? " has-columns" : ""}`;
   labelRow.style.setProperty("--task-depth", depth);
+  labelRow.style.setProperty("--gantt-extra-cols", String(enabledLabelColumns.length));
   labelRow.dataset.depth = String(depth);
   labelRow.dataset.taskId = task.id;
   labelRow.title = "单击高亮整行；Ctrl+单击多选；悬停显示＋新建子任务；右键分类/更多操作；拖到其他名称可改挂接；双击编辑；右侧拖到日期可安排投入";
@@ -7119,10 +7720,10 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
         ${hasChildren ? `<button class="project-collapse-button task-tree-toggle" type="button">${collapsed ? "▸" : "▾"}</button>` : ""}
         <strong title="${escapeHtml(taskTitle)}">${escapeHtml(taskTitle)}</strong>
         <button type="button" class="gantt-add-child" title="在此任务下新建子任务" aria-label="在此任务下新建子任务">＋</button>
-      </div>`;
+      </div>${ganttLabelColumnCellsHtml(ganttTaskLabelColumnValues(task), enabledLabelColumns)}`;
   bindGanttLabelReparent(labelRow, task);
   const chartRow = document.createElement("div");
-  chartRow.className = `project-gantt-row-chart ${task.status}${isParentRow ? " is-parent" : ""}${selected ? " is-selected" : ""}`;
+  chartRow.className = `project-gantt-row-chart ${task.status}${isParentRow ? " is-parent" : ""}${selected ? " is-selected" : ""}${filterContextOnly ? " is-filter-context" : ""}`;
   chartRow.dataset.taskId = task.id;
   const taskCategoryColor = typeof TaskCategoryPolicy?.resolveTaskColor === "function"
     ? TaskCategoryPolicy.resolveTaskColor(task)
@@ -7135,19 +7736,23 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
     chartRow.classList.add("dragging");
   });
   chartRow.addEventListener("dragend", () => chartRow.classList.remove("dragging"));
-  const hasEntryLabels = actual.segments.some(segment => segment.label);
+  const meetingSegments = actual.meetingSegments || [];
+  const hasEntryLabels = actual.segments.some(segment => segment.label)
+    || meetingSegments.some(segment => segment.label);
   const labelGeometry = progressText.short ? ganttBarLabelGeometry(actual) : null;
   // Leaf rows: label each invest bar (hours · note). Parents keep plan-% on the span.
   const showProgressLabel = Boolean(labelGeometry) && (isParentRow || !hasEntryLabels);
+  const endClass = actual.end?.overdue ? "is-late" : "is-ontime";
   chartRow.innerHTML = `<div class="project-gantt-lane">
-      ${actual.span ? `<i class="gantt-span-track" style="left:${actual.span.left}%;width:${actual.span.width}%"></i>
-      <i class="gantt-progress-fill" style="left:${actual.span.left}%;width:${actual.span.fill}%" title="${escapeHtml(progressText.full || progressText.short)}"></i>` : ""}
+      ${actual.span ? `<i class="gantt-span-track" style="left:${actual.span.left}%;width:${actual.span.width}%" title="起止区间"></i>` : ""}
       ${showProgressLabel ? `<span class="gantt-progress-pct" style="left:${labelGeometry.left}%;width:${labelGeometry.width}%" title="${escapeHtml(progressText.full || progressText.short)}">${escapeHtml(progressText.short)}</span>` : ""}
-      ${actual.segments.map(segment => `<i class="gantt-actual-bar" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label || "有投入")}"></i>
+      ${actual.segments.map(segment => `<i class="gantt-actual-bar" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label || "实际投入")}"></i>
       ${!isParentRow && segment.label ? `<span class="gantt-progress-pct gantt-entry-label" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label)}">${escapeHtml(segment.label)}</span>` : ""}`).join("")}
-      ${actual.start ? `<u class="gantt-start-marker" style="left:${actual.start.offset}%" title="开始：${actual.start.dateKey}"></u>` : ""}
-      ${actual.end ? `<u class="gantt-end-marker" style="left:${actual.end.offset}%" title="结束：${actual.end.dateKey}"></u>` : ""}
-      ${showDueFlag ? `<u class="gantt-cutoff-flag" style="left:${cutoff}%" title="目标截止：${formatDue(task)}"></u>` : ""}
+      ${meetingSegments.map(segment => `<i class="gantt-meeting-bar" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label || "会议投入")}"></i>
+      ${!isParentRow && segment.label ? `<span class="gantt-progress-pct gantt-entry-label" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label)}">${escapeHtml(segment.label)}</span>` : ""}`).join("")}
+      ${actual.startTick ? `<u class="gantt-start-tick" style="left:${actual.startTick.offset}%" title="实际开始：${actual.startTick.dateKey}"></u>` : ""}
+      ${actual.end ? `<u class="gantt-end-marker ${endClass}" style="left:${actual.end.offset}%" title="结束：${actual.end.dateKey}"></u>` : ""}
+      ${showDueFlag ? `<u class="gantt-cutoff-flag" style="left:${cutoff}%" title="${escapeHtml(ganttCutoffTitle(task))}"></u>` : ""}
     </div>`;
   if (showProgressLabel) {
     fitGanttProgressLabel(chartRow.querySelector(".gantt-progress-pct:not(.gantt-entry-label)"), progressText.short);
@@ -7533,14 +8138,24 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
   const color = typeof TaskCategoryPolicy?.colorForCategory === "function"
     ? TaskCategoryPolicy.colorForCategory(category)
     : "#AA7B39";
+  const enabledLabelColumns = options.enabledLabelColumns || getEnabledGanttLabelColumns();
   const labelRow = document.createElement("div");
   const depth = Math.max(0, Number(options.indentBase) || 0);
-  labelRow.className = "project-gantt-row-label meeting";
+  labelRow.className = `project-gantt-row-label meeting${enabledLabelColumns.length ? " has-columns" : ""}`;
   labelRow.style.setProperty("--task-depth", depth);
+  labelRow.style.setProperty("--gantt-extra-cols", String(enabledLabelColumns.length));
   labelRow.dataset.depth = String(depth);
+  const meetingCategoryLabel = typeof TaskCategoryPolicy?.labelForCategory === "function"
+    ? TaskCategoryPolicy.labelForCategory(category)
+    : String(category || "");
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin is-meeting">
       <strong title="${escapeHtml(meetingTitle)}">${escapeHtml(meetingTitle)}</strong>
-    </div>`;
+    </div>${ganttLabelColumnCellsHtml({
+    status: "—",
+    priority: "—",
+    owner: "—",
+    category: meetingCategoryLabel || "—"
+  }, enabledLabelColumns)}`;
   const chartRow = document.createElement("div");
   chartRow.className = "project-gantt-row-chart meeting";
   applyCategoryColorStyle(chartRow, color);
@@ -7806,6 +8421,10 @@ function taskTimelineOffset(dateKey, buckets, scale = "day") {
   return ratio == null ? null : ratio * 100;
 }
 
+function isGanttMeetingEntry(entry) {
+  return entry?.entryType === "calendar" || entry?.category === "meeting";
+}
+
 function mapEntryGanttSegments(investedItems, buckets, scale = "day") {
   const entries = investedItems.map(({ dateKey, entry }) => ({
     dateKey,
@@ -7814,86 +8433,275 @@ function mapEntryGanttSegments(investedItems, buckets, scale = "day") {
     note: String(entry.note || "").trim(),
     hours: getEntryInvestedHours(dateKey, entry)
   }));
-  const geometry = ProjectViewPolicy.entryInvestmentSegments({
-    entries,
-    ...ganttSegmentPolicyArgs(buckets, scale),
-    dayStartHour: state.workStartHour,
-    dayEndHour: state.workEndHour
+  // Day: split by clock time. Week/month: consecutive days. Quarter: weeks. Year: months.
+  if (scale === "day") {
+    const geometry = ProjectViewPolicy.entryInvestmentSegments({
+      entries,
+      ...ganttSegmentPolicyArgs(buckets, scale),
+      dayStartHour: state.workStartHour,
+      dayEndHour: state.workEndHour
+    });
+    return geometry.map(segment => {
+      const source = entries[segment.entryIndex] || {};
+      const hours = Number(source.hours) || 0;
+      const note = source.note || "";
+      const parts = [];
+      if (hours > 0) parts.push(`${trimNumber(hours)}h`);
+      if (note) parts.push(note);
+      const label = parts.join(" · ") || "有投入";
+      return {
+        left: segment.leftRatio * 100,
+        width: segment.widthRatio * 100,
+        label,
+        full: label,
+        dateKey: segment.dateKey,
+        hours,
+        note
+      };
+    });
+  }
+  const dateKeys = [...new Set(entries.map(item => item.dateKey).filter(Boolean))];
+  const geometry = ProjectViewPolicy.investmentSegments({
+    investedDateKeys: dateKeys,
+    ...ganttSegmentPolicyArgs(buckets, scale)
   });
   return geometry.map(segment => {
-    const source = entries[segment.entryIndex] || {};
-    const hours = Number(source.hours) || 0;
-    const note = source.note || "";
+    const covered = entries.filter(item => {
+      const index = buckets.findIndex(bucket =>
+        bucket.key === projectBucketKey(item.dateKey, scale)
+      );
+      return index >= segment.startIndex && index <= segment.endIndex;
+    });
+    const hours = covered.reduce((sum, item) => sum + (Number(item.hours) || 0), 0);
+    const note = covered.length === 1 ? (covered[0].note || "") : "";
     const parts = [];
     if (hours > 0) parts.push(`${trimNumber(hours)}h`);
     if (note) parts.push(note);
+    const startKey = buckets[segment.startIndex]?.key || covered[0]?.dateKey || "";
+    const endKey = buckets[segment.endIndex]?.key || covered.at(-1)?.dateKey || startKey;
     const label = parts.join(" · ") || "有投入";
+    const full = startKey && endKey && startKey !== endKey
+      ? `${label}（${startKey.slice(5)}–${endKey.slice(5)}）`
+      : label;
     return {
       left: segment.leftRatio * 100,
       width: segment.widthRatio * 100,
       label,
-      full: label,
-      dateKey: segment.dateKey,
+      full,
+      dateKey: startKey,
       hours,
       note
     };
   });
 }
 
+/** Week/month+ : one cell per day; same-day work+meeting share the cell by hour ratio. */
+function mapDayBucketInvestSegments(workItems, meetingItems, buckets, scale = "week") {
+  const byDate = new Map();
+  const add = (items, kind) => {
+    items.forEach(({ dateKey, entry }) => {
+      if (!dateKey) return;
+      const hours = getEntryInvestedHours(dateKey, entry);
+      if (!(hours > 0)) return;
+      const row = byDate.get(dateKey) || { workHours: 0, meetingHours: 0, notes: [] };
+      if (kind === "meeting") row.meetingHours += hours;
+      else row.workHours += hours;
+      const note = String(entry?.note || "").trim();
+      if (note && row.notes.length < 2) row.notes.push(note);
+      byDate.set(dateKey, row);
+    });
+  };
+  add(workItems, "work");
+  add(meetingItems, "meeting");
+  const workSegments = [];
+  const meetingSegments = [];
+  const pureWorkDates = [];
+  const pureMeetingDates = [];
+  const mixedDates = [];
+  [...byDate.keys()].sort().forEach(dateKey => {
+    const row = byDate.get(dateKey);
+    if (row.workHours > 0 && row.meetingHours > 0) mixedDates.push(dateKey);
+    else if (row.workHours > 0) pureWorkDates.push(dateKey);
+    else if (row.meetingHours > 0) pureMeetingDates.push(dateKey);
+  });
+  const args = ganttSegmentPolicyArgs(buckets, scale);
+  const pushMerged = (dateKeys, kind) => {
+    if (!dateKeys.length) return;
+    ProjectViewPolicy.investmentSegments({
+      investedDateKeys: dateKeys,
+      ...args
+    }).forEach(segment => {
+      const covered = dateKeys.filter(dateKey => {
+        const index = buckets.findIndex(bucket =>
+          bucket.key === projectBucketKey(dateKey, scale)
+        );
+        return index >= segment.startIndex && index <= segment.endIndex;
+      });
+      const hours = covered.reduce((sum, dateKey) => {
+        const row = byDate.get(dateKey);
+        return sum + (kind === "meeting" ? row.meetingHours : row.workHours);
+      }, 0);
+      const startKey = buckets[segment.startIndex]?.key || covered[0] || "";
+      const endKey = buckets[segment.endIndex]?.key || covered.at(-1) || startKey;
+      const label = hours > 0 ? `${trimNumber(hours)}h` : (kind === "meeting" ? "会议投入" : "有投入");
+      const full = startKey && endKey && startKey !== endKey
+        ? `${label}（${startKey.slice(5)}–${endKey.slice(5)}）`
+        : label;
+      const item = {
+        left: segment.leftRatio * 100,
+        width: segment.widthRatio * 100,
+        label,
+        full,
+        dateKey: startKey,
+        hours,
+        kind
+      };
+      if (kind === "meeting") meetingSegments.push(item);
+      else workSegments.push(item);
+    });
+  };
+  pushMerged(pureWorkDates, "work");
+  pushMerged(pureMeetingDates, "meeting");
+  mixedDates.forEach(dateKey => {
+    const row = byDate.get(dateKey);
+    const geometry = ProjectViewPolicy.investmentSegments({
+      investedDateKeys: [dateKey],
+      ...args
+    })[0];
+    if (!geometry) return;
+    const total = row.workHours + row.meetingHours;
+    const workRatio = row.workHours / total;
+    const meetRatio = row.meetingHours / total;
+    const left = geometry.leftRatio * 100;
+    const width = geometry.widthRatio * 100;
+    const tip = [
+      `普通 ${trimNumber(row.workHours)}h`,
+      `会议 ${trimNumber(row.meetingHours)}h`,
+      `合计 ${trimNumber(total)}h`
+    ].join(" · ");
+    workSegments.push({
+      left,
+      width: width * workRatio,
+      label: `${trimNumber(row.workHours)}h`,
+      full: tip,
+      dateKey,
+      hours: row.workHours,
+      kind: "work"
+    });
+    meetingSegments.push({
+      left: left + width * workRatio,
+      width: Math.max(0.4, width * meetRatio),
+      label: `${trimNumber(row.meetingHours)}h`,
+      full: tip,
+      dateKey,
+      hours: row.meetingHours,
+      kind: "meeting"
+    });
+  });
+  return { workSegments, meetingSegments };
+}
+
+function buildTaskGanttInvestSegments(workItems, meetingItems, buckets, scale = "day") {
+  if (scale === "day") {
+    return {
+      workSegments: mapEntryGanttSegments(workItems, buckets, scale).map(segment => ({ ...segment, kind: "work" })),
+      meetingSegments: mapEntryGanttSegments(meetingItems, buckets, scale).map(segment => ({ ...segment, kind: "meeting" }))
+    };
+  }
+  return mapDayBucketInvestSegments(workItems, meetingItems, buckets, scale);
+}
+
+function ganttCutoffTitle(task, todayKey = toDateKey(new Date())) {
+  const due = task?.dueDate || "";
+  if (!due) return "目标截止";
+  const completedKey = task?.completedAt ? toDateKey(new Date(task.completedAt)) : "";
+  const compareKey = completedKey || todayKey;
+  let deltaText = "";
+  if (compareKey && due) {
+    const days = Math.round((fromDateKey(compareKey) - fromDateKey(due)) / 86400000);
+    if (days === 0) deltaText = completedKey ? " · 按期完成" : " · 今天到期";
+    else if (days > 0) deltaText = completedKey ? ` · 延期 ${days} 天` : ` · 已逾期 ${days} 天`;
+    else deltaText = completedKey ? ` · 提前 ${-days} 天` : ` · 剩余 ${-days} 天`;
+  }
+  return `目标截止：${formatDue(task)}${deltaText}`;
+}
+
 function taskActualTimelineParts(task, buckets, scale = "day", options = {}) {
-  const toBucket = dateKey => projectBucketKey(dateKey, scale);
+  const todayKey = toDateKey(new Date());
   const investedItems = options.investedItems || getTaskScheduleEntries(task.id)
     .filter(item => getEntryInvestedHours(item.dateKey, item.entry) > 0);
-  const investedDateKeys = options.investedDateKeys || investedItems.map(item => item.dateKey);
-  const segments = mapEntryGanttSegments(investedItems, buckets, scale);
+  const workItems = investedItems.filter(item => !isGanttMeetingEntry(item.entry));
+  const meetingItems = investedItems.filter(item => isGanttMeetingEntry(item.entry));
+  const { workSegments, meetingSegments } = buildTaskGanttInvestSegments(
+    workItems,
+    meetingItems,
+    buckets,
+    scale
+  );
   const isEnded = ["done", "closed"].includes(task.status) || Boolean(task.completedAt);
   const createdDateKey = task.createdAtIso || task.createdAt
     ? toDateKey(new Date(task.createdAtIso || task.createdAt))
     : "";
-  const boundary = ProjectViewPolicy.boundaryDateKeys({
-    investedDateKeys,
-    startedDateKey: task.startOverrideAt || task.startedAt
-      ? toDateKey(new Date(task.startOverrideAt || task.startedAt))
-      : "",
-    completedDateKey: task.completedAt ? toDateKey(new Date(task.completedAt)) : "",
-    createdDateKey,
-    dueDateKey: task.dueDate || "",
-    isEnded
-  });
-  const progress = options.progress ?? ProjectSummaryPolicy.taskProgressPercent({
-    status: task.status,
-    investedHours: getTaskDuration(task.id),
-    scheduledHours: getTaskScheduledHours(task.id)
-  });
+  const actualStartAt = task.startOverrideAt || task.startedAt
+    ? toDateKey(new Date(task.startOverrideAt || task.startedAt))
+    : "";
+  const actualEndAt = task.completedAt ? toDateKey(new Date(task.completedAt)) : "";
+  const plannedEndAt = task.dueDate || "";
+  const boundary = typeof ProjectViewPolicy.lifecycleRangeKeys === "function"
+    ? ProjectViewPolicy.lifecycleRangeKeys({
+      createdDateKey,
+      plannedEndAt,
+      actualStartAt,
+      actualEndAt: isEnded ? actualEndAt : "",
+      todayKey
+    })
+    : ProjectViewPolicy.boundaryDateKeys({
+      investedDateKeys: investedItems.map(item => item.dateKey),
+      startedDateKey: actualStartAt,
+      completedDateKey: actualEndAt,
+      createdDateKey,
+      dueDateKey: plannedEndAt,
+      isEnded
+    });
   const span = ProjectViewPolicy.progressSpan({
     startDateKey: boundary.start,
     endDateKey: boundary.end,
-    todayKey: toDateKey(new Date()),
-    isEnded,
-    progress,
+    todayKey,
+    isEnded: true,
+    progress: 0,
     ...ganttSegmentPolicyArgs(buckets, scale)
   });
-  const startRatio = boundary.start
-    ? ProjectViewPolicy.markerRatio({
-      dateKey: ProjectViewPolicy.displayMarkerDateKey(boundary.start, -1, addDays, fromDateKey, toDateKey),
+  const markerAt = (dateKey, edge = "center") => {
+    if (!dateKey) return null;
+    const ratio = ProjectViewPolicy.markerRatio({
+      dateKey,
       buckets,
-      projectBucketKey: toBucket,
-      edge: "start"
-    })
-    : null;
-  const endRatio = boundary.end
-    ? ProjectViewPolicy.markerRatio({
-      dateKey: ProjectViewPolicy.displayMarkerDateKey(boundary.end, -1, addDays, fromDateKey, toDateKey),
-      buckets,
-      projectBucketKey: toBucket,
-      edge: "end"
-    })
+      projectBucketKey: key => projectBucketKey(key, scale),
+      edge,
+      scale,
+      getMonday,
+      fromDateKey
+    });
+    return ratio == null ? null : { offset: ratio * 100, dateKey };
+  };
+  const endMarker = isEnded && actualEndAt ? markerAt(actualEndAt, "center") : null;
+  const isOverdueCompleted = Boolean(
+    isEnded && actualEndAt && plannedEndAt && actualEndAt > plannedEndAt
+  );
+  const hasWorkInvest = workItems.length > 0;
+  const startTick = actualStartAt && !hasWorkInvest && !isEnded
+    ? markerAt(actualStartAt, "center")
     : null;
   return {
-    segments,
-    span: span ? { left: span.leftRatio * 100, width: span.widthRatio * 100, fill: span.fillRatio * 100 } : null,
-    start: startRatio === null ? null : { offset: startRatio * 100, dateKey: boundary.start },
-    end: endRatio === null ? null : { offset: endRatio * 100, dateKey: boundary.end }
+    segments: workSegments,
+    meetingSegments,
+    span: span ? { left: span.leftRatio * 100, width: span.widthRatio * 100, fill: 0 } : null,
+    start: null,
+    startTick,
+    end: endMarker
+      ? { ...endMarker, overdue: isOverdueCompleted }
+      : null,
+    boundary
   };
 }
 
@@ -8088,21 +8896,24 @@ function renderWeekSchedule() {
     column.className = `week-schedule-day${key === state.selectedDate ? " selected" : ""}${i >= 5 ? " weekend" : ""}`;
     column.innerHTML = `<h4>${WEEKDAY_NAMES[date.getDay()]} · ${date.getMonth() + 1}/${date.getDate()}</h4>
       <button type="button" class="week-add-task" data-date="${key}" title="新建任务或会议（在弹窗里选待办类型）">＋ 新建</button>
-      ${renderDayOverviewList(overviewItems, "week")}`;
+      <div class="week-schedule-day-body">
+        ${renderDayOverviewList(overviewItems, "week")}
+        ${overviewItems.length ? "" : `<div class="empty-state">暂无任务</div>`}
+      </div>`;
     column.querySelector(".week-add-task").addEventListener("click", event => {
       event.stopPropagation();
       // 实体创建入口：完整新建窗（待办类型=任务/会议）；日程投入请用时间轴添加
       openTaskDialogForDate(key);
     });
+    const dayBody = column.querySelector(".week-schedule-day-body");
     bindScheduleDrop(column, key, Math.min(Math.max(state.workStartHour, 0), 23));
     bindDayOverviewList(column);
     dayEntries.forEach(entry => {
       logged += getEntryInvestedHours(key, entry);
       scheduled += entry.end - entry.start;
     });
-    if (!overviewItems.length) column.insertAdjacentHTML("beforeend", `<div class="empty-state">暂无任务</div>`);
     column.addEventListener("dblclick", event => {
-      if (event.target === column) {
+      if (event.target === column || event.target === dayBody) {
         state.selectedDate = key;
         state.taskView = "day";
         render();

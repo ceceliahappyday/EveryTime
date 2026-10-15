@@ -8,7 +8,10 @@ const html = fs.readFileSync("index.html", "utf8");
 assert.ok(app.includes("navigateCalendar(-1)"));
 assert.ok(app.includes('item.dataset.view === "day"'));
 assert.ok(app.includes("openTaskDialog(task)"));
-assert.ok(app.includes('if (event.target.closest(".task-check")) return;'));
+assert.ok(
+  app.includes('ignoreSelector = ".task-check, .task-setup-warning, .task-menu, button, a, input, select, textarea"'),
+  "list card activation must ignore checkbox and control clicks"
+);
 assert.ok(!app.includes('<span>${formatTime(entry.start)} – ${formatTime(entry.end)} · ${formatHours(entry.end - entry.start)}</span>'));
 assert.equal((app.match(/for \(let i = 0; i < 7; i\+\+\)/g) || []).length, 2);
 assert.ok(app.includes("taskItems.get(task.id)"));
@@ -30,7 +33,7 @@ assert.ok(styles.includes("justify-content: center"));
 assert.ok(styles.includes("#closeTaskButton"));
 assert.ok(!app.includes('return item.kind === "actual" ? "进行" : "计划"'));
 assert.ok(!app.includes("renderCalendarEntryList(getCalendarEntriesForDate(key), \"week\")"));
-assert.ok(app.includes("gantt-progress-fill"));
+assert.ok(app.includes("gantt-span-track"));
 assert.ok(app.includes("gantt-progress-pct"));
 assert.ok(app.includes("summaryTasks,"));
 
