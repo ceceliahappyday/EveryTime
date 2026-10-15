@@ -52,6 +52,22 @@ assert.match(
 assert.ok(styles.includes(".time-row.time-row-end"), "day timeline must render a workday end boundary row");
 assert.ok(app.includes("timelineEndLabelHour"), "day timeline must label the workday cutoff hour");
 assert.ok(app.includes("scheduleEntryDisplayMeta"), "day timeline should label entries with 会议/计划/进行/备忘 prefixes");
+assert.ok(app.includes("bindScheduleEntryOverflowScroll"), "day entries bind hover overflow scroll affordance");
+assert.match(
+  styles,
+  /\.schedule-entry\s*\{[^}]*overflow-y:\s*auto/s,
+  "day schedule entries must scroll when wrapped content exceeds block height"
+);
+assert.match(
+  styles,
+  /\.schedule-entry::-webkit-scrollbar\s*\{[^}]*width:\s*0/s,
+  "day entry scrollbars stay hidden until hover"
+);
+assert.match(
+  styles,
+  /\.schedule-entry:hover::-webkit-scrollbar\s*,\s*\.schedule-entry\.is-scrolling::-webkit-scrollbar\s*\{[^}]*width:\s*var\(--scroll-size\)/s,
+  "day entry scrollbars appear on hover or while scrolling"
+);
 assert.ok(
   app.includes("Left status tabs only reshape the todo list"),
   "left status tabs must not re-filter day/week/month calendars"

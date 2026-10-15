@@ -8734,6 +8734,16 @@ function getTaskDepth(task, rootId = "") {
   return depth;
 }
 
+function bindScheduleEntryOverflowScroll(item) {
+  if (!item) return;
+  let scrollTimer = 0;
+  item.addEventListener("scroll", () => {
+    item.classList.add("is-scrolling");
+    window.clearTimeout(scrollTimer);
+    scrollTimer = window.setTimeout(() => item.classList.remove("is-scrolling"), 700);
+  }, { passive: true });
+}
+
 function scheduleEntryDisplayMeta(entry, dateKey = state.selectedDate) {
   if (entry.entryType === "calendar" || !entry.taskId) {
     const kind = getEntryInvestedHours(dateKey, entry) > 0 ? "actual" : "planned";
@@ -8823,6 +8833,7 @@ function renderDayTimeline() {
     item.innerHTML = `<strong><b class="schedule-entry-badge">${escapeHtml(meta.badge)}</b>${escapeHtml(entry.title)}</strong>
       ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}`;
     item.addEventListener("click", () => openEntryDialog(entry.start, entry));
+    bindScheduleEntryOverflowScroll(item);
     item.addEventListener("dragstart", event => {
       event.stopPropagation();
       event.dataTransfer.setData("text/entry-id", entry.id);

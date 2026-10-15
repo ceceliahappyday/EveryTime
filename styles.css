@@ -36,9 +36,15 @@
 .entry-under-parent-options::-webkit-scrollbar,
 .entry-link-confirm-options::-webkit-scrollbar,
 .header-more-menu::-webkit-scrollbar,
-.schedule-month-cell.selected .month-task-list::-webkit-scrollbar {
+.schedule-month-cell.selected .month-task-list::-webkit-scrollbar,
+.schedule-entry:hover::-webkit-scrollbar,
+.schedule-entry.is-scrolling::-webkit-scrollbar {
   width: var(--scroll-size);
   height: var(--scroll-size);
+}
+.schedule-entry::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 .task-list::-webkit-scrollbar-button,
 .timeline-wrap::-webkit-scrollbar-button,
@@ -54,7 +60,8 @@
 .entry-under-parent-options::-webkit-scrollbar-button,
 .entry-link-confirm-options::-webkit-scrollbar-button,
 .header-more-menu::-webkit-scrollbar-button,
-.schedule-month-cell.selected .month-task-list::-webkit-scrollbar-button {
+.schedule-month-cell.selected .month-task-list::-webkit-scrollbar-button,
+.schedule-entry::-webkit-scrollbar-button {
   display: none;
   width: 0;
   height: 0;
@@ -68,7 +75,8 @@
 .task-trace-list.month::-webkit-scrollbar-corner,
 .modal-scroll::-webkit-scrollbar-corner,
 .entry-under-parent-options::-webkit-scrollbar-corner,
-.entry-link-confirm-options::-webkit-scrollbar-corner {
+.entry-link-confirm-options::-webkit-scrollbar-corner,
+.schedule-entry::-webkit-scrollbar-corner {
   background: transparent;
 }
 .task-list::-webkit-scrollbar-track,
@@ -85,7 +93,8 @@
 .entry-under-parent-options::-webkit-scrollbar-track,
 .entry-link-confirm-options::-webkit-scrollbar-track,
 .header-more-menu::-webkit-scrollbar-track,
-.schedule-month-cell.selected .month-task-list::-webkit-scrollbar-track {
+.schedule-month-cell.selected .month-task-list::-webkit-scrollbar-track,
+.schedule-entry::-webkit-scrollbar-track {
   background: var(--scroll-track);
 }
 .task-list::-webkit-scrollbar-thumb,
@@ -102,7 +111,8 @@
 .entry-under-parent-options::-webkit-scrollbar-thumb,
 .entry-link-confirm-options::-webkit-scrollbar-thumb,
 .header-more-menu::-webkit-scrollbar-thumb,
-.schedule-month-cell.selected .month-task-list::-webkit-scrollbar-thumb {
+.schedule-month-cell.selected .month-task-list::-webkit-scrollbar-thumb,
+.schedule-entry::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
   background: var(--scroll-thumb);
@@ -121,7 +131,9 @@
 .task-trace-list.month:hover::-webkit-scrollbar-thumb,
 .modal-scroll:hover::-webkit-scrollbar-thumb,
 .entry-under-parent-options:hover::-webkit-scrollbar-thumb,
-.entry-link-confirm-options:hover::-webkit-scrollbar-thumb {
+.entry-link-confirm-options:hover::-webkit-scrollbar-thumb,
+.schedule-entry:hover::-webkit-scrollbar-thumb,
+.schedule-entry.is-scrolling::-webkit-scrollbar-thumb {
   background: var(--scroll-thumb-strong);
   background-clip: padding-box;
 }
@@ -4092,7 +4104,8 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
   width: auto;
   min-height: 28px;
   padding: 4px 8px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 0;
   border-radius: 0;
   border-left: 2px solid var(--entry);
@@ -4100,6 +4113,7 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
   box-shadow: none;
   cursor: pointer;
   transition: filter .12s, background .12s;
+  overscroll-behavior: contain;
 }
 /* Fantastical / Apple Calendar：重叠全宽叠放，色块交叠混合，不左右错开 */
 .schedule-entry.is-overlap {
@@ -4108,14 +4122,31 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
   box-shadow: none;
 }
 .schedule-entry:hover { z-index: 12; filter: brightness(.98); transform: none; mix-blend-mode: normal; }
-.schedule-entry strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+.schedule-entry strong {
+  display: block;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.35;
+}
 .schedule-entry.done strong,
 .schedule-entry.closed strong {
   text-decoration: line-through;
   opacity: .78;
 }
 .schedule-entry span { display: block; margin-top: 4px; color: #5e645f; font-size: 10px; }
-.schedule-entry p { margin: 5px 0 0; color: #777d78; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.schedule-entry p {
+  margin: 5px 0 0;
+  color: #777d78;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .schedule-entry-type {
   display: inline-block;
   margin-left: 4px;
