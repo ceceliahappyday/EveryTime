@@ -51,6 +51,8 @@ const state = {
   taskListSearch: "",
   showContinueYesterdayOnly: false,
   taskView: "day",
+  /** Desktop: right-hand schedule/gantt surface shown (false = todo-only focus shell). */
+  scheduleRevealed: false,
   projectScale: "day",
   projectScrollLeft: null,
   projectRowsScrollTop: 0,
@@ -151,7 +153,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "taskPanelToggle",
     "focusViewChrome", "focusViewButton", "focusViewMenu",
     "glassToggleButton",
-    "topbarMain", "headerToolsSlot", "headerTools", "headerOverflow", "headerMoreButton", "headerMoreMenu", "headerActions",
+    "topbarMain", "headerToolsSlot", "headerTools", "headerOverflow", "headerMoreButton", "headerMoreMenu", "headerChromeMenu", "headerChromeMaximize", "headerActions",
     "settingsButton", "settingsDialog", "settingsForm", "settingsDialogScroll", "settingsCategoryList", "addCategoryButton", "settingsPaneTitle", "settingsNavList",
     "settingProfileName", "settingGlass", "settingPinned", "settingLocked", "settingStartAtLogin",
     "settingMorningStart", "settingMorningEnd", "settingAfternoonStart", "settingAfternoonEnd", "settingWorkHoursSummary",
@@ -352,20 +354,21 @@ function bindEvents() {
     el.exportDialog.close();
     exportAllData(el.exportFormat.value);
   });
-  el.quickAddButton?.addEventListener("click", () => openNewFromQuickAdd());
+  el.quickAddButton?.addEventListener("click", () => openNewFromQuickAdd("", { forceDialog: true }));
   el.quickTaskForm.addEventListener("submit", event => {
     event.preventDefault();
-    openNewFromQuickAdd();
+    quickCreateIncompleteFromInput();
   });
   el.taskAddTrigger?.addEventListener("click", event => {
     event.preventDefault();
     event.stopPropagation();
-    openNewFromQuickAdd();
+    // 「+」仍可打开完整表单（含会议）；回车新建走待完善捷径。
+    openNewFromQuickAdd("", { forceDialog: true });
   });
   el.quickTaskInput?.addEventListener("keydown", event => {
     if (event.key !== "Enter") return;
     event.preventDefault();
-    openNewFromQuickAdd();
+    quickCreateIncompleteFromInput();
   });
   el.taskCreateKind?.addEventListener("change", () => syncTaskCreateKindUi());
   el.panelAiImageInput?.addEventListener("change", async () => {
@@ -649,6 +652,9 @@ function bindEvents() {
   bindRichNoteEditor(el.taskBusinessBackground);
   bindWorkHourDateTimeDefault(el.taskActualStart, "start");
   bindWorkHourDateTimeDefault(el.taskActualEnd, "end");
+  // 目标完成 / 会议开始：点选输入框时同样先带出当天+默认工时，与实际开始/结束一致。
+  bindWorkHourDateTimeDefault(el.taskDueDateTime, () => (isCreateMeetingKind() ? "start" : "end"));
+  bindWorkHourDateTimeDefault(el.taskMeetingEndDateTime, "end");
   document.querySelectorAll("[data-datetime-target]").forEach(button => {
     button.addEventListener("click", event => {
       event.preventDefault();
@@ -748,13 +754,20 @@ let shellLayoutDragActive = false;
 let shellLayoutDragWidth = 0;
 let shellLayoutObserverWidth = 0;
 
-const SHELL_FOCUS_MAX_WIDTH = 680;
+// Dual-pane becomes unusable below this; auto-collapse to todo-only (联动隐藏视图).
+const SHELL_FOCUS_MAX_WIDTH = 720;
+// 敬业签登录窗实测约 364px；主进程曾把 set-bounds 钳在 380，导致永远缩不下去。
+// 默认窄壳 300、可拖到 280，低于敬业签登录窗量级。
+const FOCUS_SHELL_WIDTH = 300;
+const FOCUS_SHELL_MIN_HEIGHT = 640;
+const FOCUS_SHELL_MIN_WIDTH = 280;
 const VIEW_EXPAND_WIDTHS = {
   day: 920,
   week: 920,
   month: 1000,
   project: 1200
 };
+let scheduleAutoHideLock = false;
 
 function measureLayoutWidth() {
   const docWidth = document.documentElement?.clientWidth;
@@ -772,15 +785,18 @@ function syncShellLayoutClasses(widthHint) {
   const wasFocus = document.body.classList.contains("shell-focus");
   const narrow = desktop && width < 1180;
   const compact = desktop && width < 960;
-  // Todo-only strip until dual-pane would squeeze the schedule (~680).
-  const focus = desktop && width < SHELL_FOCUS_MAX_WIDTH;
+  // Todo-only shell is driven by scheduleRevealed (视图显隐), not raw width —
+  // so revealing a view can expand the window without remounting the left list.
+  const focus = desktop && !state.scheduleRevealed;
   document.body.classList.toggle("shell-narrow", narrow);
   document.body.classList.toggle("shell-compact-topbar", compact);
   document.body.classList.toggle("shell-focus", focus);
+  document.body.classList.toggle("schedule-revealed", desktop && state.scheduleRevealed);
   if (!focus) {
     document.body.classList.remove("task-panel-open");
     closeFocusViewMenu();
   }
+  syncFocusViewButtonChrome();
   syncFocusSurfaceVisibility(focus, compact);
   if (wasFocus !== focus) {
     updateDateNavigationChrome();
@@ -798,26 +814,42 @@ function syncShellLayoutClasses(widthHint) {
 function syncFocusSurfaceVisibility(focus, compact) {
   const schedule = document.querySelector(".schedule-panel");
   const weekStrip = document.querySelector(".week-strip");
-  // Author CSS `display:flex` can win over the UA [hidden] rule; pair the
-  // attribute with an !important CSS hook, and keep schedule out of the tree
-  // while focus mode is on so glass panels cannot ghost the calendar.
+  // Hide schedule whenever the surface is collapsed (视图 off), regardless of width.
+  const hideSchedule = !state.scheduleRevealed;
   if (schedule) {
-    schedule.hidden = !!focus;
-    schedule.setAttribute("aria-hidden", focus ? "true" : "false");
+    schedule.hidden = hideSchedule;
+    schedule.setAttribute("aria-hidden", hideSchedule ? "true" : "false");
   }
   if (weekStrip) {
     const modeHidesWeek = document.body.classList.contains("month-mode")
       || document.body.classList.contains("week-mode")
       || document.body.classList.contains("project-mode");
-    weekStrip.hidden = !!(focus || compact || modeHidesWeek);
+    weekStrip.hidden = !!(hideSchedule || compact || modeHidesWeek);
   }
+}
+
+function maybeAutoHideScheduleForWidth(width) {
+  if (scheduleAutoHideLock) return false;
+  if (!document.body.classList.contains("in-desktop")) return false;
+  if (!state.scheduleRevealed) return false;
+  if (!Number.isFinite(width) || width >= SHELL_FOCUS_MAX_WIDTH) return false;
+  scheduleAutoHideLock = true;
+  try {
+    hideScheduleSurface();
+  } finally {
+    scheduleAutoHideLock = false;
+  }
+  return true;
 }
 
 function scheduleShellLayoutSync(widthHint) {
   if (shellLayoutDragActive) {
+    if (maybeAutoHideScheduleForWidth(shellLayoutDragWidth)) return;
     syncShellLayoutClasses(shellLayoutDragWidth);
     return;
   }
+  const width = Number.isFinite(widthHint) ? widthHint : measureLayoutWidth();
+  if (maybeAutoHideScheduleForWidth(width)) return;
   syncShellLayoutClasses(widthHint);
 }
 
@@ -831,6 +863,25 @@ function applyUiScale() {
   scheduleShellLayoutSync();
 }
 
+function syncHeaderChromeCollapse(collapsed) {
+  const on = !!collapsed;
+  document.body.classList.toggle("header-chrome-collapsed", on);
+  if (el.headerChromeMenu) {
+    el.headerChromeMenu.hidden = !on;
+    el.headerChromeMenu.setAttribute("aria-hidden", on ? "false" : "true");
+  }
+  if (!el.headerMoreButton) return;
+  if (on) {
+    el.headerMoreButton.textContent = "☰";
+    el.headerMoreButton.title = "菜单";
+    el.headerMoreButton.setAttribute("aria-label", "菜单");
+  } else {
+    el.headerMoreButton.textContent = "⋯";
+    el.headerMoreButton.title = "更多操作";
+    el.headerMoreButton.setAttribute("aria-label", "更多操作");
+  }
+}
+
 function syncHeaderOverflow() {
   if (!el.headerTools || !el.headerToolsSlot || !el.headerMoreMenu || !el.headerMoreButton) return;
   const desktop = document.body.classList.contains("in-desktop");
@@ -838,6 +889,7 @@ function syncHeaderOverflow() {
   const topbar = document.querySelector(".topbar");
   const menuWasOpen = el.headerMoreMenu.getAttribute("aria-hidden") !== "true"
     && !el.headerMoreMenu.hasAttribute("hidden");
+  const chromeCollapse = desktop && document.body.classList.contains("shell-focus");
 
   const restoreToolsToSlot = () => {
     if (el.headerTools.parentElement !== el.headerToolsSlot) {
@@ -845,6 +897,7 @@ function syncHeaderOverflow() {
     }
     setHeaderMoreButtonVisible(false);
     document.body.classList.remove("header-tools-overflow");
+    syncHeaderChromeCollapse(false);
   };
 
   if (!desktop || !actions || !topbar) {
@@ -867,11 +920,12 @@ function syncHeaderOverflow() {
 
   const moreWidth = 34;
   const toolsWidth = visibleWidth(el.headerTools);
-  const settingsWidth = visibleWidth(el.settingsButton);
+  const settingsWidth = chromeCollapse ? 0 : visibleWidth(el.settingsButton);
   const panelToggle = el.taskPanelToggle;
   const toggleWidth = visibleWidth(panelToggle);
-  const viewWidth = visibleWidth(el.viewSwitcher);
-  const windowWidth = visibleWidth(document.querySelector(".window-controls"));
+  const viewWidth = chromeCollapse ? 0 : visibleWidth(el.viewSwitcher);
+  const focusViewWidth = chromeCollapse ? 0 : visibleWidth(el.focusViewChrome || el.focusViewButton);
+  const windowWidth = chromeCollapse ? 0 : visibleWidth(document.querySelector(".window-controls"));
   const brandWidth = visibleWidth(document.querySelector(".brand"));
   const dateWidth = visibleWidth(el.topbarMain || document.querySelector(".topbar-main"));
   const topbarPad = (() => {
@@ -881,24 +935,29 @@ function syncHeaderOverflow() {
   const topbarGap = Number.parseFloat(getComputedStyle(topbar).columnGap) || 10;
 
   // Budget left after reserved chrome that must never clip.
-  const reservedTrailing = settingsWidth + moreWidth + windowWidth + gap * 2;
+  const reservedTrailing = settingsWidth + focusViewWidth + moreWidth + windowWidth + gap * 2;
   const reservedLeading = viewWidth + brandWidth + dateWidth;
   const reservedGaps = topbarGap * 3;
   const availableForTools = topbar.clientWidth - topbarPad - reservedLeading - reservedTrailing - reservedGaps - toggleWidth;
   const toolsNeedRoom = toolsWidth > 0 && availableForTools < toolsWidth + gap;
 
-  const forceOverflow = document.body.classList.contains("shell-narrow")
+  const forceOverflow = chromeCollapse
+    || document.body.classList.contains("shell-narrow")
     || document.body.classList.contains("shell-compact-topbar")
-    || document.body.classList.contains("shell-focus")
     || measureLayoutWidth() < 1180
     || toolsNeedRoom;
 
   if (forceOverflow) {
+    // Keep chrome menu after tools so the tray reads tools → view/settings → window.
+    if (el.headerChromeMenu && el.headerChromeMenu.parentElement !== el.headerMoreMenu) {
+      el.headerMoreMenu.appendChild(el.headerChromeMenu);
+    }
     if (el.headerTools.parentElement !== el.headerMoreMenu) {
-      el.headerMoreMenu.appendChild(el.headerTools);
+      el.headerMoreMenu.insertBefore(el.headerTools, el.headerChromeMenu || null);
     }
     setHeaderMoreButtonVisible(true);
     document.body.classList.add("header-tools-overflow");
+    syncHeaderChromeCollapse(chromeCollapse);
   }
 
   if (!forceOverflow && menuWasOpen) closeHeaderOverflowMenu();
@@ -969,10 +1028,50 @@ function bindHeaderOverflow() {
     if (!button || button.id === "glassToggleButton") return;
     closeHeaderOverflowMenu();
   });
+  el.headerChromeMenu?.addEventListener("click", event => {
+    const button = event.target.closest("[data-chrome-action]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const action = button.dataset.chromeAction;
+    if (action === "view") {
+      closeHeaderOverflowMenu();
+      if (state.scheduleRevealed) {
+        hideScheduleSurface();
+        return;
+      }
+      // Re-open the view picker anchored to the hamburger after the tray closes.
+      requestAnimationFrame(() => {
+        if (el.focusViewMenu?.hidden === false) return;
+        openFocusViewMenu();
+      });
+      return;
+    }
+    if (action === "settings") {
+      closeHeaderOverflowMenu();
+      openSettingsDialog();
+      return;
+    }
+    if (action === "minimize") {
+      closeHeaderOverflowMenu();
+      window.desktopAPI?.minimize?.();
+      return;
+    }
+    if (action === "maximize") {
+      closeHeaderOverflowMenu();
+      el.maximizeWindow?.click();
+      return;
+    }
+    if (action === "close") {
+      closeHeaderOverflowMenu();
+      window.desktopAPI?.quit?.();
+    }
+  });
   document.addEventListener("pointerdown", event => {
     if (el.headerMoreButton?.contains(event.target)) return;
     if (el.headerMoreMenu?.contains(event.target)) return;
     if (el.headerOverflow?.contains(event.target)) return;
+    if (el.focusViewMenu?.contains(event.target)) return;
     closeHeaderOverflowMenu();
   });
   document.addEventListener("keydown", event => {
@@ -1045,19 +1144,46 @@ function closeFocusViewMenu() {
   }
 }
 
+function syncFocusViewButtonChrome() {
+  if (!el.focusViewButton) return;
+  const label = state.scheduleRevealed ? "隐藏视图" : "显示视图";
+  if (el.focusViewButton.textContent !== label) {
+    el.focusViewButton.textContent = label;
+  }
+  if (state.scheduleRevealed) {
+    el.focusViewButton.title = "隐藏右侧日程 / 甘特，回到待办清单";
+    el.focusViewButton.setAttribute("aria-label", "隐藏视图");
+    el.focusViewButton.setAttribute("aria-pressed", "true");
+  } else {
+    el.focusViewButton.title = "显示视图：选择日 / 周 / 月 / 项目";
+    el.focusViewButton.setAttribute("aria-label", "显示视图");
+    el.focusViewButton.setAttribute("aria-pressed", "false");
+  }
+  const overflowViewLabel = el.headerChromeMenu?.querySelector?.('[data-chrome-action="view"] span');
+  if (overflowViewLabel && overflowViewLabel.textContent !== label) {
+    overflowViewLabel.textContent = label;
+  }
+}
+
 function openFocusViewMenu() {
   if (!el.focusViewMenu || !el.focusViewButton) return;
-  if (!document.body.classList.contains("shell-focus")) return;
+  if (state.scheduleRevealed) return;
+  if (!document.body.classList.contains("in-desktop")) return;
   el.focusViewMenu.hidden = false;
   el.focusViewMenu.setAttribute("aria-hidden", "false");
   el.focusViewButton.setAttribute("aria-expanded", "true");
-  const rect = el.focusViewButton.getBoundingClientRect();
+  const anchor = document.body.classList.contains("header-chrome-collapsed")
+    && el.headerMoreButton
+    && !el.headerMoreButton.hidden
+    ? el.headerMoreButton
+    : el.focusViewButton;
+  const rect = anchor.getBoundingClientRect();
   const menu = el.focusViewMenu;
   if (menu.parentElement !== document.body) document.body.appendChild(menu);
   menu.style.position = "fixed";
   menu.style.top = `${Math.round(rect.bottom + 6)}px`;
-  menu.style.left = `${Math.max(8, Math.round(rect.left))}px`;
-  menu.style.right = "auto";
+  menu.style.right = `${Math.max(8, Math.round(window.innerWidth - rect.right))}px`;
+  menu.style.left = "auto";
   menu.style.zIndex = "5000";
 }
 
@@ -1085,6 +1211,55 @@ function expandWindowForView(view) {
   } catch {}
 }
 
+function shrinkWindowToFocusShell() {
+  const height = Math.max(
+    FOCUS_SHELL_MIN_HEIGHT,
+    Math.min(window.outerHeight || FOCUS_SHELL_MIN_HEIGHT, 900)
+  );
+  if (window.desktopAPI?.setWindowBounds) {
+    window.desktopAPI.setWindowBounds({
+      x: window.screenX,
+      y: window.screenY,
+      width: FOCUS_SHELL_WIDTH,
+      height
+    });
+    return;
+  }
+  try {
+    window.resizeTo(FOCUS_SHELL_WIDTH, height);
+  } catch {}
+}
+
+function revealScheduleSurface(view = state.taskView || "day") {
+  const nextView = view || "day";
+  state.scheduleRevealed = true;
+  applyTaskView(nextView, { expand: true });
+}
+
+function hideScheduleSurface() {
+  if (!state.scheduleRevealed && document.body.classList.contains("shell-focus")) {
+    closeFocusViewMenu();
+    return;
+  }
+  closeFocusViewMenu();
+  state.scheduleRevealed = false;
+  // Project mode CSS hides .task-panel; week/month skip the focus-shell grid.
+  // Collapse must return to day so the todo list is actually painted again.
+  if (state.taskView !== "day") {
+    state.taskView = "day";
+    state.projectViewNeedsAnchor = false;
+    state.projectWindowStart = null;
+    state.projectWindowEnd = null;
+    state.projectGanttLastExtend = null;
+    el.viewSwitcher?.querySelectorAll("button[data-view]").forEach(item => {
+      item.classList.toggle("active", item.dataset.view === "day");
+    });
+  }
+  shrinkWindowToFocusShell();
+  syncShellLayoutClasses(FOCUS_SHELL_WIDTH);
+  render();
+}
+
 function applyTaskView(view, { expand = false } = {}) {
   const previousView = state.taskView;
   state.taskView = view;
@@ -1098,9 +1273,11 @@ function applyTaskView(view, { expand = false } = {}) {
   el.viewSwitcher?.querySelectorAll("button[data-view]").forEach(item => {
     item.classList.toggle("active", item.dataset.view === view);
   });
-  if (expand && document.body.classList.contains("shell-focus")) {
+  if (expand) {
+    state.scheduleRevealed = true;
     expandWindowForView(view);
   }
+  syncShellLayoutClasses();
   render();
 }
 
@@ -1109,6 +1286,11 @@ function bindFocusViewMenu() {
   el.focusViewButton.addEventListener("click", event => {
     event.preventDefault();
     event.stopPropagation();
+    // 视图 = show/hide: when schedule is open, click collapses back to todo-only.
+    if (state.scheduleRevealed) {
+      hideScheduleSurface();
+      return;
+    }
     toggleFocusViewMenu();
   });
   el.focusViewMenu.addEventListener("click", event => {
@@ -1116,7 +1298,7 @@ function bindFocusViewMenu() {
     if (!button) return;
     event.preventDefault();
     closeFocusViewMenu();
-    applyTaskView(button.dataset.view, { expand: true });
+    revealScheduleSurface(button.dataset.view);
   });
   document.addEventListener("pointerdown", event => {
     if (el.focusViewButton?.contains(event.target)) return;
@@ -1206,7 +1388,7 @@ function bindTopbarWindowChrome(runToggleMaximize) {
 
 function bindWindowResize() {
   if (!window.desktopAPI?.setWindowBounds && !window.desktopAPI?.resizeBy) return;
-  const minWidth = 380;
+  const minWidth = FOCUS_SHELL_MIN_WIDTH;
   const minHeight = 520;
   document.querySelectorAll(".app-shell [data-resize-edge], .app-shell [data-resize-axis]").forEach(handle => {
     handle.addEventListener("pointerdown", event => {
@@ -1265,6 +1447,12 @@ function bindWindowResize() {
         }
         // Live drag must not wait for a possibly-stale window.innerWidth / resize event.
         shellLayoutDragWidth = Math.max(0, width - frameChromeX);
+        // Narrow past dual-pane comfort → same as 隐藏视图 (snap to todo-only shell).
+        if (maybeAutoHideScheduleForWidth(shellLayoutDragWidth)) {
+          try { handle.releasePointerCapture(moveEvent.pointerId); } catch {}
+          finish();
+          return;
+        }
         syncShellLayoutClasses(shellLayoutDragWidth);
       };
       const finish = () => {
@@ -1291,12 +1479,18 @@ function bindWindowResize() {
 }
 
 function updateMaximizeChrome(maximized) {
-  if (!el.maximizeWindow) return;
   const on = !!maximized;
-  el.maximizeWindow.classList.toggle("is-maximized", on);
-  el.maximizeWindow.title = on ? "向下还原" : "最大化";
-  el.maximizeWindow.setAttribute("aria-label", on ? "向下还原" : "最大化");
-  el.maximizeWindow.textContent = on ? "❐" : "□";
+  if (el.maximizeWindow) {
+    el.maximizeWindow.classList.toggle("is-maximized", on);
+    el.maximizeWindow.title = on ? "向下还原" : "最大化";
+    el.maximizeWindow.setAttribute("aria-label", on ? "向下还原" : "最大化");
+    el.maximizeWindow.textContent = on ? "❐" : "□";
+  }
+  if (el.headerChromeMaximize) {
+    const label = el.headerChromeMaximize.querySelector("span");
+    if (label) label.textContent = on ? "向下还原" : "最大化";
+    el.headerChromeMaximize.classList.toggle("is-maximized", on);
+  }
   document.body.classList.toggle("window-maximized", on);
 }
 
@@ -1486,9 +1680,13 @@ async function initDesktop() {
   el.aiDetectModelsButton?.addEventListener("click", () => refreshAiProviderModels({ forceList: true }));
   el.settingAiApiKey?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
   el.settingAiProvider?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
+  // Boot into todo-only focus shell; 视图 reveals day/week/month/gantt beside it.
+  state.scheduleRevealed = false;
+  shrinkWindowToFocusShell();
   // in-desktop is required for shell-* classes; sync after desktop boot so a
   // cold narrow window matches a later wide→narrow drag.
   applyUiScale();
+  syncShellLayoutClasses(FOCUS_SHELL_WIDTH);
 }
 
 async function renderAppVersion() {
@@ -2350,6 +2548,15 @@ function isSetupIncompleteTask(task) {
   return Boolean(task?.setupIncomplete);
 }
 
+function ensureTaskReadyForSchedule(task, { openDialog = true } = {}) {
+  if (!task || !isSetupIncompleteTask(task)) return true;
+  showToast("任务尚未创建完整，请先补充信息后再投入日程");
+  if (openDialog) {
+    requestAnimationFrame(() => openTaskDialog(task, { mode: "setupIncomplete" }));
+  }
+  return false;
+}
+
 function promoteSetupIncompleteSections(sections = []) {
   const incomplete = [];
   const seen = new Set();
@@ -2382,12 +2589,11 @@ function resolveAiDraftKind(draft = {}) {
   return "task";
 }
 
-function createTaskFromAiDraft(draft = {}, { persist = true } = {}) {
+function buildIncompleteTaskSkeleton(title = "", { fromAi = false } = {}) {
   const now = new Date();
-  // Screenshot / batch create only commits the title; user fills the rest later.
-  const task = {
+  return {
     id: crypto.randomUUID(),
-    title: String(draft.title || "").trim().slice(0, 80),
+    title: String(title || "").trim().slice(0, 80),
     dueDate: "",
     dueTime: "",
     owner: getDefaultOwner(),
@@ -2408,13 +2614,17 @@ function createTaskFromAiDraft(draft = {}, { persist = true } = {}) {
     deliveryNote: "",
     recurrence: null,
     recurrenceGroupId: "",
-    createdFromAiScreenshot: true,
+    createdFromAiScreenshot: Boolean(fromAi),
     setupIncomplete: true,
     createdAtIso: now.toISOString(),
     updatedAt: now.toISOString(),
     createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
   };
-  if (!task.title) throw new Error("截图中未能识别出待办名称");
+}
+
+function createIncompleteTask(title = "", { persist = true, fromAi = false } = {}) {
+  const task = buildIncompleteTaskSkeleton(title, { fromAi });
+  if (!task.title) throw new Error(fromAi ? "截图中未能识别出待办名称" : "请先填写待办名称");
   getDay(state.selectedDate).tasks.unshift(task);
   if (persist) {
     state.listKind = "todo";
@@ -2424,6 +2634,23 @@ function createTaskFromAiDraft(draft = {}, { persist = true } = {}) {
     render();
   }
   return { type: "task", task, title: task.title };
+}
+
+function createTaskFromAiDraft(draft = {}, { persist = true } = {}) {
+  // Screenshot / batch create only commits the title; user fills the rest later.
+  return createIncompleteTask(draft.title, { persist, fromAi: true });
+}
+
+function quickCreateIncompleteFromInput() {
+  const title = String(el.quickTaskInput?.value || "").trim();
+  if (!title) {
+    el.quickTaskInput?.focus();
+    return null;
+  }
+  if (el.quickTaskInput) el.quickTaskInput.value = "";
+  const created = createIncompleteTask(title, { persist: true, fromAi: false });
+  requestAnimationFrame(() => el.quickTaskInput?.focus());
+  return created;
 }
 
 function createMeetingFromAiDraft(draft = {}, { persist = true } = {}) {
@@ -3739,12 +3966,12 @@ function syncTaskPanelDensity() {
 function syncQuickAddChrome(width = el.taskPanel?.clientWidth || state.taskPanelWidth || TASK_PANEL_WIDTH_DEFAULT) {
   // Add / search / continue-yesterday stay the same in todo and meeting lists.
   if (el.quickTaskInput && document.activeElement !== el.quickTaskInput) {
-    el.quickTaskInput.placeholder = "新增";
-    el.quickTaskInput.setAttribute("aria-label", "新增标题后选择任务或会议");
+    el.quickTaskInput.placeholder = "输入标题，回车新建";
+    el.quickTaskInput.setAttribute("aria-label", "输入待办标题后回车快速新建，稍后可补充信息");
   }
   if (el.taskAddTrigger) {
-    el.taskAddTrigger.title = "新建";
-    el.taskAddTrigger.setAttribute("aria-label", "新建");
+    el.taskAddTrigger.title = "打开完整新建表单";
+    el.taskAddTrigger.setAttribute("aria-label", "打开完整新建表单");
   }
   if (el.taskListSearch && !(el.taskListSearch.value || "").trim()) {
     el.taskListSearch.placeholder = width < 230 ? "搜索.../@" : "搜索.../@人员";
@@ -4009,12 +4236,13 @@ function createTaskCard(task) {
   card.className = `task-card ${visualStatus}${incomplete ? " setup-incomplete" : ""}`;
   if (state.highlightTaskId && state.highlightTaskId === task.id) card.classList.add("is-just-linked");
   card.dataset.taskId = task.id;
-  card.draggable = !incomplete && (
+  // Incomplete tasks stay "draggable" only so dragstart can toast + open the form.
+  card.draggable = incomplete || (
     visualStatus === "unplanned"
     || TaskStatusPolicy.isSchedulableStatus(task.status)
     || isMemoReminderTask(task)
   );
-  if (incomplete) card.title = `${displayTitle}（待完善：点击补充上级、时间等信息）`;
+  if (incomplete) card.title = `${displayTitle}（待完善：请先补充信息，完善前不能投入日程）`;
   else if (isMemoReminderTask(task)) card.title = `${displayTitle}（备忘：拖入日程将新建待办并开始投入）`;
   else card.title = displayTitle;
   if (sideBadge) card.classList.add("has-priority");
@@ -4054,6 +4282,11 @@ function createTaskCard(task) {
   card.addEventListener("dragstart", event => {
     if (isListMultiSelectEvent(event)) {
       event.preventDefault();
+      return;
+    }
+    if (incomplete) {
+      event.preventDefault();
+      ensureTaskReadyForSchedule(task);
       return;
     }
     card.classList.add("dragging");
@@ -4330,9 +4563,16 @@ function handlePanelScreenshotPaste(event) {
   extractAndCreateTaskFromImage({ file, source: "task-dialog" });
 }
 
-function openNewFromQuickAdd(presetTitle = "", { kind = "task" } = {}) {
+function openNewFromQuickAdd(presetTitle = "", { kind = "task", forceDialog = false } = {}) {
   const title = String(presetTitle || el.quickTaskInput?.value || "").trim();
   if (el.quickTaskInput) el.quickTaskInput.value = "";
+  // Default path: title + Enter creates a stub (setupIncomplete). Full dialog
+  // only when explicitly asked (「+」/会议) or when creating a meeting.
+  if (!forceDialog && kind !== "meeting" && title) {
+    createIncompleteTask(title, { persist: true, fromAi: false });
+    requestAnimationFrame(() => el.quickTaskInput?.focus());
+    return;
+  }
   openTaskDialog(null, {
     createKind: kind === "meeting" ? "meeting" : "task",
     presetTitle: title
@@ -9416,6 +9656,7 @@ function bindProjectDrop(target, buckets, paneWidth = 0, scale = "day") {
 }
 
 function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
+  if (!ensureTaskReadyForSchedule(task)) return false;
   const placement = window.TaskWorkPolicy?.copyPlacement({ start: 0, end: 1 }, hour, 22);
   if (!placement) {
     showToast("该时间点不能放置新的投入记录");
@@ -9564,8 +9805,14 @@ function saveEntry() {
     finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId: "", dateKey });
     return;
   }
+  if (linkSelected && !linkSelected.startsWith("__")) {
+    const linked = findTask(linkSelected)?.task;
+    if (linked && !ensureTaskReadyForSchedule(linked)) return;
+  }
   resolveEntryTaskLinkWithGuard(payload, existingEntry).then(taskId => {
     if (!taskId) return;
+    const linked = findTask(taskId)?.task;
+    if (linked && !ensureTaskReadyForSchedule(linked)) return;
     finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dateKey });
   });
 }
@@ -10050,6 +10297,10 @@ function renderEntryTaskOptions(query) {
 }
 function updateEntryTaskActiveOption(options) { options.forEach((option, index) => option.classList.toggle("active", index === entryTaskActiveIndex)); }
 function chooseEntryTaskOption(value, parentTitle = "") {
+  if (value && !String(value).startsWith("__")) {
+    const found = findTask(value);
+    if (found && !ensureTaskReadyForSchedule(found.task)) return;
+  }
   el.entryTaskLink.value = value;
   el.entryTaskCombobox.dataset.parentTitle = value === "__create_parent__" ? parentTitle : "";
   if (value === "__create_parent__" && parentTitle) {
@@ -10997,11 +11248,12 @@ function bindWorkHourDateTimeDefault(input, kind = "end") {
   input.dataset.workHourDefaultBound = "1";
   const seedIfEmpty = () => {
     if (input.value) return;
-    const [dateKey = "", time = ""] = defaultLocalDateTimeSeed(kind).split("T");
+    const resolved = typeof kind === "function" ? kind() : kind;
+    const [dateKey = "", time = ""] = defaultLocalDateTimeSeed(resolved).split("T");
     if (input.type === "datetime-local") input.value = `${dateKey}T${time}`;
     else input.value = formatDateTimeDisplay(dateKey, time);
   };
-  // Seed only when opening the picker, not on keyboard focus/tab.
+  // Seed only when opening the picker / clicking the field, not on keyboard focus/tab.
   input.addEventListener("pointerdown", seedIfEmpty);
 }
 

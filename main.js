@@ -28,6 +28,8 @@ const trayIconPath = path.join(__dirname, "assets", "icons", "app-icon.png");
 const skipStartupRegistration = process.argv.includes("--skip-startup-registration");
 const isDevRuntime = !app.isPackaged;
 const STANDARD_WINDOW_WIDTH = 1380;
+/** Floor for live resize / focus shell (must stay ≤ renderer FOCUS_SHELL_MIN_WIDTH). */
+const MIN_WINDOW_WIDTH = 280;
 const STANDARD_WINDOW_HEIGHT = 900;
 
 if (process.platform === "win32") {
@@ -139,7 +141,7 @@ function createWindow() {
     savedBounds,
     displays,
     {
-      minWidth: 380,
+      minWidth: MIN_WINDOW_WIDTH,
       minHeight: 520,
       defaultWidth: STANDARD_WINDOW_WIDTH,
       defaultHeight: STANDARD_WINDOW_HEIGHT,
@@ -151,7 +153,7 @@ function createWindow() {
     height: safeBounds.height,
     x: safeBounds.x,
     y: safeBounds.y,
-    minWidth: 380,
+    minWidth: MIN_WINDOW_WIDTH,
     minHeight: 520,
     icon: appIconPath,
     title: isDevRuntime ? `今日日程 · 开发预览 v${app.getVersion()}` : "今日日程",
@@ -436,7 +438,7 @@ if (singleInstanceLock) app.whenReady().then(() => {
     mainWindow.setBounds({
       x: bounds.x,
       y: bounds.y,
-      width: Math.max(380, Math.round(width)),
+      width: Math.max(MIN_WINDOW_WIDTH, Math.round(width)),
       height: Math.max(520, Math.round(height))
     });
     if (locked) scheduleSendWindowToDesktopLayer();
@@ -444,7 +446,7 @@ if (singleInstanceLock) app.whenReady().then(() => {
   ipcMain.on("window:set-bounds", (_event, next = {}) => {
     if (!mainWindow) return;
     const bounds = mainWindow.getBounds();
-    const width = Math.max(380, Math.round(next.width ?? bounds.width));
+    const width = Math.max(MIN_WINDOW_WIDTH, Math.round(next.width ?? bounds.width));
     const height = Math.max(520, Math.round(next.height ?? bounds.height));
     mainWindow.setBounds({
       x: Math.round(next.x ?? bounds.x),
@@ -1073,7 +1075,7 @@ function loadWindowState() {
   try {
     const raw = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
     const bounds = JSON.parse(raw);
-    if (!bounds || bounds.width < 420 || bounds.height < 520) return null;
+    if (!bounds || bounds.width < MIN_WINDOW_WIDTH || bounds.height < 520) return null;
     return bounds;
   } catch {
     return null;

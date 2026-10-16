@@ -515,7 +515,11 @@ body {
     radial-gradient(circle at 8% 0%, rgba(215, 226, 216, .75), transparent 25%),
     var(--paper);
 }
-body.in-desktop { background: transparent; }
+body.in-desktop {
+  background: transparent;
+  /* Desktop focus shell can go to ~280; do not inherit the web 360 floor. */
+  min-width: 0;
+}
 body.in-desktop .app-shell {
   width: 100%;
   max-width: none;
@@ -897,8 +901,10 @@ body.in-desktop.shell-compact-topbar:not(.week-mode):not(.month-mode):not(.proje
     "topbar topbar"
     "tasks schedule";
 }
-/* Narrow focus must override day parallel grid — otherwise todo stays in left column. */
-body.in-desktop.shell-focus:not(.week-mode):not(.month-mode):not(.project-mode) .app-shell {
+/* Narrow focus must override day parallel grid — otherwise todo stays in left column.
+   Also covers week/month/project: collapsing 视图 can briefly keep those mode classes,
+   and project-mode otherwise hides .task-panel entirely. */
+body.in-desktop.shell-focus .app-shell {
   display: grid !important;
   grid-template-columns: minmax(0, 1fr) !important;
   grid-template-rows: auto minmax(0, 1fr) !important;
@@ -906,21 +912,19 @@ body.in-desktop.shell-focus:not(.week-mode):not(.month-mode):not(.project-mode) 
     "topbar"
     "tasks" !important;
 }
-body.in-desktop.shell-focus:not(.week-mode):not(.month-mode):not(.project-mode) .task-panel {
+body.in-desktop.shell-focus .task-panel {
   grid-area: tasks !important;
+  display: flex !important;
   width: 100%;
   max-width: none;
   border-right: 0;
 }
-body.in-desktop.shell-focus:not(.week-mode):not(.month-mode):not(.project-mode) .workspace {
+body.in-desktop.shell-focus .workspace {
   display: contents;
 }
-body.in-desktop.shell-focus.week-mode .app-shell,
-body.in-desktop.shell-focus.month-mode .app-shell,
-body.in-desktop.shell-focus.project-mode .app-shell,
-body.week-mode .app-shell,
-body.month-mode .app-shell,
-body.project-mode .app-shell {
+body.week-mode:not(.shell-focus) .app-shell,
+body.month-mode:not(.shell-focus) .app-shell,
+body.project-mode:not(.shell-focus) .app-shell {
   display: flex;
   flex-direction: column;
 }
@@ -1041,15 +1045,16 @@ body.in-desktop.shell-focus .workspace-split-handle {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1 1 auto;
+  flex: 2 1 0;
   min-width: 0;
   overflow: hidden;
 }
 .panel-heading-actions {
-  flex: 0 0 var(--task-side-action-w);
-  flex-shrink: 0;
-  min-width: var(--task-side-action-w);
-  max-width: var(--task-side-action-w);
+  flex: 1 1 0;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: none;
+  width: auto;
   overflow: hidden;
 }
 .panel-heading-row h2,
@@ -1178,10 +1183,10 @@ body.in-desktop.shell-focus .workspace-split-handle {
 }
 .task-side-slot {
   box-sizing: border-box;
-  flex: 0 0 var(--task-side-action-w);
-  width: var(--task-side-action-w);
-  min-width: var(--task-side-action-w);
-  max-width: var(--task-side-action-w);
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  max-width: none;
   display: flex;
   align-items: stretch;
 }
@@ -1509,13 +1514,14 @@ h2 { margin: 4px 0 0; font: 700 22px Georgia, "Songti SC", serif; }
 }
 
 .task-list-toolbar .task-search {
-  flex: 1 1 auto;
+  flex: 2 1 0;
   width: auto;
   min-width: 0;
   max-width: none;
 }
 
 .task-list-toolbar .task-side-slot {
+  flex: 1 1 0;
   height: var(--task-toolbar-h);
 }
 
@@ -1624,8 +1630,15 @@ body.in-desktop.glass-mode .create-kind-menu-item:focus-visible {
   flex: 1 1 auto;
   min-width: 0;
 }
+.task-panel.density-md .panel-heading-lead {
+  flex: 2 1 0;
+}
+.task-panel.density-md .panel-heading-actions,
+.task-panel.density-md .task-list-toolbar .task-side-slot {
+  flex: 1 1 0;
+}
 .task-panel.density-md .task-list-toolbar .task-search {
-  flex: 1 1 auto;
+  flex: 2 1 0;
   min-width: 0;
 }
 .task-panel.density-md .panel-heading-actions .quick-add {
@@ -1645,7 +1658,7 @@ body.in-desktop.glass-mode .create-kind-menu-item:focus-visible {
 }
 .task-panel.density-sm .list-kind-menu {
   flex: 1 1 auto;
-  max-width: calc(100% - var(--task-side-action-w) - 12px);
+  max-width: none;
 }
 .task-panel.density-sm .task-tabs span {
   margin-left: 1px;
@@ -1670,7 +1683,7 @@ body.in-desktop.glass-mode .create-kind-menu-item:focus-visible {
 }
 .task-panel.density-xs .list-kind-menu {
   flex: 1 1 auto;
-  max-width: calc(100% - var(--task-side-action-w) - 10px);
+  max-width: none;
 }
 
 .entry-link-confirm-message,
@@ -4778,9 +4791,95 @@ body.in-desktop #taskDialog {
   z-index: 80;
 }
 body.in-desktop.shell-focus #taskDialog {
-  width: min(520px, calc(100vw - 20px));
-  margin-top: 64px;
-  max-height: min(720px, calc(100vh - 84px));
+  width: min(520px, calc(100vw - 12px));
+  max-width: calc(100vw - 12px);
+  margin-top: 52px;
+  max-height: min(720px, calc(100vh - 64px));
+}
+body.in-desktop.shell-focus #entryDialog {
+  width: min(520px, calc(100vw - 12px));
+  max-width: calc(100vw - 12px);
+  margin-top: 52px;
+  max-height: min(720px, calc(100vh - 64px));
+}
+/*
+ * Focus shell is ~280–300px. Paired columns + 7em side labels leave almost no
+ * room for inputs (新建任务 / 新建会议). Stack everything vertically.
+ */
+body.in-desktop.shell-focus #taskEditForm .form-row,
+body.in-desktop.shell-focus #entryForm .form-row,
+body.in-desktop.shell-focus #taskEditForm .task-kind-category-row,
+body.in-desktop.shell-focus #taskEditForm .task-status-due-row,
+body.in-desktop.shell-focus #taskEditForm.create-kind-meeting .task-status-due-row,
+body.in-desktop.shell-focus #taskEditForm .task-due-combined .task-due-inputs {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 8px;
+}
+body.in-desktop.shell-focus #taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden),
+body.in-desktop.shell-focus #taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting),
+body.in-desktop.shell-focus #taskEditForm .recurring-options > label {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 6px;
+}
+body.in-desktop.shell-focus #taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > span,
+body.in-desktop.shell-focus #taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > span,
+body.in-desktop.shell-focus #taskEditForm .recurring-options > label > span {
+  flex: none;
+  width: auto !important;
+  max-width: none;
+  margin-bottom: 0;
+  white-space: normal;
+}
+body.in-desktop.shell-focus #taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > input,
+body.in-desktop.shell-focus #taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > select,
+body.in-desktop.shell-focus #taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > .datetime-input-wrap,
+body.in-desktop.shell-focus #taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > .entry-task-combobox,
+body.in-desktop.shell-focus #taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > input,
+body.in-desktop.shell-focus #taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > select,
+body.in-desktop.shell-focus #taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > .datetime-input-wrap,
+body.in-desktop.shell-focus #taskEditForm .recurring-options > label > input {
+  width: 100%;
+  min-width: 0;
+}
+body.in-desktop.shell-focus .modal-scroll,
+body.in-desktop.shell-focus #entryDialog .modal-scroll {
+  padding: 12px 12px 8px;
+  scrollbar-gutter: auto;
+}
+body.in-desktop.shell-focus #entryDialog .modal-header {
+  padding: 14px 12px 4px;
+}
+body.in-desktop.shell-focus .modal h3 {
+  font-size: 18px;
+}
+body.in-desktop.shell-focus #taskDialog .modal-actions,
+body.in-desktop.shell-focus #entryDialog .modal-actions {
+  padding: 10px 12px 12px;
+  gap: 8px;
+}
+body.in-desktop.shell-focus #taskDialog .modal-actions-spacer,
+body.in-desktop.shell-focus #entryDialog .modal-actions > span {
+  display: none;
+}
+body.in-desktop.shell-focus #taskDialog .modal-actions > button {
+  flex: 1 1 calc(50% - 8px);
+  min-width: 0;
+}
+body.in-desktop.shell-focus #entryDialog .modal-actions {
+  grid-template-columns: 1fr 1fr;
+}
+body.in-desktop.shell-focus #entryDialog .modal-actions > button {
+  width: 100%;
+  min-width: 0;
+}
+body.in-desktop.shell-focus .task-ai-dropzone-body {
+  gap: 6px;
+}
+body.in-desktop.shell-focus .task-ai-dropzone-body span {
+  font-size: 11px;
+  line-height: 1.35;
 }
 body.in-desktop:has(dialog[open]) .topbar,
 body.in-desktop:has(dialog[open]) .window-controls {
@@ -5110,14 +5209,15 @@ body.in-desktop.glass-mode #taskEditForm .entry-task-trigger {
 .hidden { display: none !important; }
 .desktop-only { display: none; }
 body.in-desktop .desktop-only { display: inline-block; }
-/* focus-view-chrome is desktop-only markup, but must stay hidden whenever
-   the full 日/周/月/项目 switcher is visible (not shell-focus). */
+/* 视图 button: todo-only shell + when schedule is open (click again to collapse). */
 body.in-desktop .focus-view-chrome.desktop-only,
 .focus-view-chrome {
   display: none !important;
 }
 body.in-desktop.shell-focus .focus-view-chrome.desktop-only,
-body.in-desktop.shell-focus .focus-view-chrome {
+body.in-desktop.shell-focus .focus-view-chrome,
+body.in-desktop.schedule-revealed .focus-view-chrome.desktop-only,
+body.in-desktop.schedule-revealed .focus-view-chrome {
   display: inline-flex !important;
 }
 body.in-desktop.pinned #pinWindow { color: #fff; border-color: var(--accent); background: var(--accent); }
@@ -5574,10 +5674,28 @@ body.in-desktop.glass-mode .header-more-menu {
   backdrop-filter: blur(18px) saturate(1.25);
   -webkit-backdrop-filter: blur(18px) saturate(1.25);
 }
-body.in-desktop.glass-mode .header-more-menu .header-tools .soft-button {
-  color: #f4fbff;
-  background: rgba(255,255,255,.10);
-  border-color: rgba(219,238,249,.28);
+body.in-desktop.glass-mode .header-more-menu .header-tools .soft-button,
+body.in-desktop.glass-mode .header-chrome-menu button {
+  color: #f3f8fb !important;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+body.in-desktop.glass-mode .header-chrome-menu {
+  border-top-color: rgba(219, 238, 249, .22);
+}
+body.in-desktop.glass-mode .header-chrome-sep {
+  background: rgba(219, 238, 249, .22);
+}
+body.in-desktop.glass-mode .header-more-menu .header-tools .soft-button:hover,
+body.in-desktop.glass-mode .header-more-menu .header-tools .soft-button:focus-visible,
+body.in-desktop.glass-mode .header-chrome-menu button:hover,
+body.in-desktop.glass-mode .header-chrome-menu button:focus-visible {
+  background: rgba(143, 224, 215, .14) !important;
+}
+body.in-desktop.glass-mode .header-chrome-menu button.is-danger:hover,
+body.in-desktop.glass-mode .header-chrome-menu button.is-danger:focus-visible {
+  background: rgba(255, 120, 120, .16) !important;
+  color: #ffb4ae !important;
 }
 body.in-desktop.glass-mode.desktop-locked .app-shell { opacity: .58; }
 /* Tabs stay underline-style in glass (do not re-box). */
@@ -6893,33 +7011,135 @@ body.in-desktop .header-pinned {
   -webkit-app-region: no-drag;
 }
 body.in-desktop .header-more-menu {
+  --header-menu-icon: 20px;
+  --header-menu-row-h: 40px;
   position: fixed;
   top: 0;
   right: 0;
   z-index: 5000;
-  min-width: 196px;
-  padding: 6px;
+  min-width: 188px;
+  padding: 8px 6px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 10px;
   background: rgba(251, 250, 247, .98);
   box-shadow: 0 14px 34px rgba(20, 28, 34, .28);
+  display: grid;
+  gap: 0;
 }
 body.in-desktop .header-more-menu[hidden] {
   display: none !important;
 }
 body.in-desktop .header-more-menu .header-tools {
   display: grid;
-  gap: 4px;
+  gap: 0;
   width: 100%;
 }
-body.in-desktop .header-more-menu .header-tools .soft-button {
+/* Flat tray rows (敬业签-style): one icon column + label, no boxed buttons. */
+body.in-desktop .header-more-menu .header-tools .soft-button,
+body.in-desktop .header-chrome-menu button {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
   width: 100%;
   min-width: 0;
-  justify-content: flex-start;
-  padding-inline: 10px;
+  height: var(--header-menu-row-h) !important;
+  min-height: var(--header-menu-row-h) !important;
+  margin: 0;
+  padding: 0 12px !important;
+  border: 0 !important;
+  border-radius: 8px;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--ink);
+  font: 500 13px/1.2 "PingFang SC", "Microsoft YaHei", sans-serif !important;
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
 }
-body.in-desktop .header-more-menu .header-tools .btn-label {
+body.in-desktop .header-more-menu .header-tools .btn-icon,
+body.in-desktop .header-chrome-menu button i,
+body.in-desktop .header-more-menu .menu-ico {
+  flex: 0 0 var(--header-menu-icon);
+  width: var(--header-menu-icon);
+  height: var(--header-menu-icon);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  font-size: 15px;
+  font-style: normal;
+  line-height: 1;
+  opacity: .92;
+  color: inherit;
+}
+/* Uniform outline icons (敬业签-scale): same 16×16 box, same stroke. */
+body.in-desktop .header-more-menu .menu-ico svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  overflow: visible;
+}
+body.in-desktop .header-chrome-menu button .ico-restore {
+  display: none;
+}
+body.in-desktop .header-chrome-menu button.is-maximized .ico-maximize {
+  display: none;
+}
+body.in-desktop .header-chrome-menu button.is-maximized .ico-restore {
+  display: block;
+}
+body.in-desktop .header-more-menu .header-tools .btn-label,
+body.in-desktop .header-chrome-menu button span {
   display: inline !important;
+  min-width: 0;
+  font: inherit;
+  font-weight: 500;
+}
+body.in-desktop .header-more-menu .header-tools .soft-button:hover,
+body.in-desktop .header-more-menu .header-tools .soft-button:focus-visible,
+body.in-desktop .header-chrome-menu button:hover,
+body.in-desktop .header-chrome-menu button:focus-visible {
+  background: rgba(101, 180, 177, .14) !important;
+  border-color: transparent !important;
+}
+body.in-desktop .header-chrome-menu {
+  display: grid;
+  gap: 0;
+  width: 100%;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+body.in-desktop .header-chrome-menu[hidden] {
+  display: none !important;
+}
+body.in-desktop .header-chrome-menu:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+body.in-desktop .header-chrome-sep {
+  height: 1px;
+  margin: 4px 10px;
+  background: var(--line-soft);
+}
+body.in-desktop .header-chrome-menu button.is-danger:hover,
+body.in-desktop .header-chrome-menu button.is-danger:focus-visible {
+  background: rgba(185, 76, 72, .14) !important;
+  color: #b94c48;
+}
+body.in-desktop.header-chrome-collapsed .focus-view-chrome,
+body.in-desktop.header-chrome-collapsed #settingsButton.header-pinned,
+body.in-desktop.header-chrome-collapsed .window-controls {
+  display: none !important;
 }
 body.in-desktop.header-tools-overflow .header-tools-slot:empty {
   display: none;
@@ -7197,12 +7417,15 @@ body.in-desktop.shell-focus .header-actions > .soft-button {
   justify-content: center;
 }
 body.in-desktop.shell-focus .focus-view-chrome .soft-button,
-body.in-desktop.shell-focus #focusViewButton {
+body.in-desktop.shell-focus #focusViewButton,
+body.in-desktop.schedule-revealed .focus-view-chrome .soft-button,
+body.in-desktop.schedule-revealed #focusViewButton {
   width: auto !important;
-  min-width: 40px !important;
-  padding: 0 8px !important;
+  min-width: 64px !important;
+  padding: 0 10px !important;
   height: 30px;
   font-size: 12px;
+  white-space: nowrap;
 }
 body.in-desktop.shell-focus .header-tools-slot:empty,
 body.in-desktop.shell-focus.header-tools-overflow .header-tools-slot {
@@ -7281,18 +7504,22 @@ body.in-desktop.shell-focus .task-count-inline {
   font-weight: 500;
   opacity: .72;
 }
+body.in-desktop.shell-focus .panel-heading-lead {
+  flex: 2 1 0;
+  min-width: 0;
+}
 body.in-desktop.shell-focus .panel-heading-actions,
 body.in-desktop.shell-focus .task-side-slot {
-  flex: 0 0 var(--task-side-action-w);
-  width: var(--task-side-action-w);
-  min-width: var(--task-side-action-w);
-  max-width: var(--task-side-action-w);
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  max-width: none;
 }
 body.in-desktop.shell-focus .task-list-toolbar .task-search {
   max-width: none;
   width: auto;
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 2 1 0;
 }
 body.in-desktop.shell-focus .panel-heading-actions .quick-add {
   width: 100%;
@@ -7499,7 +7726,7 @@ body.in-desktop.glass-mode .focus-view-menu button:hover {
 }
 
 @media (max-width: 760px) {
-  body { min-width: 360px; }
+  body:not(.in-desktop) { min-width: 360px; }
   /* Web-only stacked chrome. Desktop layout is owned by shell-* classes so
      wide-to-narrow drag matches a cold narrow refresh. */
   body:not(.in-desktop) .topbar {
@@ -7562,7 +7789,7 @@ body.in-desktop.glass-mode .focus-view-menu button:hover {
     grid-template-columns: minmax(0, 1fr) !important;
     grid-template-rows: minmax(0, 1fr) !important;
   }
-  body.in-desktop.shell-focus:not(.week-mode):not(.month-mode):not(.project-mode) .app-shell {
+  body.in-desktop.shell-focus .app-shell {
     display: grid !important;
     grid-template-columns: minmax(0, 1fr) !important;
     grid-template-rows: auto minmax(0, 1fr) !important;
@@ -7575,7 +7802,7 @@ body.in-desktop.glass-mode .focus-view-menu button:hover {
   }
   body.in-desktop.shell-focus .task-panel {
     display: flex !important;
-    grid-area: tasks;
+    grid-area: tasks !important;
     grid-row: auto;
     height: 100%;
     min-height: 0;

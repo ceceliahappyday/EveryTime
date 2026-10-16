@@ -34,6 +34,11 @@ assert.match(html, /type="text" id="taskCloseCompletedAt"/, "close confirm compl
 assert.match(app, /defaultWorkEndTime/, "due time should default to workday end");
 assert.match(app, /defaultWorkStartTime/, "actual start should default to workday start when picking");
 assert.match(app, /bindWorkHourDateTimeDefault/, "empty datetime pickers should seed work-hour defaults");
+assert.match(
+  app,
+  /bindWorkHourDateTimeDefault\(el\.taskDueDateTime/,
+  "目标完成时间 must auto-seed date/time on click like actual start/end"
+);
 assert.match(app, /getTaskDueParts/, "due datetime UI must still map to dueDate/dueTime storage");
 assert.match(styles, /body\.in-desktop \.modal\s*\{[^}]*margin-top:\s*88px/s, "desktop modals must sit below the topbar drag region");
 assert.match(styles, /-webkit-app-region:\s*no-drag/, "modal chrome must remain clickable over the desktop drag strip");
@@ -65,6 +70,21 @@ assert.match(styles, /#taskEditForm[\s\S]*min-height:\s*42px/, "short controls s
 assert.match(app, /settingsDialog \|\| document\.body/, "color palette mounts inside settings dialog");
 assert.doesNotMatch(html, /task-attention-hint|只提醒，不排投入/, "仅关注 no longer shows helper microcopy");
 assert.match(styles, /#taskEditForm \.form-row > label:not\(#taskTitleField\):not\(\.checkbox-setting\)/, "short task fields keep label and control on one row");
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus #taskEditForm \.form-row[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*!important/s,
+  "narrow focus shell must stack paired task/meeting form columns"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus #taskEditForm[\s\S]*display:\s*grid\s*!important[\s\S]*width:\s*auto\s*!important/s,
+  "narrow focus shell must drop the fixed 7em side labels so inputs keep full width"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.shell-focus #entryDialog[\s\S]*calc\(100vw - 12px\)/s,
+  "entry dialog must also fit the focus shell width"
+);
 assert.match(styles, /\.task-attention-inline\s*\{[^}]*border:\s*0/s, "仅关注 has no outer border");
 assert.match(app, /abandonPendingSuccessorRollback/, "canceling successor draft must restore the closed source task");
 assert.match(app, /pendingSuccessorRollback/, "close-and-successor must be reversible until saved");

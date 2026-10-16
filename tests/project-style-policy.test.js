@@ -352,12 +352,37 @@ assert.match(
 assert.match(
   styles,
   /body\.in-desktop \.focus-view-chrome\.desktop-only[\s\S]*display:\s*none\s*!important/s,
-  "wide desktop must hide the focus-only 视图 button even though it is desktop-only"
+  "default desktop must hide 视图 until shell-focus or schedule-revealed"
+);
+assert.match(
+  styles,
+  /body\.in-desktop\.schedule-revealed \.focus-view-chrome[\s\S]*display:\s*inline-flex/s,
+  "schedule-revealed must keep 视图 visible so the user can collapse back to todo-only"
 );
 assert.match(
   app,
-  /SHELL_FOCUS_MAX_WIDTH\s*=\s*680/,
-  "todo-only focus should end near dual-pane squeeze width (~680)"
+  /SHELL_FOCUS_MAX_WIDTH\s*=\s*720/,
+  "revealed schedule should auto-hide when the window is pulled below dual-pane comfort (~720)"
+);
+assert.match(
+  app,
+  /FOCUS_SHELL_WIDTH\s*=\s*300/,
+  "todo-only shell should track 敬业签-scale narrow width (~300)"
+);
+assert.match(
+  require("fs").readFileSync(require("path").join(__dirname, "..", "main.js"), "utf8"),
+  /MIN_WINDOW_WIDTH\s*=\s*280/,
+  "main process must not re-clamp set-bounds above the focus shell minimum"
+);
+assert.doesNotMatch(
+  require("fs").readFileSync(require("path").join(__dirname, "..", "main.js"), "utf8"),
+  /Math\.max\(380,\s*Math\.round\((?:width|next\.width)/,
+  "set-bounds/resize-by must not keep the old 380px floor that blocked narrow shells"
+);
+assert.match(
+  app,
+  /function maybeAutoHideScheduleForWidth/,
+  "narrowing a revealed schedule must link to the same hide-view path"
 );
 assert.match(
   app,

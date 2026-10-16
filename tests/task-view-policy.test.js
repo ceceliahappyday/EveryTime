@@ -25,7 +25,7 @@ assert.doesNotMatch(app, /shortInline/, "mid-width panels should keep full 待�
 assert.doesNotMatch(html, /<select[^>]*id="listKindSelect"/, "native select must not paint OS dropdown colors");
 assert.match(
   app,
-  /const plannedDisabled = currentStatus === "planned" \? "" : " disabled"/,
+  /const plannedDisabled = \(currentStatus === "planned" \|\| currentStatus === "tracking"\) \? "" : " disabled"/,
   "current automatic status must remain selectable so the browser does not fall through to done"
 );
 assert.match(
@@ -34,8 +34,8 @@ assert.match(
   "in-progress tasks from past schedule entries must keep their automatic status visible"
 );
 assert.match(html, /data-meeting-filter="all"/, "meeting list should expose an all-meetings tab");
-assert.match(html, /placeholder="新增"/, "heading quick-add should use a short 新增 placeholder");
-assert.match(html, /placeholder="搜索\.\.\.\/@负责人"/, "toolbar search should hint @负责人 filtering");
+assert.match(html, /placeholder="输入标题，回车新建"/, "heading quick-add should hint Enter creates without a dialog");
+assert.match(html, /placeholder="搜索\.\.\.\/@人员"/, "toolbar search should hint @人员 filtering");
 assert.match(styles, /\.task-side-control/, "search and continue-yesterday should share side-control styles");
 assert.match(app, /function matchesUnifiedTaskFilter\(task, filter\)/, "status filtering should happen inside the unified task list");
 

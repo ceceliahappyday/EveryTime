@@ -40,7 +40,7 @@
 
       <div class="header-actions" id="headerActions">
         <div class="focus-view-chrome desktop-only" id="focusViewChrome">
-          <button class="soft-button" id="focusViewButton" type="button" title="选择视图并放大窗口" aria-label="选择视图" aria-haspopup="menu" aria-expanded="false">视图</button>
+          <button class="soft-button" id="focusViewButton" type="button" title="显示视图：选择日 / 周 / 月 / 项目" aria-label="显示视图" aria-haspopup="menu" aria-expanded="false" aria-pressed="false">显示视图</button>
           <div class="focus-view-menu" id="focusViewMenu" role="menu" hidden>
             <button type="button" role="menuitem" data-view="day">日视图</button>
             <button type="button" role="menuitem" data-view="week">周历</button>
@@ -51,15 +51,24 @@
         <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false" hidden><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
         <div class="header-tools-slot" id="headerToolsSlot">
           <div class="header-tools" id="headerTools">
-            <button class="soft-button" id="progressReviewButton" type="button" title="集中更新有投入的明细待办"><i class="btn-icon" aria-hidden="true">↻</i><span class="btn-label">更新进度</span></button>
-            <button class="soft-button" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon" aria-hidden="true">✦</i><span class="btn-label">AI助手</span></button>
-            <button class="soft-button" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon" aria-hidden="true">⇩</i><span class="btn-label">导出</span></button>
-            <button class="soft-button" id="importButton" type="button" title="从 JSON 备份文件导入恢复"><i class="btn-icon" aria-hidden="true">⇧</i><span class="btn-label">导入</span></button>
+            <button class="soft-button" id="progressReviewButton" type="button" title="集中更新有投入的明细待办"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.2 8a4.8 4.8 0 0 1 8.2-3.3M12.8 8a4.8 4.8 0 0 1-8.2 3.3"/><path d="M11.2 2.6v2.8H14M4.8 13.4v-2.8H2"/></svg></i><span class="btn-label">更新进度</span></button>
+            <button class="soft-button" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.2l.85 3.35L12.2 6.4l-3.35.85L8 10.6l-.85-3.35L3.8 6.4l3.35-.85z"/><path d="M12.4 10.2l.45 1.75L14.6 12.4l-1.75.45-.45 1.75-.45-1.75-1.75-.45 1.75-.45z"/></svg></i><span class="btn-label">AI助手</span></button>
+            <button class="soft-button" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.5v7.2"/><path d="M5.2 7.2 8 10l2.8-2.8"/><path d="M3.2 12.8h9.6"/></svg></i><span class="btn-label">导出</span></button>
+            <button class="soft-button" id="importButton" type="button" title="从 JSON 备份文件导入恢复"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 10.5V3.3"/><path d="M5.2 5.8 8 3l2.8 2.8"/><path d="M3.2 12.8h9.6"/></svg></i><span class="btn-label">导入</span></button>
           </div>
         </div>
         <div class="header-overflow desktop-only" id="headerOverflow">
           <button class="soft-button header-more-button" id="headerMoreButton" type="button" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" hidden>⋯</button>
-          <div class="header-more-menu" id="headerMoreMenu" role="menu" hidden></div>
+          <div class="header-more-menu" id="headerMoreMenu" role="menu" hidden>
+            <div class="header-chrome-menu" id="headerChromeMenu" hidden>
+              <button type="button" role="menuitem" data-chrome-action="view"><i class="menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><rect x="2.4" y="2.4" width="4.6" height="4.6" rx="1"/><rect x="8.9" y="2.4" width="4.6" height="4.6" rx="1"/><rect x="2.4" y="8.9" width="4.6" height="4.6" rx="1"/><rect x="8.9" y="8.9" width="4.6" height="4.6" rx="1"/></svg></i><span>显示视图</span></button>
+              <button type="button" role="menuitem" data-chrome-action="settings"><i class="menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.1"/><path d="M8 2.3l.7 1.5 1.6.2.9 1.4-.7 1.4.7 1.4-.9 1.4-1.6.2L8 13.7l-.7-1.5-1.6-.2-.9-1.4.7-1.4-.7-1.4.9-1.4 1.6-.2z"/></svg></i><span>设置</span></button>
+              <div class="header-chrome-sep" role="separator"></div>
+              <button type="button" role="menuitem" data-chrome-action="minimize"><i class="menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5.4 8h5.2"/></svg></i><span>最小化</span></button>
+              <button type="button" role="menuitem" data-chrome-action="maximize" id="headerChromeMaximize"><i class="menu-ico" aria-hidden="true"><svg class="ico-maximize" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/></svg><svg class="ico-restore" viewBox="0 0 16 16"><path d="M5.2 4.2h6.1A1.5 1.5 0 0 1 12.8 5.7v6.1"/><rect x="2.5" y="5.5" width="8.2" height="8.2" rx="1.6"/></svg></i><span>最大化</span></button>
+              <button type="button" role="menuitem" data-chrome-action="close" class="is-danger"><i class="menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2"/></svg></i><span>关闭</span></button>
+            </div>
+          </div>
         </div>
         <button class="soft-button desktop-only header-pinned" id="settingsButton" type="button" title="设置、置顶、玻璃背景、紧凑显示等"><i class="btn-icon" aria-hidden="true">⚙</i><span class="btn-label">设置</span></button>
       </div>
@@ -101,10 +110,10 @@
               </div>
               <div class="panel-heading-actions task-side-slot">
                 <form class="quick-add quick-task-form" id="quickTaskForm">
-                  <button type="button" id="taskAddTrigger" class="quick-add-new-btn" title="新建" aria-label="新建">
+                  <button type="button" id="taskAddTrigger" class="quick-add-new-btn" title="打开完整新建表单" aria-label="打开完整新建表单">
                     <span class="quick-add-new-plus" aria-hidden="true">+</span>
                   </button>
-                  <input id="quickTaskInput" maxlength="80" placeholder="新增" autocomplete="off" aria-label="新增事项，可在表单内选择任务或会议" />
+                  <input id="quickTaskInput" maxlength="80" placeholder="输入标题，回车新建" autocomplete="off" aria-label="输入待办标题后回车快速新建，稍后可补充信息" />
                 </form>
                 <input type="file" id="panelAiImageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
               </div>

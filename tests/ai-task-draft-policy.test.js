@@ -3,7 +3,14 @@ const policy = require("../ai-task-draft-policy.js");
 
 assert.ok(policy.EXTRACT_SYSTEM_PROMPT.includes("meeting"));
 assert.ok(policy.EXTRACT_SYSTEM_PROMPT.includes("kind"));
-
+assert.ok(
+  policy.EXTRACT_SYSTEM_PROMPT.includes("先判断截图场景"),
+  "screenshot extract must classify scene before splitting items"
+);
+assert.ok(
+  policy.EXTRACT_SYSTEM_PROMPT.includes("默认只输出 1 条"),
+  "screenshot extract should prefer a single draft for invites and detail pages"
+);
 const parts = policy.buildVisionUserParts({
   note: "跟进合同",
   imageBase64: "data:image/png;base64,AAAA",
@@ -14,6 +21,7 @@ assert.equal(parts.base64, "AAAA");
 assert.match(parts.text, /2026-09-23/);
 assert.match(parts.text, /跟进合同/);
 assert.match(parts.text, /kind=task 或 meeting/);
+assert.match(parts.text, /优先输出 1 条/, "user extract prompt should reinforce single-item preference");
 
 const draft = policy.parseDraftResponse(`\`\`\`json
 {

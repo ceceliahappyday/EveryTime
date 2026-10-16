@@ -51,8 +51,16 @@ if (!styles.includes(".task-list.unified-view .task-group-heading")) {
 if (!styles.includes('.task-search input[type="search"]')) {
   throw new Error("glass mode should provide readable task search colors");
 }
-if (!styles.includes("--task-side-action-w") || !styles.includes("task-side-slot")) {
-  throw new Error("task search and continue-yesterday should share a side-action width");
+if (!styles.includes("task-side-slot")) {
+  throw new Error("task search and continue-yesterday should share a side-action slot");
+}
+if (!/\.panel-heading-lead\s*\{[^}]*flex:\s*2\s+1\s+0/s.test(styles)
+  || !/\.panel-heading-actions\s*\{[^}]*flex:\s*1\s+1\s+0/s.test(styles)) {
+  throw new Error("todo heading lead/actions should keep a 2:1 width ratio");
+}
+if (!/\.task-list-toolbar \.task-search\s*\{[^}]*flex:\s*2\s+1\s+0/s.test(styles)
+  || !/\.task-list-toolbar \.task-side-slot\s*\{[^}]*flex:\s*1\s+1\s+0/s.test(styles)) {
+  throw new Error("search and continue-yesterday should keep a 2:1 width ratio");
 }
 if (!app.includes("applyListKind") || !app.includes("syncListKindSwitch")) {
   throw new Error("todo/meeting list titles should switch via list-kind controls");

@@ -16,7 +16,7 @@ function isBoundsOnAnyDisplay(bounds, displays, minOverlap = 12000) {
 }
 
 function centerBoundsInWorkArea(workArea, width, height) {
-  const nextWidth = Math.min(Math.max(320, width), workArea.width);
+  const nextWidth = Math.min(Math.max(280, width), workArea.width);
   const nextHeight = Math.min(Math.max(240, height), workArea.height);
   return {
     x: Math.round(workArea.x + Math.max(0, (workArea.width - nextWidth) / 2)),
@@ -27,7 +27,7 @@ function centerBoundsInWorkArea(workArea, width, height) {
 }
 
 function sanitizeWindowBounds(saved, displays, options = {}) {
-  const minWidth = options.minWidth || 380;
+  const minWidth = options.minWidth || 280;
   const minHeight = options.minHeight || 520;
   const defaultWidth = options.defaultWidth || 1380;
   const defaultHeight = options.defaultHeight || 900;
@@ -54,7 +54,7 @@ function sanitizeWindowBounds(saved, displays, options = {}) {
 
 function relocateBoundsToDisplay(bounds, display) {
   const workArea = display?.workArea || display?.bounds || { x: 0, y: 0, width: 1280, height: 800 };
-  const width = Math.max(320, Math.round(Number(bounds?.width) || 1380));
+  const width = Math.max(280, Math.round(Number(bounds?.width) || 1380));
   const height = Math.max(240, Math.round(Number(bounds?.height) || 900));
   return centerBoundsInWorkArea(workArea, width, height);
 }
