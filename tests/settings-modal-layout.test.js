@@ -21,6 +21,32 @@ assert.doesNotMatch(
   "closed settings dialog must keep UA display:none"
 );
 assert.match(
+  styles,
+  /\.settings-main-footer\s*>\s*button\s*\{[^}]*white-space:\s*nowrap/s,
+  "settings footer actions must not wrap character-by-character when squeezed"
+);
+const app = fs.readFileSync("app.js", "utf8");
+assert.match(
+  app,
+  /SETTINGS_HOST_MIN_WIDTH\s*=\s*860/,
+  "settings must expand the host window to a comfortable width"
+);
+assert.match(
+  app,
+  /function ensureSettingsHostSize[\s\S]*setWindowBounds[\s\S]*function restoreSettingsHostSize/,
+  "narrow shells must temporarily grow for settings, then restore on close"
+);
+assert.match(
+  app,
+  /ensureSettingsHostSize\(\);\s*\n\s*el\.settingsDialog\.showModal\(\)/,
+  "settings open must expand the host before showing the dialog"
+);
+assert.match(
+  app,
+  /settingsDialog\?\.addEventListener\("close"[\s\S]*restoreSettingsHostSize\(\)/,
+  "closing settings must restore the previous shell size"
+);
+assert.match(
   workflow,
   /package\.json version[\s\S]*does not match tag/,
   "release workflow must refuse mismatched package/tag versions that poison latest.yml"

@@ -6422,6 +6422,93 @@ body.in-desktop .window-controls {
   border-top: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, .35);
 }
+.settings-main-footer > button {
+  white-space: nowrap;
+}
+/* Narrow window: sidebar would crush content (~200px + residual). Stack nav on top. */
+@media (max-width: 560px) {
+  .settings-modal {
+    width: calc(100% - 16px);
+    height: min(720px, calc(100% - 16px));
+    max-height: calc(100% - 16px);
+  }
+  #settingsDialog form.settings-shell,
+  .settings-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .settings-nav {
+    gap: 10px;
+    padding: 12px 10px 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .settings-nav-brand {
+    padding: 0 4px;
+  }
+  .settings-nav-mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .settings-nav-list {
+    flex-direction: column;
+    gap: 2px;
+    overflow: visible;
+  }
+  .settings-nav-item {
+    width: 100%;
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+  .settings-main-header {
+    padding: 12px 14px 8px;
+  }
+  .settings-main-header h3 {
+    font-size: 16px;
+  }
+  .settings-main-scroll {
+    padding: 4px 14px 12px;
+  }
+  .settings-main-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px 12px;
+  }
+  #settingsDialog .settings-row,
+  .settings-modal .settings-row {
+    flex-wrap: wrap;
+  }
+  #settingsDialog .settings-row-inline > input,
+  #settingsDialog .settings-row-inline > select,
+  .settings-modal .settings-row-inline > input,
+  .settings-modal .settings-row-inline > select {
+    width: 100%;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .settings-row-actions {
+    align-items: flex-start;
+  }
+  .settings-work-hours-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 8px;
+  }
+  .settings-work-hours-select,
+  #settingsDialog .settings-work-hours-select {
+    flex: 1 1 5rem;
+    width: auto;
+    min-width: 4.5rem;
+  }
+  body.in-desktop.glass-mode .settings-nav {
+    border-right: 0;
+    border-bottom-color: rgba(181, 218, 239, .22);
+  }
+}
 .settings-panel {
   display: none;
 }

@@ -767,6 +767,10 @@ const VIEW_EXPAND_WIDTHS = {
   month: 1000,
   project: 1200
 };
+/** Settings dialog needs ~820×640 + chrome; expand host window instead of crushing the pane. */
+const SETTINGS_HOST_MIN_WIDTH = 860;
+const SETTINGS_HOST_MIN_HEIGHT = 700;
+let settingsHostRestoreBounds = null;
 let scheduleAutoHideLock = false;
 
 function measureLayoutWidth() {
@@ -1670,7 +1674,10 @@ async function initDesktop() {
     refreshCategorySelects();
   });
   bindSettingsCategoryListInteractions();
-  el.settingsDialog?.addEventListener("close", () => closeCategoryColorPalette());
+  el.settingsDialog?.addEventListener("close", () => {
+    closeCategoryColorPalette();
+    restoreSettingsHostSize();
+  });
   document.addEventListener("pointerdown", event => {
     const palette = document.getElementById("categoryColorPalette");
     if (!palette) return;
@@ -1812,6 +1819,42 @@ function selectSettingsPane(paneId = "account") {
   el.settingsDialogScroll?.scrollTo?.(0, 0);
 }
 
+function ensureSettingsHostSize() {
+  if (!window.desktopAPI?.setWindowBounds) return;
+  const width = Math.round(window.outerWidth || measureLayoutWidth() || 0);
+  const height = Math.round(window.outerHeight || window.innerHeight || 0);
+  if (width >= SETTINGS_HOST_MIN_WIDTH && height >= SETTINGS_HOST_MIN_HEIGHT) {
+    settingsHostRestoreBounds = null;
+    return;
+  }
+  settingsHostRestoreBounds = {
+    x: Math.round(window.screenX || 0),
+    y: Math.round(window.screenY || 0),
+    width: Math.max(FOCUS_SHELL_MIN_WIDTH, width || FOCUS_SHELL_WIDTH),
+    height: Math.max(FOCUS_SHELL_MIN_HEIGHT, height || FOCUS_SHELL_MIN_HEIGHT)
+  };
+  window.desktopAPI.setWindowBounds({
+    x: settingsHostRestoreBounds.x,
+    y: settingsHostRestoreBounds.y,
+    width: Math.max(width, SETTINGS_HOST_MIN_WIDTH),
+    height: Math.max(height, SETTINGS_HOST_MIN_HEIGHT)
+  });
+}
+
+function restoreSettingsHostSize() {
+  const prev = settingsHostRestoreBounds;
+  settingsHostRestoreBounds = null;
+  if (!prev || !window.desktopAPI?.setWindowBounds) return;
+  window.desktopAPI.setWindowBounds(prev);
+  requestAnimationFrame(() => {
+    syncShellLayoutClasses(prev.width);
+    requestAnimationFrame(() => {
+      syncShellLayoutClasses();
+      applyUiScale();
+    });
+  });
+}
+
 async function openSettingsDialog() {
   if (!window.desktopAPI) return;
   const [settings, paths] = await Promise.all([
@@ -1841,6 +1884,7 @@ async function openSettingsDialog() {
   el.settingsDataPath.textContent = paths?.dataFile || "当前用户数据目录";
   el.settingsExportPath.textContent = paths?.exportDir || "文档目录";
   renderSettingsCategoryList();
+  ensureSettingsHostSize();
   el.settingsDialog.showModal();
   if (settings?.aiConfigured) {
     refreshAiProviderModels({ providerId: settings.aiProvider || "", selectedModel: settings.aiModel || "" }).catch(() => {});
