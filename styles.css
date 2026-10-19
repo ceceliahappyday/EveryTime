@@ -4128,11 +4128,16 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
   transition: filter .12s, background .12s;
   overscroll-behavior: contain;
 }
-/* Fantastical / Apple Calendar：重叠全宽叠放，色块交叠混合，不左右错开 */
+/* Concurrent entries share the hour rail side-by-side (Google Calendar style). */
 .schedule-entry.is-overlap {
-  background: color-mix(in srgb, var(--entry-bg) 70%, transparent);
-  mix-blend-mode: multiply;
-  box-shadow: none;
+  --overlap-cols: 1;
+  --overlap-col: 0;
+  left: calc(var(--entry-left) + (100% - var(--entry-left)) * var(--overlap-col) / var(--overlap-cols));
+  width: calc((100% - var(--entry-left)) / var(--overlap-cols) - 3px);
+  right: auto;
+  background: color-mix(in srgb, var(--entry-bg) 88%, transparent);
+  mix-blend-mode: normal;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--entry) 22%, transparent);
 }
 .schedule-entry:hover { z-index: 12; filter: brightness(.98); transform: none; mix-blend-mode: normal; }
 .schedule-entry strong {

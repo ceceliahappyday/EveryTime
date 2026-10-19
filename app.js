@@ -9121,7 +9121,7 @@ function renderDayTimeline() {
   endRow.innerHTML = `<div class="time-label">${String(endHour).padStart(2, "0")}:00</div><div class="time-slot time-slot-end" aria-hidden="true"></div>`;
   el.timeline.appendChild(endRow);
   const layoutItems = layoutOverlappingEntries(visibleEntries);
-  layoutItems.forEach(({ entry, stackIndex, overlapCount }) => {
+  layoutItems.forEach(({ entry, column, columns, stackIndex, overlapCount }) => {
     const item = document.createElement("article");
     const meta = scheduleEntryDisplayMeta(entry, state.selectedDate);
     const top = (entry.start - hours[0]) * getHourHeight() + 3;
@@ -9139,6 +9139,10 @@ function renderDayTimeline() {
     item.style.top = `${top}px`;
     item.style.height = `${Math.max(height, 38)}px`;
     item.style.zIndex = String(3 + stackIndex);
+    if (columns > 1) {
+      item.style.setProperty("--overlap-cols", String(columns));
+      item.style.setProperty("--overlap-col", String(column));
+    }
     applyCategoryColorStyle(item, entryColor);
     item.innerHTML = `<strong><b class="schedule-entry-badge">${escapeHtml(meta.badge)}</b>${escapeHtml(entry.title)}</strong>
       ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}`;
@@ -9170,30 +9174,24 @@ function renderDayTimeline() {
 }
 
 function layoutOverlappingEntries(entries) {
-  // Fantastical / Apple Calendar 风格：重叠时段全宽叠放交叠，不左右错开。
-  const sorted = [...entries].sort((a, b) => a.start - b.start || a.end - b.end);
-  const clusters = [];
-  let current = [];
-  let clusterEnd = -Infinity;
-  sorted.forEach(entry => {
-    if (!current.length || entry.start < clusterEnd) {
-      current.push(entry);
-      clusterEnd = Math.max(clusterEnd, entry.end);
-    } else {
-      clusters.push(current);
-      current = [entry];
-      clusterEnd = entry.end;
-    }
-  });
-  if (current.length) clusters.push(current);
-
-  return clusters.flatMap(cluster => cluster.map((entry, stackIndex) => ({
+  // Side-by-side columns for concurrent blocks so parallel owners/tasks stay visible.
+  const compare = (a, b) => {
+    const ownerA = (a.taskId ? findTask(a.taskId)?.task?.owner : "") || a.owner || "";
+    const ownerB = (b.taskId ? findTask(b.taskId)?.task?.owner : "") || b.owner || "";
+    return String(ownerA).localeCompare(String(ownerB), "zh")
+      || String(a.title || "").localeCompare(String(b.title || ""), "zh")
+      || String(a.id || "").localeCompare(String(b.id || ""));
+  };
+  if (typeof ScheduleOverlapPolicy?.layoutEntries === "function") {
+    return ScheduleOverlapPolicy.layoutEntries(entries, { compare });
+  }
+  return [...entries].map((entry, stackIndex) => ({
     entry,
     column: 0,
     columns: 1,
     stackIndex,
-    overlapCount: cluster.length
-  })));
+    overlapCount: 1
+  }));
 }
 
 function renderWeekSchedule() {
