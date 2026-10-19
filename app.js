@@ -3287,10 +3287,13 @@ function renderUnifiedTodoList() {
       : [];
   } else {
     const workVisible = visibleTasks.filter(task => !isMemoReminderTask(task));
-    const includeSections = state.filter === "all" || state.filter === "in_progress" || state.filter === "planned" || state.filter === "unplanned";
+    // 进行中：扁平按最近投入时间排，不用「今日/昨天」分组打乱先后。
+    const includeSections = state.filter === "all" || state.filter === "planned" || state.filter === "unplanned";
     const orderedVisible = state.filter === "unplanned"
       ? TodoListPolicy.sortByCreatedAtDesc(workVisible)
-      : orderedTasks(workVisible);
+      : state.filter === "in_progress"
+        ? TodoListPolicy.sortByLatestInvestDesc(workVisible, entriesByDate)
+        : orderedTasks(workVisible);
     const groups = TodoListPolicy.buildTodoGroups({
       tasks: orderedVisible,
       selectedDate: state.selectedDate,

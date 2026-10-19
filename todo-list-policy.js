@@ -248,6 +248,42 @@
     );
   }
 
+  /** Latest schedule invest instant for a task (dateKey + end/start hour). */
+  function taskLatestInvestMs(taskId, entriesByDate = {}) {
+    if (!taskId) return 0;
+    let best = 0;
+    Object.entries(entriesByDate).forEach(([dateKey, entries]) => {
+      (entries || []).forEach(entry => {
+        if (!entry || entry.taskId !== taskId) return;
+        if (entry.entryType && entry.entryType !== "task_work") return;
+        const end = Number(entry.end);
+        const start = Number(entry.start);
+        const hour = Number.isFinite(end) ? end : start;
+        let ms = 0;
+        if (Number.isFinite(hour)) {
+          const hours = Math.floor(hour);
+          const minutes = Math.round((hour % 1) * 60);
+          ms = Date.parse(
+            `${dateKey}T${String(hours).padStart(2, "0")}:${String(Math.min(59, Math.max(0, minutes))).padStart(2, "0")}:00`
+          );
+        } else {
+          ms = Date.parse(`${dateKey}T00:00:00`);
+        }
+        if (Number.isFinite(ms) && ms > best) best = ms;
+      });
+    });
+    return best;
+  }
+
+  function sortByLatestInvestDesc(tasks = [], entriesByDate = {}) {
+    return [...tasks].sort((a, b) =>
+      taskLatestInvestMs(b?.id, entriesByDate) - taskLatestInvestMs(a?.id, entriesByDate) ||
+      taskCreatedAtMs(b) - taskCreatedAtMs(a) ||
+      String(b?.id || "").localeCompare(String(a?.id || "")) ||
+      String(a?.title || "").localeCompare(String(b?.title || ""))
+    );
+  }
+
   return {
     FILTER_STORAGE_KEY,
     DEFAULT_FILTER,
@@ -271,6 +307,8 @@
     isProgressReviewCandidate,
     progressReviewCandidates,
     taskCreatedAtMs,
-    sortByCreatedAtDesc
+    sortByCreatedAtDesc,
+    taskLatestInvestMs,
+    sortByLatestInvestDesc
   };
 });

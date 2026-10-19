@@ -7,6 +7,8 @@ const required = [
   "TodoListPolicy.buildTodoGroups",
   "TodoListPolicy.flattenGroups",
   "TodoListPolicy.sortByCreatedAtDesc",
+  "TodoListPolicy.sortByLatestInvestDesc",
+  'state.filter === "in_progress"',
   "taskListSearch",
   "continueYesterdayButton",
   "entryLinkConfirmDialog",

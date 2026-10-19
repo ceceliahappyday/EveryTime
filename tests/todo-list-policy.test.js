@@ -112,4 +112,36 @@ const byCreated = policy.sortByCreatedAtDesc([
 ]);
 assert.deepStrictEqual(byCreated.map(task => task.id), ["new", "mid", "old"], "unplanned inbox should list newest created tasks first");
 
+const investEntries = {
+  "2026-10-17": [
+    { taskId: "older", entryType: "task_work", start: 9, end: 10 },
+    { taskId: "newer", entryType: "task_work", start: 14, end: 15 }
+  ],
+  "2026-10-18": [
+    { taskId: "newest", entryType: "task_work", start: 10, end: 11.5 }
+  ]
+};
+assert.ok(
+  policy.taskLatestInvestMs("newest", investEntries) > policy.taskLatestInvestMs("newer", investEntries),
+  "later invest day must win"
+);
+assert.ok(
+  policy.taskLatestInvestMs("newer", investEntries) > policy.taskLatestInvestMs("older", investEntries),
+  "later invest hour on same day must win"
+);
+const byInvest = policy.sortByLatestInvestDesc(
+  [
+    { id: "older", title: "早", createdAtIso: "2026-10-18T12:00:00.000Z" },
+    { id: "newest", title: "新", createdAtIso: "2026-10-01T08:00:00.000Z" },
+    { id: "newer", title: "中", createdAtIso: "2026-10-02T08:00:00.000Z" },
+    { id: "idle", title: "无投入", createdAtIso: "2026-10-19T08:00:00.000Z" }
+  ],
+  investEntries
+);
+assert.deepStrictEqual(
+  byInvest.map(task => task.id),
+  ["newest", "newer", "older", "idle"],
+  "in-progress list should order by latest schedule invest, newest first"
+);
+
 console.log("todo list policy tests passed");
