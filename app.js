@@ -761,6 +761,7 @@ const SHELL_FOCUS_MAX_WIDTH = 720;
 const FOCUS_SHELL_WIDTH = 300;
 const FOCUS_SHELL_MIN_HEIGHT = 640;
 const FOCUS_SHELL_MIN_WIDTH = 280;
+const SCHEDULE_REVEALED_STORAGE_KEY = "today-planner-schedule-revealed";
 const VIEW_EXPAND_WIDTHS = {
   day: 920,
   week: 920,
@@ -1234,9 +1235,26 @@ function shrinkWindowToFocusShell() {
   } catch {}
 }
 
+function loadScheduleRevealedPreference() {
+  try {
+    return localStorage.getItem(SCHEDULE_REVEALED_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveScheduleRevealedPreference(revealed) {
+  try {
+    localStorage.setItem(SCHEDULE_REVEALED_STORAGE_KEY, revealed ? "1" : "0");
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 function revealScheduleSurface(view = state.taskView || "day") {
   const nextView = view || "day";
   state.scheduleRevealed = true;
+  saveScheduleRevealedPreference(true);
   applyTaskView(nextView, { expand: true });
 }
 
@@ -1247,6 +1265,7 @@ function hideScheduleSurface() {
   }
   closeFocusViewMenu();
   state.scheduleRevealed = false;
+  saveScheduleRevealedPreference(false);
   // Project mode CSS hides .task-panel; week/month skip the focus-shell grid.
   // Collapse must return to day so the todo list is actually painted again.
   if (state.taskView !== "day") {
@@ -1279,6 +1298,7 @@ function applyTaskView(view, { expand = false } = {}) {
   });
   if (expand) {
     state.scheduleRevealed = true;
+    saveScheduleRevealedPreference(true);
     expandWindowForView(view);
   }
   syncShellLayoutClasses();
@@ -1687,13 +1707,21 @@ async function initDesktop() {
   el.aiDetectModelsButton?.addEventListener("click", () => refreshAiProviderModels({ forceList: true }));
   el.settingAiApiKey?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
   el.settingAiProvider?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
-  // Boot into todo-only focus shell; 视图 reveals day/week/month/gantt beside it.
-  state.scheduleRevealed = false;
-  shrinkWindowToFocusShell();
+  // Restore last 视图 preference so a wide shell never looks like “日程被清空”.
+  const preferSchedule = loadScheduleRevealedPreference();
+  state.scheduleRevealed = preferSchedule;
+  if (preferSchedule) {
+    expandWindowForView(state.taskView || "day");
+    syncShellLayoutClasses();
+  } else {
+    shrinkWindowToFocusShell();
+    syncShellLayoutClasses(FOCUS_SHELL_WIDTH);
+  }
   // in-desktop is required for shell-* classes; sync after desktop boot so a
   // cold narrow window matches a later wide→narrow drag.
   applyUiScale();
-  syncShellLayoutClasses(FOCUS_SHELL_WIDTH);
+  syncFocusViewButtonChrome();
+  syncFocusSurfaceVisibility(!state.scheduleRevealed, document.body.classList.contains("shell-compact-topbar"));
 }
 
 async function renderAppVersion() {

@@ -72,6 +72,8 @@ assert.match(
 assert.ok(app.includes("expandWindowForView"));
 assert.ok(app.includes("shrinkWindowToFocusShell"));
 assert.ok(app.includes("revealScheduleSurface"));
+assert.ok(app.includes("SCHEDULE_REVEALED_STORAGE_KEY"), "schedule reveal preference must persist across restarts");
+assert.ok(app.includes("loadScheduleRevealedPreference"), "boot must restore schedule reveal preference");
 assert.ok(app.includes("hideScheduleSurface"));
 assert.ok(app.includes("maybeAutoHideScheduleForWidth"));
 assert.ok(app.includes("scheduleRevealed"));
