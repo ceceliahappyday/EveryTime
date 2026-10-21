@@ -38,6 +38,17 @@
     return isAttentionOnly(task);
   }
 
+  function attentionDueDate(task = {}) {
+    return String(task?.dueDate || "").slice(0, 10);
+  }
+
+  /** 仅关注任务在目标完成日当天或逾期时需要闹钟提醒。 */
+  function isAttentionAlarmDue(task = {}, todayKey = "") {
+    if (!isAttentionOnly(task) || isEndedStatus(task.status) || !todayKey) return false;
+    const due = attentionDueDate(task);
+    return Boolean(due) && due <= todayKey;
+  }
+
   function liveWorkStatus(task = {}) {
     if (task.startedAt || task.startOverrideAt) return "in_progress";
     return "planned";
@@ -276,6 +287,8 @@
     isMemoReminder,
     isFollowUpPriority,
     belongsInMemoList,
+    attentionDueDate,
+    isAttentionAlarmDue,
     liveWorkStatus,
     normalizeAttentionTask,
     attentionSuccessorIdsToRemove,

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage, safeStorage, screen, clipboard } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, globalShortcut, Tray, Menu, nativeImage, safeStorage, screen, clipboard, Notification } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { execFileSync, spawn } = require("child_process");
@@ -394,6 +394,15 @@ if (singleInstanceLock) app.whenReady().then(() => {
     return true;
   });
   ipcMain.handle("app:get-version", () => app.getVersion());
+  ipcMain.handle("app:notify", (_event, payload = {}) => {
+    if (!Notification.isSupported()) return false;
+    const title = String(payload.title || "今日日程").trim() || "今日日程";
+    const body = String(payload.body || "").trim();
+    if (!body) return false;
+    const notice = new Notification({ title, body });
+    notice.show();
+    return true;
+  });
   ipcMain.handle("app:check-for-updates", () => {
     checkForUpdates(true);
     return { ok: true, packaged: app.isPackaged, version: app.getVersion() };

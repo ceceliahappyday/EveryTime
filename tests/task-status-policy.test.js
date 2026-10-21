@@ -23,6 +23,35 @@ assert.strictEqual(policy.listSideBadge({ status: "in_progress", attentionOnly: 
 assert.equal(policy.isMemoReminder({ status: "tracking" }), true);
 assert.equal(policy.isMemoReminder({ status: "planned" }), false);
 assert.equal(policy.isAttentionOnly({ status: "in_progress", attentionOnly: true }), true);
+assert.equal(policy.isAttentionAlarmDue({
+  status: "in_progress",
+  attentionOnly: true,
+  dueDate: "2026-10-21"
+}, "2026-10-21"), true);
+assert.equal(policy.isAttentionAlarmDue({
+  status: "in_progress",
+  attentionOnly: true,
+  dueDate: "2026-10-20"
+}, "2026-10-21"), true, "overdue attention tasks keep the alarm");
+assert.equal(policy.isAttentionAlarmDue({
+  status: "in_progress",
+  attentionOnly: true,
+  dueDate: "2026-10-22"
+}, "2026-10-21"), false);
+assert.equal(policy.isAttentionAlarmDue({
+  status: "in_progress",
+  attentionOnly: true,
+  dueDate: ""
+}, "2026-10-21"), false);
+assert.equal(policy.isAttentionAlarmDue({
+  status: "in_progress",
+  dueDate: "2026-10-21"
+}, "2026-10-21"), false);
+assert.equal(policy.isAttentionAlarmDue({
+  status: "done",
+  attentionOnly: true,
+  dueDate: "2026-10-21"
+}, "2026-10-21"), false);
 assert.equal(policy.isFollowUpPriority({ priority: "follow_up" }), true);
 assert.equal(policy.belongsInMemoList({ status: "planned", priority: "follow_up" }), true);
 assert.equal(policy.belongsInMemoList({ status: "tracking", priority: "general_daily" }), true);

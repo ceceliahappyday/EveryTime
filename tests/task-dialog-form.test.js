@@ -80,6 +80,11 @@ assert.match(styles, /minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/, "paired form col
 assert.match(styles, /#taskEditForm[\s\S]*min-height:\s*42px/, "short controls share a unified 42px height");
 assert.match(app, /settingsDialog \|\| document\.body/, "color palette mounts inside settings dialog");
 assert.doesNotMatch(html, /task-attention-hint|只提醒，不排投入/, "仅关注 no longer shows helper microcopy");
+assert.match(html, /到目标完成日当天会用红色感叹号提醒/, "仅关注 explains the due-day alarm");
+assert.match(app, /isAttentionAlarmDue/, "attention tasks raise an alarm on the due date");
+assert.match(app, /task-attention-alarm-mark/, "due attention tasks show a red exclamation mark");
+assert.match(styles, /\.task-attention-alarm-mark[\s\S]*background:\s*#e24b4b/, "due-day alarm mark is red");
+assert.match(app, /maybePromptAttentionAlarms/, "startup should prompt due attention reminders");
 assert.match(styles, /#taskEditForm \.form-row > label:not\(#taskTitleField\):not\(\.checkbox-setting\)/, "short task fields keep label and control on one row");
 assert.match(
   styles,

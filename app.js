@@ -108,6 +108,7 @@ const state = {
 
 const el = {};
 let toastTimer;
+let lastAttentionAlarmKey = "";
 let timelineScrollBarTimer;
 let projectGanttScrollTimer;
 let taskListScrollBarTimer;
@@ -186,8 +187,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderAppVersion();
   render();
   requestAnimationFrame(scrollToWorkday);
+  maybePromptAttentionAlarms();
   setInterval(() => {
     if (!document.querySelector("dialog[open]")) render();
+    maybePromptAttentionAlarms();
   }, 60000);
 });
 
@@ -4331,8 +4334,12 @@ function createTaskCard(task) {
       : null);
   // Badge already shows 跟踪 — don't repeat 「· 跟踪」 in the name.
   const displayTitle = TaskStatusPolicy.listDisplayTitle?.(task) || String(task.title || "").trim();
+  const alarmDue = !incomplete && TaskStatusPolicy.isAttentionAlarmDue?.(task, toDateKey(new Date()));
+  const alarmTitle = alarmDue && task.dueDate && task.dueDate < toDateKey(new Date())
+    ? "关注提醒：已过目标完成日期"
+    : "关注提醒：今天是目标完成日";
   const card = document.createElement("article");
-  card.className = `task-card ${visualStatus}${incomplete ? " setup-incomplete" : ""}`;
+  card.className = `task-card ${visualStatus}${incomplete ? " setup-incomplete" : ""}${alarmDue ? " attention-alarm-due" : ""}`;
   if (state.highlightTaskId && state.highlightTaskId === task.id) card.classList.add("is-just-linked");
   card.dataset.taskId = task.id;
   // Incomplete tasks stay "draggable" only so dragstart can toast + open the form.
@@ -4342,9 +4349,13 @@ function createTaskCard(task) {
     || TaskStatusPolicy.isAttentionOnly?.(task)
   );
   if (incomplete) card.title = `${displayTitle}（待完善：请先补充信息，完善前不能投入日程）`;
-  else if (TaskStatusPolicy.isAttentionOnly?.(task)) card.title = `${displayTitle}（已标记待跟踪，仍可投入，不会关闭）`;
+  else if (alarmDue) card.title = `${displayTitle}（${alarmTitle}）`;
+  else if (TaskStatusPolicy.isAttentionOnly?.(task)) card.title = `${displayTitle}（已标记待跟踪，到期当天会红色感叹号提醒）`;
   else card.title = displayTitle;
   if (sideBadge) card.classList.add("has-priority");
+  const alarmMark = alarmDue
+    ? `<span class="task-attention-alarm" title="${escapeHtml(alarmTitle)}" aria-label="${escapeHtml(alarmTitle)}"><span class="task-attention-alarm-mark" aria-hidden="true">!</span></span>`
+    : "";
   card.innerHTML = incomplete
     ? `<button class="task-setup-warning" type="button" title="待完善信息，点击补充" aria-label="待完善信息">
         <span class="task-setup-warning-mark" aria-hidden="true">!</span>
@@ -4355,6 +4366,7 @@ function createTaskCard(task) {
     : `<button class="task-check" type="button" title="标记完成" aria-label="标记完成"></button>
       <div class="task-body">
         <strong>${escapeHtml(displayTitle)}</strong>
+        ${alarmMark}
       </div>
       ${sideBadge ? `<span class="${sideBadge.className}" title="${escapeHtml(sideBadge.title)}">${escapeHtml(sideBadge.text)}</span>` : ""}`;
 
@@ -5764,9 +5776,14 @@ function saveTask() {
   saveData();
   el.taskDialog.close();
   render();
-  showToast(state.editingTaskId ? "待办已更新" :
-    payload.recurrence ? "月度规则已建立，本月实例已生成" :
-    payload.parentId ? "子计划已建立" : "主计划已建立");
+  if (payload.attentionOnly && !payload.dueDate) {
+    showToast("已标记关注。补上目标完成日期后，到期当天会红色感叹号提醒", 4200);
+  } else {
+    showToast(state.editingTaskId ? "待办已更新" :
+      payload.recurrence ? "月度规则已建立，本月实例已生成" :
+      payload.parentId ? "子计划已建立" : "主计划已建立");
+  }
+  if (payload.attentionOnly) maybePromptAttentionAlarms();
 }
 
 function showTaskFieldError(field, message) {
@@ -11862,11 +11879,35 @@ function scrollToWorkday() {
   const anchor = hours.includes(nowHour) ? nowHour : hours[0];
   el.timelineWrap.scrollTop = Math.max(0, (anchor - hours[0] - 1) * getHourHeight());
 }
-function showToast(message) {
+function attentionAlarmTasks(todayKey = toDateKey(new Date())) {
+  return uniqueTasks(getAllTasks().map(({ task }) => task))
+    .filter(task => isTodoListTask(task) && TaskStatusPolicy.isAttentionAlarmDue?.(task, todayKey));
+}
+
+function maybePromptAttentionAlarms() {
+  const todayKey = toDateKey(new Date());
+  if (lastAttentionAlarmKey === todayKey) return;
+  const due = attentionAlarmTasks(todayKey);
+  if (!due.length) return;
+  lastAttentionAlarmKey = todayKey;
+  const titles = due
+    .slice(0, 3)
+    .map(task => TaskStatusPolicy.listDisplayTitle?.(task) || task.title)
+    .map(title => String(title || "").trim())
+    .filter(Boolean);
+  const extra = due.length > 3 ? ` 等 ${due.length} 项` : "";
+  const message = `关注提醒：${titles.join("、")}${extra} 已到目标完成日期`;
+  showToast(message, 4200);
+  if (typeof window.desktopAPI?.notify === "function") {
+    Promise.resolve(window.desktopAPI.notify({ title: "关注提醒", body: message })).catch(() => {});
+  }
+}
+
+function showToast(message, duration = 1800) {
   clearTimeout(toastTimer);
   el.toast.textContent = message;
   el.toast.classList.add("show");
-  toastTimer = setTimeout(() => el.toast.classList.remove("show"), 1800);
+  toastTimer = setTimeout(() => el.toast.classList.remove("show"), Number(duration) > 0 ? Number(duration) : 1800);
 }
 function getMonday(date) {
   const copy = new Date(date);

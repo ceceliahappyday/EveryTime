@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("desktopAPI", {
   aiDetectProvider: payload => ipcRenderer.invoke("ai:detect-provider", payload),
   aiListModels: payload => ipcRenderer.invoke("ai:list-models", payload),
   getVersion: () => ipcRenderer.invoke("app:get-version"),
+  notify: payload => ipcRenderer.invoke("app:notify", payload),
   checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),
   getPaths: () => ipcRenderer.invoke("app:get-paths"),
   resizeBy: (width, height) => ipcRenderer.send("window:resize-by", width, height),
