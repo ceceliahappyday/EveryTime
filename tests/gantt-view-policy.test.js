@@ -57,6 +57,8 @@ assert.equal(policy.taskMatchesOwnerFilter({ owner: "王芳" }, []), true);
 assert.equal(policy.taskMatchesStatusFilter({ status: "done" }, ["planned", "in_progress"]), false);
 assert.equal(policy.taskMatchesStatusFilter({ status: "closed" }, ["done"]), true);
 assert.equal(policy.taskMatchesStatusFilter({ status: "tracking" }, []), true);
+assert.equal(policy.taskMatchesStatusFilter({ status: "in_progress", attentionOnly: true }, ["tracking"]), true);
+assert.equal(policy.taskMatchesStatusFilter({ status: "in_progress", attentionOnly: true }, ["in_progress"]), true);
 
 assert.equal(policy.taskMatchesPriorityFilter({ priority: "kpi" }, []), true);
 assert.equal(policy.taskMatchesPriorityFilter({ priority: "kpi" }, ["kpi"]), true);

@@ -17,19 +17,34 @@ assert.strictEqual(policy.statusLabel("tracking"), "待跟踪");
 assert.strictEqual(policy.statusLabel("done"), "已关闭");
 assert.strictEqual(policy.listSideBadge({ status: "done", priority: "follow_up" }).text, "关闭");
 assert.strictEqual(policy.listSideBadge({ status: "tracking", priority: "follow_up" }).text, "跟踪");
-assert.equal(policy.listSideBadge({ status: "planned", priority: "follow_up" }), null);
+assert.strictEqual(policy.listSideBadge({ status: "planned", priority: "follow_up" }).text, "跟踪");
+assert.strictEqual(policy.listSideBadge({ status: "in_progress", attentionOnly: true }).text, "跟踪");
 
 assert.equal(policy.isMemoReminder({ status: "tracking" }), true);
 assert.equal(policy.isMemoReminder({ status: "planned" }), false);
+assert.equal(policy.isAttentionOnly({ status: "in_progress", attentionOnly: true }), true);
 assert.equal(policy.isFollowUpPriority({ priority: "follow_up" }), true);
 assert.equal(policy.belongsInMemoList({ status: "planned", priority: "follow_up" }), true);
 assert.equal(policy.belongsInMemoList({ status: "tracking", priority: "general_daily" }), true);
+assert.equal(policy.belongsInMemoList({ status: "in_progress", attentionOnly: true }), true);
 assert.equal(policy.belongsInMemoList({ status: "done", priority: "follow_up" }), false);
 assert.equal(policy.belongsInMemoList({ status: "planned", priority: "kpi" }), false);
-assert.equal(policy.isSchedulableStatus("tracking"), false);
+assert.equal(policy.isSchedulableStatus("tracking"), true);
 assert.equal(policy.isSchedulableStatus("planned"), true);
 assert.equal(policy.isSchedulableStatus("in_progress"), true);
-assert.equal(policy.countsTowardWorkHours({ status: "tracking" }), false);
+assert.equal(policy.countsTowardWorkHours({ status: "tracking" }), true);
+assert.equal(policy.countsTowardWorkHours({ status: "in_progress", attentionOnly: true }), true);
+assert.equal(policy.countsTowardWorkHours({ status: "done" }), false);
+
+const normalizedTracking = policy.normalizeAttentionTask({
+  status: "tracking",
+  title: "合同审批",
+  startedAt: "2026-09-04T10:00:00.000Z",
+  completedAt: "2026-09-04T12:00:00.000Z"
+});
+assert.equal(normalizedTracking.attentionOnly, true);
+assert.equal(normalizedTracking.status, "in_progress");
+assert.equal(normalizedTracking.completedAt, "");
 
 const closedAt = "2026-09-04T10:00:00.000Z";
 const followUp = policy.buildFollowUpTask({
@@ -81,9 +96,41 @@ const attentionSuccessor = policy.buildSuccessorTask({
   businessBackground: "保障版本按期上线",
   completedAt: closedAt
 }, { closedAt, attentionOnly: true });
-assert.strictEqual(attentionSuccessor.status, "tracking");
-assert.strictEqual(attentionSuccessor.priority, "follow_up");
+assert.equal(attentionSuccessor.attentionOnly, true);
+assert.strictEqual(attentionSuccessor.status, "planned");
+assert.strictEqual(attentionSuccessor.priority, "kpi");
 assert.equal(policy.isMemoReminder(attentionSuccessor), true);
+assert.deepEqual(
+  policy.attentionSuccessorIdsToRemove([
+    { id: "a1", status: "done", title: "上线验收" },
+    { id: "a2", status: "in_progress", attentionOnly: true, followUpFromTaskId: "a1", title: "上线验收" }
+  ]),
+  ["a2"]
+);
+assert.deepEqual(
+  policy.attentionSuccessorIdsToRemove([
+    { id: "a1", status: "done", title: "上线验收" },
+    { id: "a3", status: "planned", attentionOnly: true, successorFromTaskId: "a1", priority: "kpi", title: "上线验收" }
+  ]),
+  [],
+  "a marked work successor after 关闭并新建后续 is not a legacy tracking clone"
+);
+assert.equal(
+  policy.isSupersededByOpenFollowOn(
+    { id: "a1", status: "done", title: "上线验收" },
+    [{ id: "a1", status: "done" }, { ...attentionSuccessor, id: "a2" }]
+  ),
+  true,
+  "closed source with a live 仅关注 successor must not also occupy 待办"
+);
+assert.equal(
+  policy.isSupersededByOpenFollowOn(
+    { id: "a1", status: "done", title: "上线验收" },
+    [{ id: "a1", status: "done" }, { ...successor, id: "a3" }]
+  ),
+  false,
+  "a normal work successor should not hide the closed source"
+);
 
 const workFromMemo = policy.buildWorkTodoFromMemo({
   id: "memo-1",

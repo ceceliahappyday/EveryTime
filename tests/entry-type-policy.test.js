@@ -34,8 +34,8 @@ assert.match(app, /＋ 新建</, "week column quick-create uses short 新建 lab
 assert.match(html, /搜索\.\.\.\/@人员/, "list search placeholder hints @人员");
 assert.match(app, /Meetings stay in the meeting list, but may optionally link a todo/, "meetings should support optional todo linking");
 assert.match(app, /entryType: "task_work", taskId: workTask\.id/, "dragging a task into the calendar should remain task work");
-assert.match(app, /materializeWorkTodoFromMemo/, "investing on a memo reminder must spawn a new work todo");
-assert.match(app, /isMemoReminderTask\(task\)/, "memo reminders are distinct from work leaf todos");
+assert.doesNotMatch(app, /fromMemo \? materializeWorkTodoFromMemo/, "仅关注 tasks must invest in place instead of spawning a second todo");
+assert.match(app, /isMemoReminderTask\(task\)/, "待跟踪 remains a mark filter, not a second work item");
 assert.match(
   app,
   /function focusLinkedTaskFilter[\s\S]*state\.filter = "planned"/s,

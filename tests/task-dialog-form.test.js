@@ -48,6 +48,17 @@ assert.match(html, /id="taskCloseSuccessorButton"/, "close confirm must offer �
 assert.match(app, /createSuccessorWorkTask/, "closing may spawn a successor work todo");
 assert.match(app, /buildSuccessorTask/, "successor payload must come from status policy");
 assert.match(app, /syncAttentionMode|syncAttentionOnlyChoice/, "successor dialog must expose 仅关注 toggle");
+assert.match(
+  app,
+  /if \(attentionOnly\) \{[\s\S]*payload\.attentionOnly = true[\s\S]*payload\.completedAt = ""/,
+  "完善时勾选仅关注 must mark in place and must not close the task"
+);
+assert.doesNotMatch(
+  app,
+  /payload\.status = TaskStatusPolicy\.TRACKING_STATUS/,
+  "仅关注 must not switch the work status to tracking"
+);
+assert.match(app, /isSupersededClosedWorkTask/, "closed originals with a live tracking successor stay out of 待办");
 assert.match(html, /task-attention-inline/, "仅关注 remains available inline");
 assert.match(
   html,

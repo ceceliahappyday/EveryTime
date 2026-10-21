@@ -16,26 +16,88 @@
   }
 
   function isSchedulableStatus(status) {
-    // Memo reminders (tracking) are not work todos and cannot take task_work investment.
-    return status === "planned" || status === "in_progress";
-  }
-
-  function isMemoReminder(taskOrStatus) {
-    return isTrackingStatus(taskOrStatus);
+    return status === "planned" || status === "in_progress" || status === TRACKING_STATUS;
   }
 
   function isFollowUpPriority(task = {}) {
     return (task?.priority || "") === "follow_up";
   }
 
-  /** 待跟踪页签：备忘提醒（status=tracking）+ 优先级「跟踪关注」且未结束 */
+  /** 待跟踪 = 进行中/未结束任务上的关注标记，不是关闭态。 */
+  function isAttentionOnly(task = {}) {
+    if (!task || typeof task === "string") return isTrackingStatus(task);
+    if (isEndedStatus(task.status)) return false;
+    return task.attentionOnly === true || isTrackingStatus(task) || isFollowUpPriority(task);
+  }
+
+  function isMemoReminder(taskOrStatus) {
+    return isAttentionOnly(taskOrStatus);
+  }
+
   function belongsInMemoList(task = {}) {
-    if (!task || isEndedStatus(task.status)) return false;
-    return isMemoReminder(task) || isFollowUpPriority(task);
+    return isAttentionOnly(task);
+  }
+
+  function liveWorkStatus(task = {}) {
+    if (task.startedAt || task.startOverrideAt) return "in_progress";
+    return "planned";
+  }
+
+  function normalizeAttentionTask(task = {}) {
+    if (!task) return task;
+    if (task.status === TRACKING_STATUS) {
+      task.attentionOnly = true;
+      task.status = liveWorkStatus(task);
+      task.completedAt = "";
+    } else if (isFollowUpPriority(task) && !isEndedStatus(task.status)) {
+      task.attentionOnly = true;
+    } else {
+      task.attentionOnly = Boolean(task.attentionOnly) && !isEndedStatus(task.status);
+    }
+    return task;
+  }
+
+  /**
+   * Closed work item that already has a live 仅关注 successor.
+   * Used as a display fallback; migrate prefers reopening the source.
+   */
+  function isSupersededByOpenFollowOn(task = {}, tasks = []) {
+    if (!task?.id || !isEndedStatus(task.status)) return false;
+    return (tasks || []).some(other =>
+      other
+      && other.id
+      && other.id !== task.id
+      && isAttentionOnly(other)
+      && (other.successorFromTaskId === task.id || other.followUpFromTaskId === task.id)
+    );
+  }
+
+  function attentionSuccessorIdsToRemove(tasks = []) {
+    const byId = new Map((tasks || []).filter(item => item?.id).map(item => [item.id, item]));
+    return (tasks || []).filter(task => {
+      if (!task?.id) return false;
+      const followSource = byId.get(task.followUpFromTaskId);
+      if (followSource && isEndedStatus(followSource.status)) return true;
+      const memoSource = byId.get(task.memoFromTaskId);
+      if (memoSource && (isAttentionOnly(memoSource) || isTrackingStatus(memoSource) || isFollowUpPriority(memoSource))) {
+        return true;
+      }
+      const successorSource = byId.get(task.successorFromTaskId);
+      if (!successorSource || !isEndedStatus(successorSource.status)) return false;
+      return isTrackingStatus(task) || isFollowUpPriority(task);
+    }).map(task => task.id);
+  }
+
+  function reopenAsAttentionMark(task = {}) {
+    task.attentionOnly = true;
+    task.status = liveWorkStatus(task);
+    task.completedAt = "";
+    if (task.progress === 100) task.progress = 0;
+    return task;
   }
 
   function countsTowardWorkHours(taskOrStatus) {
-    return !isMemoReminder(taskOrStatus) && !isEndedStatus(
+    return !isEndedStatus(
       typeof taskOrStatus === "string" ? taskOrStatus : taskOrStatus?.status
     );
   }
@@ -105,7 +167,7 @@
     return title ? `${title} · 后续` : "后续任务";
   }
 
-  /** 关闭后新建后续：默认继承原任务优先级与上级；仅关注需用户勾选（只提醒、不排投入） */
+  /** 关闭后新建后续：默认继承原任务优先级与上级；仅关注只打标，不关任务、不改工作状态 */
   function buildSuccessorTask(source = {}, options = {}) {
     const opts = typeof options === "string" ? { dateKey: options } : (options || {});
     const now = new Date().toISOString();
@@ -115,7 +177,6 @@
     const workPriority = ["follow_up", "monthly_fixed"].includes(sourcePriority)
       ? "general_daily"
       : sourcePriority;
-    const priority = attentionOnly ? "follow_up" : workPriority;
     const baseTitle = stripTrackingTitleSuffix(source.title).replace(/\s*·\s*后续\s*$/u, "");
     return {
       title: baseTitle || successorTaskTitle(source.title),
@@ -124,9 +185,10 @@
       owner: source.owner || "我",
       parentId: resolveSourceParentId(source),
       description: String(source.description || "").trim().slice(0, 240),
-      priority,
+      priority: workPriority,
       progress: 0,
-      status: attentionOnly ? TRACKING_STATUS : "planned",
+      attentionOnly,
+      status: attentionOnly ? liveWorkStatus(source) : "planned",
       startedAt: closedAt,
       startOverrideAt: closedAt,
       completedAt: "",
@@ -199,8 +261,8 @@
     if (isEndedStatus(task.status)) {
       return { className: "status-mark closed", text: "关闭", title: "已关闭" };
     }
-    if (isTrackingStatus(task)) {
-      return { className: "status-mark tracking", text: "跟踪", title: "待跟踪（关注提醒，不计入投入）" };
+    if (isAttentionOnly(task)) {
+      return { className: "status-mark tracking", text: "跟踪", title: "进行中的关注标记，不会关闭任务" };
     }
     return null;
   }
@@ -210,9 +272,15 @@
     TRACKING_STATUS,
     isEndedStatus,
     isTrackingStatus,
+    isAttentionOnly,
     isMemoReminder,
     isFollowUpPriority,
     belongsInMemoList,
+    liveWorkStatus,
+    normalizeAttentionTask,
+    attentionSuccessorIdsToRemove,
+    reopenAsAttentionMark,
+    isSupersededByOpenFollowOn,
     countsTowardWorkHours,
     isSchedulableStatus,
     stripTrackingTitleSuffix,

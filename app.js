@@ -261,13 +261,19 @@ function migrateData() {
       task.recurrence ||= null;
       task.recurrenceGroupId ||= "";
       task.followUpFromTaskId ||= "";
+      task.successorFromTaskId ||= "";
       task.memoFromTaskId ||= "";
       task.setupIncomplete = Boolean(task.setupIncomplete);
+      if (typeof TaskStatusPolicy?.normalizeAttentionTask === "function") {
+        TaskStatusPolicy.normalizeAttentionTask(task);
+      } else {
+        task.attentionOnly = Boolean(task.attentionOnly);
+      }
       if (task.status === "closed") {
         task.status = "done";
         task.completedAt ||= task.updatedAt || new Date().toISOString();
       }
-      if (task.completedAt && !TaskStatusPolicy.isTrackingStatus(task)) {
+      if (task.completedAt && !task.attentionOnly && !TaskStatusPolicy.isTrackingStatus(task)) {
         task.status = "done";
         task.progress = 100;
       }
@@ -295,7 +301,34 @@ function migrateData() {
   if (typeof ScheduleMeetingDemotePolicy?.demoteMeetingEventTasks === "function") {
     ScheduleMeetingDemotePolicy.demoteMeetingEventTasks(state.data);
   }
+  collapseAttentionSuccessorDuplicates();
   saveData();
+}
+
+function collapseAttentionSuccessorDuplicates() {
+  if (typeof TaskStatusPolicy?.attentionSuccessorIdsToRemove !== "function") return;
+  const tasks = getAllTasks().map(({ task }) => task);
+  const removeIds = new Set(TaskStatusPolicy.attentionSuccessorIdsToRemove(tasks));
+  if (!removeIds.size) return;
+  const retarget = new Map();
+  tasks.forEach(task => {
+    if (!removeIds.has(task.id)) return;
+    const sourceId = task.successorFromTaskId || task.followUpFromTaskId || task.memoFromTaskId;
+    if (sourceId) retarget.set(task.id, sourceId);
+  });
+  const sourceIds = new Set(retarget.values());
+  tasks.forEach(task => {
+    if (sourceIds.has(task.id) && !removeIds.has(task.id)) {
+      TaskStatusPolicy.reopenAsAttentionMark(task);
+    }
+  });
+  Object.values(state.data || {}).forEach(day => {
+    (day.entries || []).forEach(entry => {
+      const sourceId = retarget.get(entry.taskId);
+      if (sourceId) entry.taskId = sourceId;
+    });
+  });
+  removeIds.forEach(id => removeTaskRecordById(id));
 }
 
 function ensureEntryTaskLinks() {
@@ -3244,9 +3277,9 @@ function renderUnifiedTodoList() {
   }
 
   let sections;
-  if (hasListSearch) {
-    const taskHits = visibleTasks.filter(task => !isMemoReminderTask(task));
-    const memoHits = visibleTasks.filter(belongsInMemoList);
+    if (hasListSearch) {
+    visibleTasks = visibleTasks.filter(task => !isSupersededClosedWorkTask(task, allTasks));
+    const taskHits = visibleTasks;
     const meetingHits = getMeetingListItems({ query });
     sections = [];
     if (taskHits.length || linkedWorkItems.length) {
@@ -3255,9 +3288,6 @@ function renderUnifiedTodoList() {
         label: "待办",
         tasks: [...taskHits, ...linkedWorkItems]
       });
-    }
-    if (memoHits.length) {
-      sections.push({ key: "search-memo", label: "待跟踪", tasks: memoHits });
     }
     if (meetingHits.length) {
       sections.push({
@@ -3314,7 +3344,7 @@ function renderUnifiedTodoList() {
       ? [{ key: "memo", label: "待跟踪", tasks: memos }]
       : [];
   } else {
-    const workVisible = visibleTasks.filter(task => !isMemoReminderTask(task));
+    const workVisible = visibleTasks.filter(task => !isSupersededClosedWorkTask(task, allTasks));
     // 进行中：扁平按最近投入时间排，不用「今日/昨天」分组打乱先后。
     const includeSections = state.filter === "all" || state.filter === "planned" || state.filter === "unplanned";
     const orderedVisible = state.filter === "unplanned"
@@ -3337,16 +3367,6 @@ function renderUnifiedTodoList() {
     if (state.filter === "all") {
       const remaining = sections.find(section => section.key === "remaining");
       if (remaining?.tasks.length) remaining.label = "其他任务";
-      if (memoLeafTasks.length) {
-        const trackingMemos = memoLeafTasks.filter(isMemoReminderTask);
-        if (trackingMemos.length) {
-          sections.push({
-            key: "memo",
-            label: "待跟踪",
-            tasks: TodoListPolicy.sortByCreatedAtDesc(trackingMemos)
-          });
-        }
-      }
     }
     if (linkedWorkItems.length) {
       const yesterdayItems = linkedWorkItems.filter(item => item.isFromYesterday);
@@ -3373,7 +3393,7 @@ function renderUnifiedTodoList() {
       : hasListSearch
         ? "没有匹配的待办或会议"
         : state.filter === "memo" && !meetingMode
-          ? "暂无待跟踪事项<br>编辑待办时勾选「仅关注」（只提醒、不排投入），或关闭并新建后续后再勾选"
+          ? "暂无待跟踪事项<br>在进行中的待办上勾选「仅关注」即可标记，不会关闭任务"
           : meetingMode
             ? `当前分类没有会议<br><button type="button" class="soft-button empty-create-meeting" id="emptyCreateMeeting">新建会议</button>`
             : "当前分类没有待办任务"}</div>`;
@@ -3540,9 +3560,14 @@ function taskHasWorkHistory(taskId) {
   return TodoListPolicy.hasWorkHistory(taskId, getWorkEntriesByDate());
 }
 
+function isSupersededClosedWorkTask(task, pool = getAllTasks().map(({ task: item }) => item)) {
+  return typeof TaskStatusPolicy?.isSupersededByOpenFollowOn === "function"
+    && TaskStatusPolicy.isSupersededByOpenFollowOn(task, pool);
+}
+
 function matchesUnifiedTaskFilter(task, filter) {
   if (filter === "memo") return belongsInMemoList(task);
-  if (isMemoReminderTask(task)) return filter === "all";
+  if (filter !== "ended" && isSupersededClosedWorkTask(task)) return false;
   if (filter === "in_progress") return isOngoingTask(task);
   if (filter === "all") return true;
   if (filter === "ended") return task.status === "done" || task.status === "closed";
@@ -3866,8 +3891,7 @@ function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
     const leafTasks = descendants.filter(task =>
       !descendants.some(candidate => candidate.parentId === task.id && descendantIds.has(candidate.id))
     );
-    const summaryTasks = (leafTasks.length ? leafTasks : [root])
-      .filter(task => !TaskStatusPolicy.isTrackingStatus(task));
+    const summaryTasks = leafTasks.length ? leafTasks : [root];
     return ProjectSummaryPolicy.summarizeProject({
       parent: root,
       children,
@@ -4315,10 +4339,10 @@ function createTaskCard(task) {
   card.draggable = incomplete || (
     visualStatus === "unplanned"
     || TaskStatusPolicy.isSchedulableStatus(task.status)
-    || isMemoReminderTask(task)
+    || TaskStatusPolicy.isAttentionOnly?.(task)
   );
   if (incomplete) card.title = `${displayTitle}（待完善：请先补充信息，完善前不能投入日程）`;
-  else if (isMemoReminderTask(task)) card.title = `${displayTitle}（备忘：拖入日程将新建待办并开始投入）`;
+  else if (TaskStatusPolicy.isAttentionOnly?.(task)) card.title = `${displayTitle}（已标记待跟踪，仍可投入，不会关闭）`;
   else card.title = displayTitle;
   if (sideBadge) card.classList.add("has-priority");
   card.innerHTML = incomplete
@@ -4452,7 +4476,6 @@ function materializeLinkedWorkLeaf(item) {
 function updateTaskStats(tasks, memoTasks = [], meetingItems = []) {
   tasks = uniqueTasks(tasks).filter(isWorkLeafTask);
   const memos = uniqueTasks(memoTasks).filter(belongsInMemoList);
-  const trackingOnly = memos.filter(isMemoReminderTask);
   const meetings = Array.isArray(meetingItems) ? meetingItems : [];
   const groups = {
     unplanned: tasks.filter(isUnplannedTask),
@@ -4469,9 +4492,8 @@ function updateTaskStats(tasks, memoTasks = [], meetingItems = []) {
   el.closedCount.textContent = groups.ended.length;
   if (el.memoCount) el.memoCount.textContent = groups.memo.length;
   if (el.meetingCount) el.meetingCount.textContent = groups.meeting.length;
-  // 跟踪关注优先级任务已计入工作待办，全部计数只再叠加真正的备忘提醒
-  el.allCount.textContent = tasks.length + trackingOnly.length;
-  el.taskCount.textContent = tasks.length + trackingOnly.length;
+  el.allCount.textContent = tasks.length;
+  el.taskCount.textContent = tasks.length;
   // 当天计划 = 上午+下午工作时段合计（不含午休）；完成进度 = 当日已投入 / 工作日时长。
   const workDayHours = Math.max(0.5, Number(state.workdayHours) || getConfiguredWorkdayHours());
   const invested = taskDatesForView().reduce((sum, key) => {
@@ -4602,10 +4624,10 @@ function restoreTaskStatusOptions(task) {
   if (!task?.completedAt && currentStatus === "done" && !TaskStatusPolicy.isEndedStatus(task?.status)) {
     currentStatus = "planned";
   }
-  if (currentStatus !== "tracking" && (task?.priority === "follow_up" || el.taskFollowUpTracking?.checked)) {
-    currentStatus = "tracking";
+  if (currentStatus === "tracking") {
+    currentStatus = (task?.startedAt || task?.startOverrideAt) ? "in_progress" : "planned";
   }
-  // 待跟踪不在状态下拉中选择，只通过「仅关注」勾选。
+  // 待跟踪是进行中标记，不占用状态下拉。
   const plannedDisabled = (currentStatus === "planned" || currentStatus === "tracking") ? "" : " disabled";
   const progressDisabled = currentStatus === "in_progress" ? "" : " disabled";
   el.taskStatus.innerHTML = `
@@ -5146,7 +5168,7 @@ function openTaskDialog(task = null, options = {}) {
       el.followUpDraftHint.textContent = "请确认待办名称与目标完成日期，并补充背景说明。上级任务已与关闭任务保持一致。";
       el.followUpDraftHint.classList.remove("hidden");
     } else if (successorDraft) {
-      el.followUpDraftHint.textContent = "已继承原任务的优先级与上级。默认是一般后续任务；若只需提醒、不排投入，请勾选「仅关注」。";
+      el.followUpDraftHint.textContent = "已继承原任务的优先级与上级。默认是一般后续任务；勾选「仅关注」只是打跟踪标记，不会再关一次。";
       el.followUpDraftHint.classList.remove("hidden");
     } else {
       el.followUpDraftHint.classList.add("hidden");
@@ -5213,21 +5235,12 @@ function openTaskDialog(task = null, options = {}) {
   // 仅关注 = 待跟踪的唯一入口（任务表单显示；会议隐藏）
   el.taskFollowUpOption?.classList.toggle("hidden", meetingCreate);
   if (el.taskFollowUpTracking) {
-    if (followUpDraft) {
-      el.taskFollowUpTracking.checked = true;
-    } else if (successorDraft) {
-      // 后续默认一般任务：继承原优先级/上级；需要备忘时再勾选
-      el.taskFollowUpTracking.checked = TaskStatusPolicy.isTrackingStatus(task);
-    } else {
-      el.taskFollowUpTracking.checked = TaskStatusPolicy.isTrackingStatus(statusTask)
-        || statusTask?.priority === "follow_up";
-    }
+    el.taskFollowUpTracking.checked = followUpDraft
+      || TaskStatusPolicy.isAttentionOnly?.(statusTask)
+      || TaskStatusPolicy.isTrackingStatus(statusTask)
+      || statusTask?.priority === "follow_up";
   }
-  const statusForUi = (TaskStatusPolicy.isTrackingStatus(statusTask) || statusTask?.priority === "follow_up"
-    || Boolean(el.taskFollowUpTracking?.checked))
-    ? { ...statusTask, status: TaskStatusPolicy.TRACKING_STATUS }
-    : statusTask;
-  restoreTaskStatusOptions(statusForUi);
+  restoreTaskStatusOptions(statusTask);
   if (!meetingCreate) syncAttentionMode("checkbox");
   el.taskActualStart.value = toLocalDateTimeInput(statusTask?.startOverrideAt || statusTask?.startedAt);
   el.taskActualEnd.value = toLocalDateTimeInput(statusTask?.completedAt);
@@ -5507,8 +5520,7 @@ function isAttentionModeUi() {
 }
 
 /**
- * 「仅关注」= 只提醒、不排工作投入（底层 status=tracking）。
- * 不在任务状态下拉里选手动「待跟踪」，避免与勾选重复。
+ * 「仅关注」= 进行中任务上的跟踪标记，不改工作状态、不关闭任务。
  */
 function syncAttentionMode(source = "checkbox") {
   if (syncingAttentionMode) return;
@@ -5520,20 +5532,12 @@ function syncAttentionMode(source = "checkbox") {
       attentionOnly = el.taskStatus?.value === TaskStatusPolicy.TRACKING_STATUS;
       if (el.taskFollowUpTracking) el.taskFollowUpTracking.checked = attentionOnly;
     }
-
-    if (attentionOnly) {
-      if (el.taskFollowUpTracking && attentionUi) el.taskFollowUpTracking.checked = true;
-      restoreTaskStatusOptions({ status: TaskStatusPolicy.TRACKING_STATUS });
-      if (el.taskStatus) el.taskStatus.value = TaskStatusPolicy.TRACKING_STATUS;
-    } else {
-      if (el.taskFollowUpTracking && attentionUi) el.taskFollowUpTracking.checked = false;
-      const nextStatus = el.taskStatus?.value === TaskStatusPolicy.TRACKING_STATUS
-        ? "planned"
-        : (el.taskStatus?.value || "planned");
+    if (el.taskFollowUpTracking && attentionUi) el.taskFollowUpTracking.checked = attentionOnly;
+    if (el.taskStatus?.value === TaskStatusPolicy.TRACKING_STATUS) {
+      const nextStatus = getAutomaticTaskStatusForPayload(state.editingTaskId, {
+        startOverrideAt: fromLocalDateTimeInput(el.taskActualStart?.value || "")
+      });
       restoreTaskStatusOptions({ status: nextStatus });
-      if (el.taskStatus && (el.taskStatus.value === TaskStatusPolicy.TRACKING_STATUS || !el.taskStatus.value)) {
-        el.taskStatus.value = "planned";
-      }
     }
     updateProgressAvailability();
   } finally {
@@ -5669,10 +5673,11 @@ function saveTask() {
     color: typeof TaskCategoryPolicy?.colorForCategory === "function"
       ? TaskCategoryPolicy.colorForCategory(el.taskCategory?.value || "work")
       : "sage",
-    // 仅关注只改状态；优先级保持用户选择（后续默认继承原任务）
+    // 仅关注只打标；工作状态与优先级保持用户选择
     priority: resolvePersistedPriority(monthlySelected, editing?.task),
     progress: Number(el.taskProgress.value),
-    status: attentionOnly ? TaskStatusPolicy.TRACKING_STATUS : el.taskStatus.value,
+    attentionOnly,
+    status: el.taskStatus.value,
     startedAt: fromLocalDateTimeInput(el.taskActualStart.value),
     startOverrideAt: fromLocalDateTimeInput(el.taskActualStart.value),
     completedAt: fromLocalDateTimeInput(el.taskActualEnd.value),
@@ -5703,17 +5708,19 @@ function saveTask() {
   if (payload.recurrence && payload.recurrence.until < payload.dueDate.slice(0, 7)) {
     return showTaskFieldError(el.taskRecurringUntil, "结束月份不能早于首次截止月份");
   }
-  if (payload.completedAt) {
+  if (attentionOnly) {
+    payload.attentionOnly = true;
+    payload.completedAt = "";
+    if (payload.status === TaskStatusPolicy.TRACKING_STATUS || TaskStatusPolicy.isEndedStatus(payload.status)) {
+      payload.status = getAutomaticTaskStatusForPayload(state.editingTaskId, payload);
+    }
+  } else if (payload.completedAt) {
+    payload.attentionOnly = false;
     payload.status = "done";
     payload.progress = 100;
   } else if (!TaskStatusPolicy.isEndedStatus(payload.status)) {
-    // Do not keep forcing tracking just because the stored task was tracking —
-    // user may convert 仅关注 → 一般任务 in this save.
-    if (attentionOnly || payload.status === TaskStatusPolicy.TRACKING_STATUS) {
-      payload.status = TaskStatusPolicy.TRACKING_STATUS;
-    } else {
-      payload.status = getAutomaticTaskStatusForPayload(state.editingTaskId, payload);
-    }
+    payload.attentionOnly = false;
+    payload.status = getAutomaticTaskStatusForPayload(state.editingTaskId, payload);
   }
   const effectiveStartedAt = payload.startedAt || getTaskScheduleInfo(state.editingTaskId)?.firstStartIso || "";
   if (payload.completedAt && effectiveStartedAt && new Date(payload.completedAt) < new Date(effectiveStartedAt)) {
@@ -5722,7 +5729,10 @@ function saveTask() {
   if (payload.status === "in_progress" && !payload.startedAt) payload.startedAt = getTaskScheduleInfo(state.editingTaskId)?.firstStartIso || new Date().toISOString();
   if (["done", "closed"].includes(payload.status) && !payload.completedAt) payload.completedAt = new Date().toISOString();
   if (["done", "closed"].includes(payload.status) && !payload.startedAt) payload.startedAt = effectiveStartedAt;
-  if (payload.status === "done") payload.progress = 100;
+  if (payload.status === "done") {
+    payload.progress = 100;
+    payload.attentionOnly = false;
+  }
   if (payload.status === "planned" || payload.status === TaskStatusPolicy.TRACKING_STATUS) payload.progress = 0;
 
   let parentIdForChildren = state.editingTaskId;
@@ -5769,7 +5779,7 @@ function showTaskFieldError(field, message) {
 function openProgressReview() {
   const allTasks = getAllTasks().map(({ task }) => task);
   const isActive = task => task.status === "in_progress";
-  const hasInvestedWork = task => !isMemoReminderTask(task) && (taskHasWorkHistory(task.id) || getTaskDuration(task.id) > 0);
+  const hasInvestedWork = task => taskHasWorkHistory(task.id) || getTaskDuration(task.id) > 0;
   const activeTasks = TodoListPolicy.progressReviewCandidates({
     tasks: allTasks,
     hasChildTasks,
@@ -8598,7 +8608,7 @@ function requestTaskCompletion(task) {
   pendingCloseTaskId = task.id;
   if (el.taskCloseConfirmTitle) el.taskCloseConfirmTitle.textContent = "关闭任务";
   if (el.taskCloseConfirmMessage) {
-    el.taskCloseConfirmMessage.textContent = `「${task.title}」请确认完成时间与完成情况。「关闭并新建后续」会继承原优先级与上级；若只需提醒、不排投入，再勾选「仅关注」。`;
+    el.taskCloseConfirmMessage.textContent = `「${task.title}」请确认完成时间与完成情况。「关闭并新建后续」会继承原优先级与上级。`;
   }
   if (el.taskCloseCompletedAt) {
     el.taskCloseCompletedAt.value = toLocalDateTimeInput(new Date().toISOString());
@@ -9735,8 +9745,7 @@ function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
     showToast("该时间点不能放置新的投入记录");
     return false;
   }
-  const fromMemo = isMemoReminderTask(task);
-  const workTask = fromMemo ? materializeWorkTodoFromMemo(task, dateKey) : task;
+  const workTask = task;
   const entryColor = typeof TaskCategoryPolicy?.resolveTaskColor === "function"
     ? TaskCategoryPolicy.resolveTaskColor(workTask)
     : (workTask.color || "sage");
@@ -9747,9 +9756,7 @@ function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
   refreshTaskStatusForId(workTask.id);
   saveData();
   render();
-  showToast(fromMemo
-    ? `备忘已派生新待办「${workTask.title}」，并安排到 ${dateKey.slice(5)} ${formatTime(hour)}`
-    : `已安排到 ${dateKey.slice(5)} ${formatTime(hour)}`);
+  showToast(`已安排到 ${dateKey.slice(5)} ${formatTime(hour)}`);
   return true;
 }
 
@@ -10015,11 +10022,6 @@ function resolveEntryTaskLinkWithGuard(entryPayload, existingEntry = null) {
       showToast("工时只能记在叶子待办上；请选已有叶子，或选父级以在其下新建子待办");
       return Promise.resolve(null);
     }
-    if (isMemoReminderTask(linked)) {
-      const workTodo = materializeWorkTodoFromMemo(linked, state.editingEntryDateKey || state.selectedDate);
-      showToast(`备忘「${linked.title}」已派生新待办并关联投入`);
-      return Promise.resolve(workTodo.id);
-    }
     return Promise.resolve(selected);
   }
   if (existingEntry?.taskId && selected !== "__create__") return Promise.resolve(existingEntry.taskId);
@@ -10065,8 +10067,7 @@ function getEntryParentCandidates(entryPayload = null) {
   const entryTitle = TodoListPolicy.normalizeTitle(entryPayload?.title || "");
   const tasks = uniqueTasks(getAllTasks().map(({ task }) => task));
   return tasks
-    .filter(task => task && !["done", "closed"].includes(task.status))
-    .filter(task => !isMemoReminderTask(task))
+    .filter(task => task && !TaskStatusPolicy.isEndedStatus(task.status))
     .filter(task => !entryTitle || TodoListPolicy.normalizeTitle(task.title) !== entryTitle)
     .sort((a, b) => {
       const pathA = TaskOptionPolicy.taskHierarchyPath({ task: a, tasks, separator: " / " }) || a.title || "";
@@ -10944,8 +10945,6 @@ function dayHasScheduleActivity(dateKey) {
 }
 
 function getTaskDuration(taskId) {
-  const task = findTask(taskId)?.task;
-  if (TaskStatusPolicy.isTrackingStatus(task)) return 0;
   return Object.entries(state.data).reduce((sum, [dateKey, day]) =>
     sum + (day.entries || [])
       .filter(entry => entry.taskId === taskId)
@@ -10953,8 +10952,6 @@ function getTaskDuration(taskId) {
 }
 
 function getTaskScheduledHours(taskId) {
-  const task = findTask(taskId)?.task;
-  if (TaskStatusPolicy.isTrackingStatus(task)) return 0;
   return Object.values(state.data).reduce((sum, day) =>
     sum + (day.entries || [])
       .filter(entry => entry.taskId === taskId)
@@ -10998,7 +10995,6 @@ function hasScheduledEntry(taskId) {
 
 function isOngoingTask(task) {
   if (!task || TaskStatusPolicy.isEndedStatus(task.status)) return false;
-  if (isMemoReminderTask(task)) return false;
   if (task.status === "in_progress") return true;
   return Boolean(getTaskScheduleInfo(task.id)?.hasStarted);
 }
@@ -11042,9 +11038,13 @@ function getAutomaticTaskStatusForPayload(taskId, payload, now = new Date()) {
 
 function applyAutomaticTaskStatus(task, now = new Date()) {
   if (!task || ["done", "closed"].includes(task.status)) return false;
-  // Memo reminders stay outside the work-status machine.
-  if (TaskStatusPolicy.isTrackingStatus(task)) return false;
-  if (task.completedAt) {
+  if (task.status === TaskStatusPolicy.TRACKING_STATUS) {
+    task.status = TaskStatusPolicy.liveWorkStatus?.(task) || "planned";
+    task.attentionOnly = true;
+    task.completedAt = "";
+  }
+  if (task.attentionOnly) task.completedAt = "";
+  if (task.completedAt && !task.attentionOnly) {
     const changed = task.status !== "done" || task.progress !== 100;
     task.status = "done";
     task.progress = 100;
@@ -11135,7 +11135,7 @@ function belongsInMemoList(task) {
 }
 
 function isWorkLeafTask(task) {
-  return isTodoListTask(task) && !isMemoReminderTask(task);
+  return isTodoListTask(task);
 }
 
 function hasChildTasks(taskId) {
@@ -11196,7 +11196,6 @@ function retargetChildrenToMonthlyParentInstance(newParent, groupId) {
 function matchesFilter(task, filter) {
   if (!isTodoListTask(task)) return false;
   if (filter === "memo") return belongsInMemoList(task);
-  if (isMemoReminderTask(task)) return false;
   if (filter === "all") return true;
   if (filter === "unplanned") return isUnplannedTask(task);
   if (filter === "ended") return task.status === "done" || task.status === "closed";

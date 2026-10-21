@@ -155,7 +155,13 @@
 
   function taskMatchesStatusFilter(task, statusFilter = []) {
     if (!statusFilter.length) return true;
-    return statusFilter.includes(normalizeTaskStatus(task?.status));
+    const status = normalizeTaskStatus(task?.status);
+    if (statusFilter.includes(status)) return true;
+    return statusFilter.includes("tracking") && (
+      task?.attentionOnly === true
+      || status === "tracking"
+      || task?.priority === "follow_up"
+    );
   }
 
   function taskMatchesCategoryFilter(task, categoryFilter = [], resolveCategory) {
