@@ -50,6 +50,7 @@ const state = {
   meetingFilter: "all",
   taskListSearch: "",
   showContinueYesterdayOnly: false,
+  attentionAlarmTaskIds: [],
   taskView: "day",
   /** Desktop: right-hand schedule/gantt surface shown (false = todo-only focus shell). */
   scheduleRevealed: false,
@@ -108,7 +109,8 @@ const state = {
 
 const el = {};
 let toastTimer;
-let lastAttentionAlarmKey = "";
+let lastAttentionAlarmPromptKey = "";
+const ATTENTION_ALARM_VIEWED_KEY = "today-planner-attention-alarm-viewed";
 let timelineScrollBarTimer;
 let projectGanttScrollTimer;
 let taskListScrollBarTimer;
@@ -145,6 +147,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "taskMergeDialog", "taskMergeForm", "taskMergeMessage", "taskMergeTarget", "taskMergeSearch", "taskMergeOptions",
     "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryOwner", "entryNote", "entryCategoryField", "entryCategory", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
+    "attentionAlarmBanner", "attentionAlarmBannerText",
     "updateProgress", "updateProgressText", "updateProgressBar",
     "exportDialog", "exportForm", "exportFormat", "importButton", "minimizeWindow", "maximizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiExportTablesButton", "aiQuickActions",
     "aiChatLog", "aiAttachment", "aiAttachmentPreview", "aiAttachmentClear", "aiImageInput", "aiAttachImageButton", "aiSubmitButton", "aiScreenshotHintButton",
@@ -467,6 +470,7 @@ function bindEvents() {
   el.taskListSearch?.addEventListener("input", () => {
     state.taskListSearch = el.taskListSearch.value;
     state.showContinueYesterdayOnly = false;
+    state.attentionAlarmTaskIds = [];
     el.continueYesterdayButton?.classList.remove("active");
     el.taskSearchWrap?.classList.toggle("has-query", Boolean((el.taskListSearch.value || "").trim()));
     clearTimeout(taskListSearchTimer);
@@ -480,16 +484,24 @@ function bindEvents() {
   el.taskListSearch?.addEventListener("keydown", event => {
     if (event.key !== "Escape") return;
     event.preventDefault();
+    let changed = false;
     if ((el.taskListSearch.value || "").trim()) {
       el.taskListSearch.value = "";
       state.taskListSearch = "";
       el.taskSearchWrap?.classList.remove("has-query");
-      renderTasks();
+      changed = true;
     }
+    if (state.attentionAlarmTaskIds?.length) {
+      state.attentionAlarmTaskIds = [];
+      changed = true;
+    }
+    if (changed) renderTasks();
   });
+  el.attentionAlarmBanner?.addEventListener("click", () => openAttentionAlarmList());
 
   el.continueYesterdayButton?.addEventListener("click", () => {
     state.listKind = "todo";
+    state.attentionAlarmTaskIds = [];
     state.showContinueYesterdayOnly = !state.showContinueYesterdayOnly;
     el.continueYesterdayButton.classList.toggle("active", state.showContinueYesterdayOnly);
     if (state.showContinueYesterdayOnly) {
@@ -1611,6 +1623,9 @@ async function initDesktop() {
   window.desktopAPI.onGlassChanged(glass => syncGlass(glass, { rerender: true }));
   syncLock(await window.desktopAPI.getLocked());
   window.desktopAPI.onLockChanged(syncLock);
+  window.desktopAPI.onNotifyClicked?.(payload => {
+    if (payload?.kind === "attention-alarm") openAttentionAlarmList();
+  });
   el.minimizeWindow.addEventListener("click", () => window.desktopAPI.minimize());
   const runToggleMaximize = async () => {
     if (!window.desktopAPI?.toggleMaximize) return false;
@@ -3197,7 +3212,8 @@ function renderUnifiedTodoList() {
   const query = (state.taskListSearch || el.taskListSearch?.value || "").trim();
   const ownerSearch = TaskOptionPolicy.parseOwnerSearchQuery?.(query) || { ownerTokens: [], textQuery: query };
   const hasListSearch = Boolean(ownerSearch.textQuery || ownerSearch.ownerTokens?.length);
-  const overlayMode = hasListSearch || state.showContinueYesterdayOnly;
+  const hasAttentionAlarmList = Boolean(state.attentionAlarmTaskIds?.length);
+  const overlayMode = hasListSearch || state.showContinueYesterdayOnly || hasAttentionAlarmList;
 
   const searchAllTasks = () => {
     let hits;
@@ -3235,7 +3251,8 @@ function renderUnifiedTodoList() {
   el.taskList.innerHTML = "";
   el.taskPanel?.classList.toggle("is-meeting-list", meetingMode && !overlayMode);
   el.taskPanel?.classList.toggle("is-overlay-list", overlayMode);
-  if (el.taskTabs) el.taskTabs.hidden = meetingMode || overlayMode;
+  const hideTodoTabs = meetingMode || (overlayMode && !hasAttentionAlarmList);
+  if (el.taskTabs) el.taskTabs.hidden = hideTodoTabs;
   if (el.meetingTabs) el.meetingTabs.hidden = !meetingMode || overlayMode;
   el.taskTabs?.querySelectorAll("button").forEach(item =>
     item.classList.toggle("active", item.dataset.filter === state.filter)
@@ -3244,7 +3261,7 @@ function renderUnifiedTodoList() {
     item.classList.toggle("active", item.dataset.meetingFilter === state.meetingFilter)
   );
   el.continueYesterdayButton?.classList.toggle("active", state.showContinueYesterdayOnly);
-  if (meetingMode || overlayMode) {
+  if (meetingMode || hideTodoTabs) {
     closeTaskTabsMoreMenu();
     if (el.taskTabsMore) el.taskTabsMore.hidden = true;
   } else {
@@ -3299,6 +3316,13 @@ function renderUnifiedTodoList() {
         tasks: meetingHits
       });
     }
+  } else if (hasAttentionAlarmList) {
+    const idSet = new Set(state.attentionAlarmTaskIds);
+    const byId = new Map(uniqueTasks(allTasks).filter(task => idSet.has(task.id) && isTodoListTask(task)).map(task => [task.id, task]));
+    const alarmTasks = state.attentionAlarmTaskIds.map(id => byId.get(id)).filter(Boolean);
+    sections = alarmTasks.length
+      ? [{ key: "attention-alarm", label: `关注提醒（${alarmTasks.length}）`, tasks: alarmTasks }]
+      : [];
   } else if (state.showContinueYesterdayOnly) {
     const groups = TodoListPolicy.buildTodoGroups({
       tasks: workLeafTasks,
@@ -3395,28 +3419,39 @@ function renderUnifiedTodoList() {
       ? "昨天没有可继续的任务或会议"
       : hasListSearch
         ? "没有匹配的待办或会议"
-        : state.filter === "memo" && !meetingMode
+        : hasAttentionAlarmList
+          ? `这些关注提醒任务已处理，或不在当前清单<br><button type="button" class="soft-button" id="clearAttentionAlarmFilter">返回全部任务</button>`
+          : state.filter === "memo" && !meetingMode
           ? "暂无待跟踪事项<br>在进行中的待办上勾选「仅关注」即可标记，不会关闭任务"
           : meetingMode
             ? `当前分类没有会议<br><button type="button" class="soft-button empty-create-meeting" id="emptyCreateMeeting">新建会议</button>`
             : "当前分类没有待办任务"}</div>`;
     el.taskList.querySelector("#emptyCreateMeeting")?.addEventListener("click", () => openNewFromQuickAdd("", { kind: "meeting" }));
+    el.taskList.querySelector("#clearAttentionAlarmFilter")?.addEventListener("click", () => applyTaskFilter("all"));
     paintListSelection();
     return;
   }
 
   sections.forEach(section => {
-    const collapsible = !hasListSearch && state.filter === "all" && !state.showContinueYesterdayOnly && Boolean(section.label);
+    const alarmExit = section.key === "attention-alarm";
+    const collapsible = !overlayMode && state.filter === "all" && Boolean(section.label);
     const collapsed = collapsible && state.todoCollapsedSections.has(section.key);
     if (section.label && section.tasks.length) {
-      const heading = document.createElement(collapsible ? "button" : "div");
-      heading.className = "task-group-heading";
+      const heading = document.createElement(collapsible || alarmExit ? "button" : "div");
+      heading.className = `task-group-heading${alarmExit ? " attention-alarm-exit" : ""}`;
       if (collapsible) {
         heading.type = "button";
         heading.setAttribute("aria-expanded", String(!collapsed));
+      } else if (alarmExit) {
+        heading.type = "button";
+        heading.title = "返回全部任务";
       }
-      heading.innerHTML = `<strong>${collapsible ? `<i>${collapsed ? "▸" : "▾"}</i>` : ""}${escapeHtml(section.label)}</strong><span>${section.tasks.length} 项</span>`;
-      if (collapsible) {
+      heading.innerHTML = alarmExit
+        ? `<strong>${escapeHtml(section.label)}</strong><span>返回全部任务</span>`
+        : `<strong>${collapsible ? `<i>${collapsed ? "▸" : "▾"}</i>` : ""}${escapeHtml(section.label)}</strong><span>${section.tasks.length} 项</span>`;
+      if (alarmExit) {
+        heading.addEventListener("click", () => applyTaskFilter("all"));
+      } else if (collapsible) {
         heading.addEventListener("click", () => {
           if (collapsed) state.todoCollapsedSections.delete(section.key);
           else state.todoCollapsedSections.add(section.key);
@@ -4930,6 +4965,7 @@ function applyTaskFilter(filter) {
   state.lastTodoFilter = filter;
   state.filter = filter;
   state.showContinueYesterdayOnly = false;
+  state.attentionAlarmTaskIds = [];
   TodoListPolicy.saveFilter(state.filter);
   el.taskTabs?.querySelectorAll("button[data-filter]").forEach(item => {
     item.classList.toggle("active", item.dataset.filter === filter);
@@ -4947,6 +4983,7 @@ function applyMeetingFilter(filter) {
   state.listKind = "meeting";
   state.meetingFilter = filter;
   state.showContinueYesterdayOnly = false;
+  state.attentionAlarmTaskIds = [];
   renderTasks();
 }
 
@@ -4954,6 +4991,7 @@ function applyListKind(kind) {
   if (kind === "meeting") {
     state.listKind = "meeting";
     state.showContinueYesterdayOnly = false;
+    state.attentionAlarmTaskIds = [];
     if (!state.meetingFilter) state.meetingFilter = "all";
     renderTasks();
     return;
@@ -10259,6 +10297,7 @@ function focusLinkedTaskFilter(taskId) {
   // Always surface the linked leaf in the todo list (not its parent container).
   state.listKind = "todo";
   state.showContinueYesterdayOnly = false;
+  state.attentionAlarmTaskIds = [];
   state.highlightTaskId = linked.id;
   // Newly created schedule-linked leaves are usually planned/unplanned; keep the
   // default in_progress tab from hiding them right after save.
@@ -11884,22 +11923,74 @@ function attentionAlarmTasks(todayKey = toDateKey(new Date())) {
     .filter(task => isTodoListTask(task) && TaskStatusPolicy.isAttentionAlarmDue?.(task, todayKey));
 }
 
+function attentionAlarmViewedKey() {
+  try { return String(localStorage.getItem(ATTENTION_ALARM_VIEWED_KEY) || ""); }
+  catch { return ""; }
+}
+
+function markAttentionAlarmViewed(todayKey = toDateKey(new Date())) {
+  try { localStorage.setItem(ATTENTION_ALARM_VIEWED_KEY, todayKey); }
+  catch { /* ignore quota */ }
+}
+
+function hideAttentionAlarmBanner() {
+  if (!el.attentionAlarmBanner) return;
+  el.attentionAlarmBanner.hidden = true;
+  el.attentionAlarmBanner.classList.remove("show");
+  delete el.attentionAlarmBanner.dataset.taskIds;
+}
+
+function showAttentionAlarmBanner(tasks = []) {
+  if (!el.attentionAlarmBanner || !el.attentionAlarmBannerText) return;
+  const count = tasks.length;
+  el.attentionAlarmBannerText.textContent = `${count} 条任务已到目标完成日期，点击查看`;
+  el.attentionAlarmBanner.dataset.taskIds = tasks.map(task => task.id).filter(Boolean).join(",");
+  el.attentionAlarmBanner.hidden = false;
+  el.attentionAlarmBanner.classList.add("show");
+}
+
+function openAttentionAlarmList(taskIds) {
+  const todayKey = toDateKey(new Date());
+  const fromBanner = String(el.attentionAlarmBanner?.dataset.taskIds || "")
+    .split(",")
+    .map(id => id.trim())
+    .filter(Boolean);
+  const ids = [...new Set((Array.isArray(taskIds) ? taskIds : fromBanner.length ? fromBanner : attentionAlarmTasks(todayKey).map(task => task.id)).filter(Boolean))];
+  hideAttentionAlarmBanner();
+  markAttentionAlarmViewed(todayKey);
+  lastAttentionAlarmPromptKey = todayKey;
+  if (!ids.length) {
+    state.attentionAlarmTaskIds = [];
+    renderTasks();
+    return;
+  }
+  state.listKind = "todo";
+  state.showContinueYesterdayOnly = false;
+  state.taskListSearch = "";
+  if (el.taskListSearch) el.taskListSearch.value = "";
+  el.taskSearchWrap?.classList.remove("has-query");
+  el.continueYesterdayButton?.classList.remove("active");
+  state.attentionAlarmTaskIds = ids;
+  render();
+}
+
 function maybePromptAttentionAlarms() {
   const todayKey = toDateKey(new Date());
-  if (lastAttentionAlarmKey === todayKey) return;
   const due = attentionAlarmTasks(todayKey);
-  if (!due.length) return;
-  lastAttentionAlarmKey = todayKey;
-  const titles = due
-    .slice(0, 3)
-    .map(task => TaskStatusPolicy.listDisplayTitle?.(task) || task.title)
-    .map(title => String(title || "").trim())
-    .filter(Boolean);
-  const extra = due.length > 3 ? ` 等 ${due.length} 项` : "";
-  const message = `关注提醒：${titles.join("、")}${extra} 已到目标完成日期`;
-  showToast(message, 4200);
+  if (!due.length || attentionAlarmViewedKey() === todayKey) {
+    hideAttentionAlarmBanner();
+    return;
+  }
+  showAttentionAlarmBanner(due);
+  if (lastAttentionAlarmPromptKey === todayKey) return;
+  lastAttentionAlarmPromptKey = todayKey;
+  const message = `${due.length} 条任务已到目标完成日期，点击查看`;
   if (typeof window.desktopAPI?.notify === "function") {
-    Promise.resolve(window.desktopAPI.notify({ title: "关注提醒", body: message })).catch(() => {});
+    Promise.resolve(window.desktopAPI.notify({
+      title: "关注提醒",
+      body: message,
+      kind: "attention-alarm"
+    })).catch(() => {});
   }
 }
 

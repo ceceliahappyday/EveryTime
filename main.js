@@ -400,6 +400,14 @@ if (singleInstanceLock) app.whenReady().then(() => {
     const body = String(payload.body || "").trim();
     if (!body) return false;
     const notice = new Notification({ title, body });
+    notice.on("click", () => {
+      showMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("app:notify-clicked", {
+          kind: String(payload.kind || "")
+        });
+      }
+    });
     notice.show();
     return true;
   });

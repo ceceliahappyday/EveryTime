@@ -85,6 +85,15 @@ assert.match(app, /isAttentionAlarmDue/, "attention tasks raise an alarm on the 
 assert.match(app, /task-attention-alarm-mark/, "due attention tasks show a red exclamation mark");
 assert.match(styles, /\.task-attention-alarm-mark[\s\S]*background:\s*#e24b4b/, "due-day alarm mark is red");
 assert.match(app, /maybePromptAttentionAlarms/, "startup should prompt due attention reminders");
+assert.match(html, /id="attentionAlarmBanner"/, "due attention reminders use a sticky clickable banner");
+assert.match(app, /openAttentionAlarmList/, "clicking the reminder must open those tasks in the todo list");
+assert.match(app, /attentionAlarmTaskIds/, "reminder click filters the todo list to the due attention tasks");
+assert.match(app, /\$\{count\} 条任务已到目标完成日期，点击查看/, "banner summarizes the task count instead of joining titles");
+assert.doesNotMatch(app, /titles\.join\("、"\)/, "reminder popup must not concatenate task titles");
+assert.match(app, /kind: "attention-alarm"/, "desktop notification click must route back to the same task list");
+assert.match(app, /onNotifyClicked/, "renderer listens for notification clicks");
+assert.match(styles, /\.attention-alarm-banner\.show[\s\S]*pointer-events:\s*auto/, "reminder banner stays clickable until viewed");
+assert.match(app, /返回全部任务/, "attention reminder list must offer a way back to all tasks");
 assert.match(styles, /#taskEditForm \.form-row > label:not\(#taskTitleField\):not\(\.checkbox-setting\)/, "short task fields keep label and control on one row");
 assert.match(
   styles,
