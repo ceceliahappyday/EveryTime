@@ -758,6 +758,17 @@
                 <span class="settings-row-copy"><strong>AI 服务商</strong></span>
                 <select id="settingAiProvider"></select>
               </label>
+              <label class="settings-row settings-row-inline" id="settingAiMoonshotRegionRow" hidden>
+                <span class="settings-row-copy">
+                  <strong>Kimi 接口</strong>
+                  <small>moonshot.cn 的 Key 选国内；kimi.ai 的 Key 选国际</small>
+                </span>
+                <select id="settingAiMoonshotRegion">
+                  <option value="auto">自动尝试</option>
+                  <option value="cn">国内（api.moonshot.cn）</option>
+                  <option value="intl">国际（api.moonshot.ai）</option>
+                </select>
+              </label>
               <label class="settings-row settings-row-inline">
                 <span class="settings-row-copy">
                   <strong>AI 模型</strong>

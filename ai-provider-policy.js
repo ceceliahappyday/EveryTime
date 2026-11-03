@@ -159,7 +159,23 @@
     return mapped || raw;
   }
 
-  function providerBaseUrls(provider = {}) {
+  function normalizeMoonshotRegion(region = "") {
+    const value = String(region || "").trim().toLowerCase();
+    if (value === "cn" || value === "intl" || value === "international" || value === "global") {
+      return value === "cn" ? "cn" : "intl";
+    }
+    return "auto";
+  }
+
+  function providerBaseUrls(provider = {}, { moonshotRegion = "auto" } = {}) {
+    const cn = "https://api.moonshot.cn/v1";
+    const intl = "https://api.moonshot.ai/v1";
+    if (provider?.id === "moonshot") {
+      const region = normalizeMoonshotRegion(moonshotRegion);
+      if (region === "cn") return [cn];
+      if (region === "intl") return [intl];
+      return [cn, intl];
+    }
     const primary = String(provider.baseUrl || "").replace(/\/$/, "");
     const extras = (provider.altBaseUrls || []).map(url => String(url || "").replace(/\/$/, "")).filter(Boolean);
     return [...new Set([primary, ...extras].filter(Boolean))];
@@ -396,6 +412,7 @@
     isAmbiguousSkKey,
     getProvider,
     resolveModelId,
+    normalizeMoonshotRegion,
     providerBaseUrls,
     swapRequestBaseUrl,
     resolveProvider,

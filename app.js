@@ -163,7 +163,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "settingsButton", "settingsDialog", "settingsForm", "settingsDialogScroll", "settingsCategoryList", "addCategoryButton", "settingsPaneTitle", "settingsNavList",
     "settingProfileName", "settingGlass", "settingPinned", "settingLocked", "settingStartAtLogin",
     "settingMorningStart", "settingMorningEnd", "settingAfternoonStart", "settingAfternoonEnd", "settingWorkHoursSummary",
-    "settingAiEnabled", "settingAiApiKey", "settingAiProvider", "settingAiModel", "aiDetectModelsButton", "aiKeyStatus",
+    "settingAiEnabled", "settingAiApiKey", "settingAiProvider", "settingAiMoonshotRegion", "settingAiMoonshotRegionRow", "settingAiModel", "aiDetectModelsButton", "aiKeyStatus",
     "settingsAppVersion", "checkUpdateButton", "settingsDataPath", "settingsExportPath"
   ].forEach(id => el[id] = document.getElementById(id));
 
@@ -1762,7 +1762,10 @@ async function initDesktop() {
   });
   el.aiDetectModelsButton?.addEventListener("click", () => refreshAiProviderModels({ forceList: true }));
   el.settingAiApiKey?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
-  el.settingAiProvider?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
+  el.settingAiProvider?.addEventListener("change", () => {
+    syncAiMoonshotRegionRow();
+    refreshAiProviderModels({ forceList: true });
+  });
   // Restore last 视图 preference so a wide shell never looks like “日程被清空”.
   const preferSchedule = loadScheduleRevealedPreference();
   state.scheduleRevealed = preferSchedule;
@@ -1960,6 +1963,10 @@ async function openSettingsDialog() {
     ? "已配置（输入新 Key 可替换）"
     : "粘贴 OpenAI / OpenRouter / DeepSeek / Anthropic / Gemini 等 Key";
   fillAiProviderOptions([{ id: settings?.aiProvider || "openai", name: settings?.aiProvider || "openai" }], settings?.aiProvider || "openai");
+  if (el.settingAiMoonshotRegion) {
+    el.settingAiMoonshotRegion.value = settings?.aiMoonshotRegion || "auto";
+  }
+  syncAiMoonshotRegionRow();
   fillAiModelSuggestions(settings?.aiModel ? [settings.aiModel] : [], { value: settings?.aiModel || "" });
   el.aiKeyStatus.textContent = settings?.aiConfigured
     ? "API Key 已配置。可点击「识别并加载候选」拉取模型列表供选用。"
@@ -2219,6 +2226,11 @@ function refreshCategorySelects() {
   fillCategorySelect(el.entryCategory, { selected: entrySelected, includeMeeting: true });
 }
 
+function syncAiMoonshotRegionRow() {
+  const isMoonshot = (el.settingAiProvider?.value || "") === "moonshot";
+  if (el.settingAiMoonshotRegionRow) el.settingAiMoonshotRegionRow.hidden = !isMoonshot;
+}
+
 function fillAiProviderOptions(providers = [], selectedId = "") {
   if (!el.settingAiProvider) return;
   const list = providers.length ? providers : [{ id: "openai", name: "OpenAI" }];
@@ -2288,6 +2300,7 @@ async function saveDesktopSettings() {
     afternoonEnd: Number(el.settingAfternoonEnd?.value ?? state.afternoonEnd),
     aiEnabled: el.settingAiEnabled.checked,
     aiProvider: el.settingAiProvider?.value || "openai",
+    aiMoonshotRegion: el.settingAiMoonshotRegion?.value || "auto",
     aiModel: el.settingAiModel?.value?.trim() || "",
     ...(el.settingAiApiKey.value.trim() ? { aiApiKey: el.settingAiApiKey.value.trim() } : {})
   };

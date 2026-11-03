@@ -17,6 +17,7 @@ assert.match(html, /ai-task-draft-policy\.js/, "renderer must load draft policy"
 assert.match(preload, /aiExtractTask/, "preload must expose aiExtractTask");
 assert.match(html, /id="settingAiModel"[^>]*list="settingAiModelSuggestions"/, "AI model must be a manual text field with datalist suggestions");
 assert.match(html, /id="settingAiModelSuggestions"/, "AI model datalist must exist");
+assert.match(html, /id="settingAiMoonshotRegion"/, "Moonshot endpoint selector must exist");
 assert.match(app, /createTaskFromAiDraft/, "renderer must create tasks from AI drafts");
 assert.match(app, /createTasksFromAiDrafts/, "batch create helper must exist");
 assert.match(app, /openAiBatchDraftDialog/, "multi drafts open review dialog");

@@ -374,12 +374,15 @@ if (singleInstanceLock) app.whenReady().then(() => {
       delete incoming.aiApiKey;
       incoming.aiApiKeyEncrypted = key ? encryptAiKey(key) : null;
       if (key) {
+        const preferredProvider = String(incoming.aiProvider || loadSettings().aiProvider || "").trim();
         const resolved = AiProviderPolicy.resolveProvider({
           apiKey: key,
-          providerId: incoming.aiProvider || loadSettings().aiProvider || ""
+          providerId: preferredProvider
         });
-        incoming.aiProvider = resolved.id;
-        if (!incoming.aiModel) incoming.aiModel = resolved.defaultModel;
+        incoming.aiProvider = preferredProvider || resolved.id;
+        if (!String(incoming.aiModel || "").trim() && !String(loadSettings().aiModel || "").trim()) {
+          incoming.aiModel = resolved.defaultModel;
+        }
       }
     }
     saveSettings(incoming);
@@ -674,7 +677,8 @@ function loadSettings() {
     workdayHours: defaultHours.workdayHours,
     aiEnabled: false,
     aiModel: "gpt-4.1-mini",
-    aiProvider: "openai"
+    aiProvider: "openai",
+    aiMoonshotRegion: "auto"
   };
   if (!fs.existsSync(file)) return defaults;
   try {
@@ -749,17 +753,23 @@ function extractResponseText(payload) {
     .map(item => item.text || item.value || "").filter(Boolean).join("\n").trim();
 }
 
-function providerErrorMessage(body = {}, status = 0, provider = {}) {
+function providerErrorMessage(body = {}, status = 0, provider = {}, settings = {}) {
   const message = body?.error?.message || body?.message || `AI 请求失败（${status}）`;
   if (provider?.id === "moonshot" && (status === 401 || /invalid authentication/i.test(message))) {
-    return "Kimi/Moonshot 鉴权失败：请确认 API Key 有效，且服务商选「Moonshot / Kimi」。国内开放平台 Key 与国际 platform.kimi.ai 的 Key 不能混用接口；保存 Key 后点「检测模型」刷新列表，截图识别请选 kimi-k3.1-pro 等支持识图的模型。";
+    const region = settings?.aiMoonshotRegion || "auto";
+    const regionHint = region === "auto"
+      ? "在设置里把「Kimi 接口」改为「国内」或「国际」后再保存"
+      : (region === "cn"
+        ? "当前走国内接口；若 Key 来自 platform.kimi.ai，请改选「国际」"
+        : "当前走国际接口；若 Key 来自 platform.moonshot.cn，请改选「国内」");
+    return `Kimi/Moonshot 鉴权失败：请确认 API Key 有效、服务商为「Moonshot / Kimi」，并在保存设置后重试。${regionHint}。模型请手填 kimi-k3.1-pro 等支持识图的 ID。`;
   }
   return message;
 }
 
-async function fetchProviderJson(request, provider, { method = "POST", body } = {}) {
+async function fetchProviderJson(request, provider, { method = "POST", body, settings = loadSettings() } = {}) {
   const bases = typeof AiProviderPolicy.providerBaseUrls === "function"
-    ? AiProviderPolicy.providerBaseUrls(provider)
+    ? AiProviderPolicy.providerBaseUrls(provider, { moonshotRegion: settings?.aiMoonshotRegion })
     : [provider.baseUrl];
   const primaryBase = bases[0] || provider.baseUrl;
   let lastResponse = null;
@@ -879,7 +889,7 @@ async function askAi(payload) {
   });
   const { response, body } = await fetchProviderJson(request, provider);
   if (!response.ok) {
-    throw new Error(providerErrorMessage(body, response.status, provider));
+    throw new Error(providerErrorMessage(body, response.status, provider, settings));
   }
   return AiProviderPolicy.extractChatText(body, provider)
     || extractResponseText(body)
@@ -913,7 +923,7 @@ async function extractAiTask(payload = {}) {
   });
   const { response, body } = await fetchProviderJson(request, provider);
   if (!response.ok) {
-    const message = providerErrorMessage(body, response.status, provider);
+    const message = providerErrorMessage(body, response.status, provider, settings);
     if (/image|vision|multimodal|does not support|不支持|resource_not_found|model/i.test(message)) {
       throw new Error("当前模型可能不支持识图。Kimi 请选 kimi-k3.1-pro；也可用 gpt-4o / Claude / Gemini 等视觉模型。");
     }
