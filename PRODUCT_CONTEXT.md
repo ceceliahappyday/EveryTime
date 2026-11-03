@@ -1,4 +1,4 @@
-# EveryTime / 今日日程产品上下文（唯一有效规则）
+# DailyPlanner / 今日日程产品上下文（唯一有效规则）
 
 更新时间：2026-07-30
 
@@ -6,7 +6,7 @@
 
 ## 一、产品定位
 
-EveryTime 同时包含三种能力，但三者必须分开：
+DailyPlanner（今日日程）同时包含三种能力，但三者必须分开：
 
 1. 日历：记录会议、预约、外部日程和其他时间占用。
 2. 待办：记录需要完成的目标、交付件和任务状态。
@@ -127,7 +127,7 @@ EveryTime 同时包含三种能力，但三者必须分开：
 
 ## AI assistant policy (v2.0.78+)
 
-- AI is an optional assistant. Default mode is read-only over EveryTime task/calendar/work-log context: unfinished-task answers, task search/location, and date-range work summaries.
+- AI is an optional assistant. Default mode is read-only over DailyPlanner task/calendar/work-log context: unfinished-task answers, task search/location, and date-range work summaries.
 - The user enters their own API Key in Settings. The key is handled by Electron main process, encrypted with Windows safeStorage when available, and never returned to the renderer.
 - Chat requests use the provider’s chat/completions, Anthropic messages, or Gemini generateContent protocols (not a single OpenAI-only Responses API).
 - When the user **actively** drops/pastes/attaches a screenshot (new-task dialog or AI assistant) and sends it, AI may extract **one or more** todos (up to 12). A single match is created immediately; multiple matches open a review panel to edit/select before batch create. Images are sent only for that request to the user-configured provider; they are not persisted by the app.

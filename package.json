@@ -1,6 +1,6 @@
 {
   "name": "today-daily-planner",
-  "version": "2.0.130",
+  "version": "2.0.132",
   "private": true,
   "description": "桌面浮窗日程与待办记事本",
   "main": "main.js",
@@ -65,7 +65,7 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "EveryTime-Setup-${version}.${ext}"
+      "artifactName": "DailyPlanner-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,

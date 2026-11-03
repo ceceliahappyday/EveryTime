@@ -1870,7 +1870,7 @@ function applyProfileName(name, { migrateOwners = false } = {}) {
   const brandName = document.querySelector(".settings-nav-brand strong");
   if (brandName) brandName.textContent = next || "今日日程";
   const brandSub = document.querySelector(".settings-nav-brand span");
-  if (brandSub) brandSub.textContent = "桌面设置";
+  if (brandSub) brandSub.textContent = "DailyPlanner · 桌面设置";
   if (!migrateOwners || !next || next === "我") return 0;
   let changed = 0;
   getAllTasks().forEach(({ task }) => {
@@ -2548,7 +2548,7 @@ async function exportAiTables(tables = []) {
     showToast("当前没有可下载的表格");
     return;
   }
-  const filename = `EveryTime-AI表格-${toDateKey(new Date())}.xlsx`;
+  const filename = `DailyPlanner-AI表格-${toDateKey(new Date())}.xlsx`;
   if (!window.desktopAPI?.exportTables) {
     showToast("请在桌面版下载 Excel 表格");
     return;
@@ -8976,6 +8976,78 @@ function ensureGanttTreeDepthForChild(minDepth = 1) {
   return true;
 }
 
+function collectTaskStartIsos(task) {
+  if (!task) return [];
+  const schedule = getTaskScheduleInfo(task.id);
+  return [task.startOverrideAt, task.startedAt, schedule?.firstStartIso]
+    .map(value => String(value || "").trim())
+    .filter(Boolean);
+}
+
+function earliestStartIsoForParentTree(parent) {
+  if (!parent) return "";
+  const descendants = getDescendantTasks(parent.id);
+  const stamps = [
+    ...collectTaskStartIsos(parent),
+    ...descendants.flatMap(collectTaskStartIsos)
+  ];
+  return typeof TaskWorkPolicy?.pickEarliestIso === "function"
+    ? TaskWorkPolicy.pickEarliestIso(stamps)
+    : stamps.sort()[0] || "";
+}
+
+function syncParentStartFromDescendants(parentId) {
+  const parent = findTask(parentId)?.task;
+  if (!parent) return false;
+  const descendants = getDescendantTasks(parent.id);
+  const stamps = descendants.length
+    ? [
+      ...collectTaskStartIsos(parent),
+      ...descendants.flatMap(collectTaskStartIsos)
+    ]
+    : collectTaskStartIsos(parent);
+  const earliest = typeof TaskWorkPolicy?.pickEarliestIso === "function"
+    ? TaskWorkPolicy.pickEarliestIso(stamps)
+    : stamps.sort()[0] || "";
+  const current = String(parent.startOverrideAt || parent.startedAt || "").trim();
+  if (!earliest) {
+    if (!current || getTaskScheduleInfo(parent.id)) return false;
+    updateTaskRecords(parentId, task => {
+      task.startedAt = "";
+      task.startOverrideAt = "";
+      task.updatedAt = new Date().toISOString();
+    });
+    findTaskRecords(parentId).forEach(({ task }) => applyAutomaticTaskStatus(task));
+    refreshTaskStatusForId(parentId);
+    return true;
+  }
+  if (current && earliest >= current) return false;
+  updateTaskRecords(parentId, task => {
+    task.startedAt = earliest;
+    task.startOverrideAt = earliest;
+    task.updatedAt = new Date().toISOString();
+  });
+  findTaskRecords(parentId).forEach(({ task }) => applyAutomaticTaskStatus(task));
+  refreshTaskStatusForId(parentId);
+  return true;
+}
+
+function syncAncestorStartsFromChild(childId) {
+  const child = findTask(childId)?.task;
+  if (!child) return false;
+  let parentId = child.parentId || child.parentTaskId || child.parentTask || child.parent || "";
+  let changed = false;
+  const seen = new Set();
+  while (parentId && !seen.has(parentId)) {
+    seen.add(parentId);
+    if (syncParentStartFromDescendants(parentId)) changed = true;
+    const parent = findTask(parentId)?.task;
+    if (!parent) break;
+    parentId = parent.parentId || parent.parentTaskId || parent.parentTask || parent.parent || "";
+  }
+  return changed;
+}
+
 function ensureGanttTaskTreeForReparent() {
   const config = getGanttArrangeConfig();
   if (typeof GanttArrangePolicy?.isTreeEnabled === "function" && GanttArrangePolicy.isTreeEnabled(config)) {
@@ -9003,6 +9075,7 @@ function reparentTaskOnto(sourceId, parentId) {
     showToast(`「${source.title}」已在「${parent.title}」下`, 2600);
     return false;
   }
+  const previousParentId = source.parentId || source.parentTaskId || source.parentTask || source.parent || "";
   updateTaskRecords(sourceId, task => {
     task.parentId = parentId;
     task.parentTaskId = "";
@@ -9010,6 +9083,9 @@ function reparentTaskOnto(sourceId, parentId) {
     task.parent = "";
     task.updatedAt = new Date().toISOString();
   });
+  syncAncestorStartsFromChild(sourceId);
+  if (previousParentId && previousParentId !== parentId) syncParentStartFromDescendants(previousParentId);
+  refreshTaskStatusForId(sourceId);
   // Parent must stay expanded so the new child is visible.
   state.projectCollapsedSections.delete(parentId);
   state.projectCollapsedTasks.delete(parentId);
@@ -9598,9 +9674,13 @@ function taskActualTimelineParts(task, buckets, scale = "day", options = {}) {
   const createdDateKey = task.createdAtIso || task.createdAt
     ? toDateKey(new Date(task.createdAtIso || task.createdAt))
     : "";
-  const actualStartAt = task.startOverrideAt || task.startedAt
+  const ownStartAt = task.startOverrideAt || task.startedAt
     ? toDateKey(new Date(task.startOverrideAt || task.startedAt))
     : "";
+  const investedDateKeys = investedItems.map(item => item.dateKey).filter(Boolean);
+  const actualStartAt = typeof TaskWorkPolicy?.rollupActualStartDateKey === "function"
+    ? TaskWorkPolicy.rollupActualStartDateKey({ ownStartDateKey: ownStartAt, investedDateKeys })
+    : (ownStartAt || investedDateKeys.slice().sort()[0] || "");
   const actualEndAt = task.completedAt ? toDateKey(new Date(task.completedAt)) : "";
   const plannedEndAt = task.dueDate || "";
   const boundary = typeof ProjectViewPolicy.lifecycleRangeKeys === "function"

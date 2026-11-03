@@ -1,4 +1,4 @@
-name: Release EveryTime
+name: Release DailyPlanner
 
 on:
   push:
@@ -41,8 +41,8 @@ jobs:
         shell: pwsh
         run: |
           $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $exe = Get-ChildItem "dist/EveryTime-Setup-$pkg.exe" -ErrorAction Stop
-          $map = Get-ChildItem "dist/EveryTime-Setup-$pkg.exe.blockmap" -ErrorAction Stop
+          $exe = Get-ChildItem "dist/DailyPlanner-Setup-$pkg.exe" -ErrorAction Stop
+          $map = Get-ChildItem "dist/DailyPlanner-Setup-$pkg.exe.blockmap" -ErrorAction Stop
           $yml = Get-Content "dist/latest.yml" -Raw
           if ($yml -notmatch "(?m)^version:\s*$([regex]::Escape($pkg))\s*$") {
             throw "dist/latest.yml does not advertise version $pkg"
@@ -56,12 +56,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: EveryTime ${{ github.ref_name }}
+          name: DailyPlanner ${{ github.ref_name }}
           generate_release_notes: true
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
           files: |
-            dist/EveryTime-Setup-*.exe
-            dist/EveryTime-Setup-*.exe.blockmap
+            dist/DailyPlanner-Setup-*.exe
+            dist/DailyPlanner-Setup-*.exe.blockmap
             dist/latest.yml

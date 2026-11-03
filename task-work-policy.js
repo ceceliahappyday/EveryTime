@@ -34,5 +34,31 @@
       : "planned";
   }
 
-  root.TaskWorkPolicy = { validRange, copyPlacement, statusForStart, statusForEntries };
+  function pickEarliestIso(values = []) {
+    return [...values]
+      .map(value => String(value || "").trim())
+      .filter(Boolean)
+      .sort()[0] || "";
+  }
+
+  function pickEarliestDateKey(keys = []) {
+    return [...keys]
+      .map(key => String(key || "").trim())
+      .filter(Boolean)
+      .sort()[0] || "";
+  }
+
+  function rollupActualStartDateKey({ ownStartDateKey = "", investedDateKeys = [] } = {}) {
+    return pickEarliestDateKey([ownStartDateKey, ...investedDateKeys]);
+  }
+
+  root.TaskWorkPolicy = {
+    validRange,
+    copyPlacement,
+    statusForStart,
+    statusForEntries,
+    pickEarliestIso,
+    pickEarliestDateKey,
+    rollupActualStartDateKey
+  };
 })(typeof window === "undefined" ? globalThis : window);

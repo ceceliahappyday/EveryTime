@@ -26,7 +26,7 @@
     return {
       dimensions: DIMENSIONS.map(dim => ({
         id: dim.id,
-        // 默认：任务项在前 + 任务状态（父下再分状态）
+        // 默认：任务项在前 + 任务状态（树内连续展示；状态列/外层分组仍可用）
         enabled: dim.id === "taskTree" || dim.id === "taskStatus"
       })),
       treeDepth: null

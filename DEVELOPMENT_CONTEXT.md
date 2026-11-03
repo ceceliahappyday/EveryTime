@@ -1,8 +1,8 @@
-# EveryTime 开发唯一上下文（压缩版）
+# DailyPlanner / 今日日程 开发唯一上下文（压缩版）
 
 ## 产品边界
 
-EveryTime 是桌面浮窗式的任务、日程投入和项目进度工具。任务是需要交付或关闭的工作对象；日程是时间占用记录。会议/普通日程可以独立存在，计入投入工时，并在左侧「会议」清单查看，但不自动变成待办任务。
+DailyPlanner（中文名「今日日程」）是桌面浮窗式的任务、日程投入和项目进度工具。任务是需要交付或关闭的工作对象；日程是时间占用记录。会议/普通日程可以独立存在，计入投入工时，并在左侧「会议」清单查看，但不自动变成待办任务。
 
 ## 任务规则
 
@@ -57,9 +57,9 @@ EveryTime 是桌面浮窗式的任务、日程投入和项目进度工具。任�
 - 不得提前批量生成未来月份固定任务。
 - 不得发布更新时清空用户记录、替换数据文件或修改 STORAGE_KEY。
 - 不得把 API Key 写入 renderer、HTML、日志、GitHub 或导出数据。
-- Windows startup policy (v2.0.41): the canonical login item name is `EveryTime`; repeated registration is idempotent.
-- Known legacy aliases are limited to `EveryTime`, `今日日程`, `today-daily-planner`, and `Today Daily Planner`.
-- Cleanup is user-scope only (`HKCU` Run / StartupApproved), and only removes an exact known alias after verifying an EveryTime executable path. Never modify `HKLM`, require admin rights, or delete unrelated entries.
+- Windows startup policy (v2.0.41+): the canonical login item name is `DailyPlanner`; repeated registration is idempotent.
+- Known legacy aliases include `EveryTime`, `DailyPlanner`, `今日日程`, `today-daily-planner`, and `Today Daily Planner`.
+- Cleanup is user-scope only (`HKCU` Run / StartupApproved), and only removes an exact known alias after verifying a DailyPlanner / legacy EveryTime executable path. Never modify `HKLM`, require admin rights, or delete unrelated entries.
 - Startup registration uses the current executable path, disables verified EveryTime aliases when switched off, and the main process holds a single-instance lock.
 - `startup-policy.js` is a CommonJS main-process module and must not be loaded by `index.html`.
 - `import-policy.js` parses JSON backups (`today-planner-backup`, legacy `today-planner-export`, raw planner-data) for restore; Excel exports are view-only and not importable.

@@ -121,7 +121,7 @@
       };
     }
 
-    return { ok: false, error: "无法识别的备份格式，请选择 EveryTime 导出的 JSON 文件" };
+    return { ok: false, error: "无法识别的备份格式，请选择 DailyPlanner（今日日程）导出的 JSON 文件" };
   }
 
   const policy = {

@@ -1,8 +1,26 @@
 (function (root) {
-  const canonicalName = "EveryTime";
-  const aliases = [canonicalName, "\u4eca\u65e5\u65e5\u7a0b", "today-daily-planner", "Today Daily Planner"];
-  const executableNames = ["\u4eca\u65e5\u65e5\u7a0b.exe", "EveryTime.exe", "today-daily-planner.exe"];
-  const installMarkers = ["everytime", "today-daily-planner", "\u4eca\u65e5\u65e5\u7a0bapp", "\u4eca\u65e5\u65e5\u7a0b"];
+  const canonicalName = "DailyPlanner";
+  const aliases = [
+    canonicalName,
+    "EveryTime",
+    "\u4eca\u65e5\u65e5\u7a0b",
+    "today-daily-planner",
+    "Today Daily Planner",
+    "Daily Planner"
+  ];
+  const executableNames = [
+    "\u4eca\u65e5\u65e5\u7a0b.exe",
+    "DailyPlanner.exe",
+    "EveryTime.exe",
+    "today-daily-planner.exe"
+  ];
+  const installMarkers = [
+    "dailyplanner",
+    "everytime",
+    "today-daily-planner",
+    "\u4eca\u65e5\u65e5\u7a0bapp",
+    "\u4eca\u65e5\u65e5\u7a0b"
+  ];
 
   function executableName(command) {
     const text = String(command || "").trim();

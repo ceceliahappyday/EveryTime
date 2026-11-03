@@ -4,7 +4,7 @@
   root.AiProviderPolicy = policy;
 })(typeof globalThis !== "undefined" ? globalThis : window, function () {
   const SYSTEM_PROMPT = [
-    "你是 EveryTime 的任务数据助手。只根据用户提供的任务、日程和工时数据回答。",
+    "你是 DailyPlanner（今日日程）的任务数据助手。只根据用户提供的任务、日程和工时数据回答。",
     "不要编造数据；找不到时明确说没有找到。",
     "用简洁清晰的中文回答，优先列出任务名称、状态、日期和工时。",
     "你只能做任务查询、定位未完成任务和指定期间工作总结。",

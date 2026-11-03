@@ -37,7 +37,7 @@ if (process.platform === "win32") {
 }
 
 if (isDevRuntime) {
-  // Keep the unpackaged preview from colliding with an installed EveryTime release.
+  // Keep the unpackaged preview from colliding with an installed DailyPlanner release.
   app.setPath("userData", path.join(app.getPath("appData"), "today-daily-planner-dev"));
 }
 
@@ -1146,7 +1146,7 @@ function configureAutoUpdater() {
     const result = await dialog.showMessageBox(mainWindow, {
       type: "question",
       title: "发现新版本",
-      message: `发现 EveryTime ${info.version}，当前版本是 ${app.getVersion()}。`,
+      message: `发现 DailyPlanner ${info.version}，当前版本是 ${app.getVersion()}。`,
       detail: "是否现在下载更新？下载完成后会再次询问是否重启并安装。",
       buttons: ["下载更新", "稍后"],
       defaultId: 0,
@@ -1155,7 +1155,7 @@ function configureAutoUpdater() {
     });
     manualUpdateCheck = false;
     if (result.response === 0) {
-      sendUpdateProgress({ state: "downloading", percent: 0, message: `正在下载 EveryTime ${info.version}…` });
+      sendUpdateProgress({ state: "downloading", percent: 0, message: `正在下载 DailyPlanner ${info.version}…` });
       autoUpdater.downloadUpdate().catch(error => {
         sendUpdateProgress({ state: "error", percent: 0, message: `下载更新失败：${error?.message || String(error)}` });
         dialog.showErrorBox("下载更新失败", error?.message || String(error));
@@ -1182,11 +1182,11 @@ function configureAutoUpdater() {
   });
   autoUpdater.on("update-downloaded", async info => {
     mainWindow?.setProgressBar(-1);
-    sendUpdateProgress({ state: "downloaded", percent: 100, message: `EveryTime ${info.version} 已下载完成` });
+    sendUpdateProgress({ state: "downloaded", percent: 100, message: `DailyPlanner ${info.version} 已下载完成` });
     const result = await dialog.showMessageBox(mainWindow, {
       type: "question",
       title: "更新已下载",
-      message: `EveryTime ${info.version} 已下载完成。`,
+      message: `DailyPlanner ${info.version} 已下载完成。`,
       detail: "是否现在重启并安装？",
       buttons: ["立即安装", "退出时安装"],
       defaultId: 0,
