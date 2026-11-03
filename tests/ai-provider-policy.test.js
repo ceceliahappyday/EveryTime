@@ -92,4 +92,22 @@ const visionGemini = policy.buildChatRequest({
 });
 assert.ok(visionGemini.body.contents[0].parts.some(part => part.inline_data?.data === "CCCC"));
 
+const moonshot = policy.getProvider("moonshot");
+assert.equal(policy.resolveModelId("kimi-latest", moonshot), "kimi-k3.1-pro");
+assert.equal(policy.resolveModelId("KIMI-LASTEST", moonshot), "kimi-k3.1-pro");
+const moonshotVision = policy.buildChatRequest({
+  provider: moonshot,
+  apiKey: "sk-test",
+  model: "kimi-latest",
+  mode: "extract_task",
+  systemPrompt: "extract",
+  userText: "today",
+  images: [{ mimeType: "image/png", base64: "AAAA" }]
+});
+assert.equal(moonshotVision.body.model, "kimi-k3.1-pro");
+assert.deepEqual(policy.providerBaseUrls(moonshot), [
+  "https://api.moonshot.cn/v1",
+  "https://api.moonshot.ai/v1"
+]);
+
 console.log("ai provider policy tests passed");

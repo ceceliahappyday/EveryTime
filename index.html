@@ -759,15 +759,19 @@
                 <select id="settingAiProvider"></select>
               </label>
               <label class="settings-row settings-row-inline">
-                <span class="settings-row-copy"><strong>AI 模型</strong></span>
-                <select id="settingAiModel"></select>
+                <span class="settings-row-copy">
+                  <strong>AI 模型</strong>
+                  <small>手填官方模型 ID；下方按钮只拉候选，不会改你已填的名称</small>
+                </span>
+                <input id="settingAiModel" type="text" autocomplete="off" spellcheck="false" placeholder="例如 kimi-k3.1-pro 或 gpt-4o" list="settingAiModelSuggestions" />
+                <datalist id="settingAiModelSuggestions"></datalist>
               </label>
               <div class="settings-row settings-row-actions">
                 <span class="settings-row-copy">
-                  <strong>模型识别</strong>
+                  <strong>模型候选</strong>
                   <small id="aiKeyStatus">API Key 未配置。截图解析需 vision 模型。</small>
                 </span>
-                <button type="button" class="soft-button" id="aiDetectModelsButton">识别并加载</button>
+                <button type="button" class="soft-button" id="aiDetectModelsButton">识别并加载候选</button>
               </div>
             </div>
           </section>

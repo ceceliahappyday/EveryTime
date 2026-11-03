@@ -1960,10 +1960,10 @@ async function openSettingsDialog() {
     ? "已配置（输入新 Key 可替换）"
     : "粘贴 OpenAI / OpenRouter / DeepSeek / Anthropic / Gemini 等 Key";
   fillAiProviderOptions([{ id: settings?.aiProvider || "openai", name: settings?.aiProvider || "openai" }], settings?.aiProvider || "openai");
-  fillAiModelOptions(settings?.aiModel ? [settings.aiModel] : ["gpt-4.1-mini"], settings?.aiModel || "gpt-4.1-mini");
+  fillAiModelSuggestions(settings?.aiModel ? [settings.aiModel] : [], { value: settings?.aiModel || "" });
   el.aiKeyStatus.textContent = settings?.aiConfigured
-    ? "API Key 已配置。可点击「识别服务商并加载模型」刷新可用模型。"
-    : "API Key 未配置。填写 Key 后可自动识别厂商并拉取可用模型。";
+    ? "API Key 已配置。可点击「识别并加载候选」拉取模型列表供选用。"
+    : "API Key 未配置。填写 Key 后可识别服务商并加载模型候选。";
   el.settingsAppVersion.textContent = el.appVersionBadge?.textContent || await window.desktopAPI.getVersion?.().then(version => `v${version}`).catch(() => "读取失败");
   el.settingsDataPath.textContent = paths?.dataFile || "当前用户数据目录";
   el.settingsExportPath.textContent = paths?.exportDir || "文档目录";
@@ -2230,15 +2230,17 @@ function fillAiProviderOptions(providers = [], selectedId = "") {
   }
 }
 
-function fillAiModelOptions(models = [], selectedId = "") {
+function fillAiModelSuggestions(models = [], { value = "" } = {}) {
   if (!el.settingAiModel) return;
-  const list = models.length ? models : (selectedId ? [selectedId] : ["gpt-4.1-mini"]);
-  el.settingAiModel.innerHTML = list
-    .map(model => `<option value="${escapeHtml(model)}"${model === selectedId ? " selected" : ""}>${escapeHtml(model)}</option>`)
-    .join("");
-  if (selectedId && ![...el.settingAiModel.options].some(option => option.value === selectedId)) {
-    el.settingAiModel.add(new Option(selectedId, selectedId, true, true));
+  const datalist = document.getElementById("settingAiModelSuggestions");
+  const saved = String(value || el.settingAiModel.value || "").trim();
+  const list = [...new Set(
+    (models || []).map(model => String(model || "").trim()).filter(Boolean).concat(saved ? [saved] : [])
+  )];
+  if (datalist) {
+    datalist.innerHTML = list.map(model => `<option value="${escapeHtml(model)}"></option>`).join("");
   }
+  if (saved) el.settingAiModel.value = saved;
 }
 
 async function refreshAiProviderModels({ forceList = false, providerId = "", selectedModel = "" } = {}) {
@@ -2260,7 +2262,10 @@ async function refreshAiProviderModels({ forceList = false, providerId = "", sel
       providerId: el.settingAiProvider?.value || detected.providerId || ""
     });
     fillAiProviderOptions(listed.providers || detected.providers || [], listed.providerId || detected.providerId || "");
-    fillAiModelOptions(listed.models || [], selectedModel || listed.selectedModel || "");
+    const currentModel = el.settingAiModel?.value?.trim() || "";
+    fillAiModelSuggestions(listed.models || [], {
+      value: currentModel || selectedModel || listed.selectedModel || ""
+    });
     el.aiKeyStatus.textContent = [detected.message, listed.message].filter(Boolean).join(" · ");
   } catch (error) {
     el.aiKeyStatus.textContent = error?.message || "识别服务商失败";
@@ -2283,7 +2288,7 @@ async function saveDesktopSettings() {
     afternoonEnd: Number(el.settingAfternoonEnd?.value ?? state.afternoonEnd),
     aiEnabled: el.settingAiEnabled.checked,
     aiProvider: el.settingAiProvider?.value || "openai",
-    aiModel: el.settingAiModel?.value?.trim() || "gpt-4.1-mini",
+    aiModel: el.settingAiModel?.value?.trim() || "",
     ...(el.settingAiApiKey.value.trim() ? { aiApiKey: el.settingAiApiKey.value.trim() } : {})
   };
   const saved = await window.desktopAPI.saveSettings(nextSettings);
@@ -3119,7 +3124,10 @@ async function extractAndCreateTaskFromImage({ file = null, attachment = null, n
     openAiBatchDraftDialog(drafts, source);
     return drafts;
   } catch (error) {
-    const message = error?.message || "截图解析失败";
+    const message = String(error?.message || "截图解析失败")
+      .replace(/^Error invoking remote method '[^']+': Error: /, "")
+      .replace(/^Error invoking remote method '[^']+': /, "")
+      .replace(/^Error: /, "");
     if (source === "task-dialog") setTaskAiDropzoneStatus(message, "error");
     else {
       el.aiStatus.textContent = message;

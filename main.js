@@ -749,6 +749,41 @@ function extractResponseText(payload) {
     .map(item => item.text || item.value || "").filter(Boolean).join("\n").trim();
 }
 
+function providerErrorMessage(body = {}, status = 0, provider = {}) {
+  const message = body?.error?.message || body?.message || `AI 请求失败（${status}）`;
+  if (provider?.id === "moonshot" && (status === 401 || /invalid authentication/i.test(message))) {
+    return "Kimi/Moonshot 鉴权失败：请确认 API Key 有效，且服务商选「Moonshot / Kimi」。国内开放平台 Key 与国际 platform.kimi.ai 的 Key 不能混用接口；保存 Key 后点「检测模型」刷新列表，截图识别请选 kimi-k3.1-pro 等支持识图的模型。";
+  }
+  return message;
+}
+
+async function fetchProviderJson(request, provider, { method = "POST", body } = {}) {
+  const bases = typeof AiProviderPolicy.providerBaseUrls === "function"
+    ? AiProviderPolicy.providerBaseUrls(provider)
+    : [provider.baseUrl];
+  const primaryBase = bases[0] || provider.baseUrl;
+  let lastResponse = null;
+  let lastBody = {};
+  for (let index = 0; index < bases.length; index += 1) {
+    const url = index === 0
+      ? request.url
+      : AiProviderPolicy.swapRequestBaseUrl(request.url, primaryBase, bases[index]);
+    const response = await fetch(url, {
+      method,
+      headers: request.headers,
+      body: body !== undefined ? body : (method === "GET" ? undefined : JSON.stringify(request.body))
+    });
+    const parsed = await response.json().catch(() => ({}));
+    lastResponse = response;
+    lastBody = parsed;
+    if (response.ok) return { response, body: parsed };
+    const authLike = response.status === 401
+      || /invalid authentication|incorrect api key|unauthorized/i.test(parsed?.error?.message || parsed?.message || "");
+    if (provider.id !== "moonshot" || !authLike || index >= bases.length - 1) break;
+  }
+  return { response: lastResponse, body: lastBody };
+}
+
 function detectAiProvider(payload = {}) {
   const settings = loadSettings();
   const apiKey = AiProviderPolicy.normalizeKey(payload.apiKey) || decryptAiKey(settings);
@@ -792,8 +827,7 @@ async function listAiModels(payload = {}) {
   let models = [];
   let source = "fallback";
   try {
-    const response = await fetch(request.url, { method: "GET", headers: request.headers });
-    const body = await response.json().catch(() => ({}));
+    const { response, body } = await fetchProviderJson(request, provider, { method: "GET" });
     if (response.ok) {
       const raw = request.parser === "gemini"
         ? AiProviderPolicy.parseGeminiModelList(body)
@@ -808,7 +842,10 @@ async function listAiModels(payload = {}) {
     models = AiProviderPolicy.normalizeModelEntries(provider.fallbackModels || [], provider);
     source = "fallback";
   }
-  const selectedModel = models.includes(settings.aiModel) ? settings.aiModel : (provider.defaultModel || models[0] || "");
+  const resolvedSaved = AiProviderPolicy.resolveModelId(settings.aiModel, provider);
+  const selectedModel = models.includes(resolvedSaved)
+    ? resolvedSaved
+    : (models.includes(settings.aiModel) ? settings.aiModel : (models.includes(provider.defaultModel) ? provider.defaultModel : (models[0] || "")));
   return {
     providerId: provider.id,
     providerName: provider.name,
@@ -835,19 +872,14 @@ async function askAi(payload) {
   const request = AiProviderPolicy.buildChatRequest({
     provider,
     apiKey,
-    model: settings.aiModel || provider.defaultModel,
+    model: AiProviderPolicy.resolveModelId(settings.aiModel || provider.defaultModel, provider),
     question: payload?.question,
     rangeLabel: payload?.rangeLabel,
     context: payload?.context
   });
-  const response = await fetch(request.url, {
-    method: "POST",
-    headers: request.headers,
-    body: JSON.stringify(request.body)
-  });
-  const body = await response.json().catch(() => ({}));
+  const { response, body } = await fetchProviderJson(request, provider);
   if (!response.ok) {
-    throw new Error(body?.error?.message || body?.message || `AI 请求失败（${response.status}）`);
+    throw new Error(providerErrorMessage(body, response.status, provider));
   }
   return AiProviderPolicy.extractChatText(body, provider)
     || extractResponseText(body)
@@ -873,26 +905,28 @@ async function extractAiTask(payload = {}) {
   const request = AiProviderPolicy.buildChatRequest({
     provider,
     apiKey,
-    model: settings.aiModel || provider.defaultModel,
+    model: AiProviderPolicy.resolveModelId(settings.aiModel || provider.defaultModel, provider),
     mode: "extract_task",
     systemPrompt: AiTaskDraftPolicy.EXTRACT_SYSTEM_PROMPT,
     userText: parts.text,
     images: [{ mimeType: parts.mimeType, base64: parts.base64 }]
   });
-  const response = await fetch(request.url, {
-    method: "POST",
-    headers: request.headers,
-    body: JSON.stringify(request.body)
-  });
-  const body = await response.json().catch(() => ({}));
+  const { response, body } = await fetchProviderJson(request, provider);
   if (!response.ok) {
-    const message = body?.error?.message || body?.message || `AI 请求失败（${response.status}）`;
-    if (/image|vision|multimodal|does not support|不支持/i.test(message)) {
-      throw new Error("当前模型可能不支持识图。请在设置中换成 gpt-4o / gpt-4.1 / Claude / Gemini 等视觉模型后再试。");
+    const message = providerErrorMessage(body, response.status, provider);
+    if (/image|vision|multimodal|does not support|不支持|resource_not_found|model/i.test(message)) {
+      throw new Error("当前模型可能不支持识图。Kimi 请选 kimi-k3.1-pro；也可用 gpt-4o / Claude / Gemini 等视觉模型。");
     }
     throw new Error(message);
   }
   const text = AiProviderPolicy.extractChatText(body, provider) || extractResponseText(body) || "";
+  if (!String(text || "").trim()) {
+    const geminiReason = body?.candidates?.[0]?.finishReason || body?.promptFeedback?.blockReason || "";
+    if (geminiReason) {
+      throw new Error(`AI 未返回识别结果（${geminiReason}）。请换一张更清晰的截图或更换视觉模型。`);
+    }
+    throw new Error("AI 没有返回识别结果。请确认设置中的模型支持识图（如 gpt-4o / gpt-4.1 / Claude / Gemini / 通义 VL 等），不要用纯文本模型。");
+  }
   const drafts = AiTaskDraftPolicy.parseDraftListResponse(text);
   return { drafts, draft: drafts[0] || null };
 }

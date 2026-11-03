@@ -70,9 +70,25 @@
       id: "moonshot",
       name: "Moonshot / Kimi",
       baseUrl: "https://api.moonshot.cn/v1",
+      altBaseUrls: ["https://api.moonshot.ai/v1"],
       protocol: "openai-chat",
-      defaultModel: "moonshot-v1-auto",
-      fallbackModels: ["moonshot-v1-auto", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k", "kimi-latest"]
+      defaultModel: "kimi-k3.1-pro",
+      fallbackModels: [
+        "kimi-k3.1-pro",
+        "kimi-k3",
+        "kimi-k2.6",
+        "moonshot-v1-128k-vision-preview",
+        "moonshot-v1-32k-vision-preview",
+        "moonshot-v1-8k-vision-preview"
+      ],
+      modelAliases: {
+        "kimi-latest": "kimi-k3.1-pro",
+        "kimi-lastest": "kimi-k3.1-pro",
+        "moonshot-v1-auto": "kimi-k3.1-pro",
+        "moonshot-v1-8k": "kimi-k3.1-pro",
+        "moonshot-v1-32k": "kimi-k3.1-pro",
+        "moonshot-v1-128k": "kimi-k3.1-pro"
+      }
     },
     siliconflow: {
       id: "siliconflow",
@@ -129,6 +145,31 @@
 
   function getProvider(providerId = "") {
     return PROVIDERS[providerId] || null;
+  }
+
+  function normalizeModelAliasKey(modelId = "") {
+    return String(modelId || "").trim().toLowerCase();
+  }
+
+  function resolveModelId(modelId = "", provider = {}) {
+    const raw = String(modelId || "").trim();
+    if (!raw) return String(provider.defaultModel || "").trim();
+    const aliases = provider.modelAliases || {};
+    const mapped = aliases[normalizeModelAliasKey(raw)] || aliases[raw];
+    return mapped || raw;
+  }
+
+  function providerBaseUrls(provider = {}) {
+    const primary = String(provider.baseUrl || "").replace(/\/$/, "");
+    const extras = (provider.altBaseUrls || []).map(url => String(url || "").replace(/\/$/, "")).filter(Boolean);
+    return [...new Set([primary, ...extras].filter(Boolean))];
+  }
+
+  function swapRequestBaseUrl(url = "", fromBase = "", toBase = "") {
+    const from = String(fromBase || "").replace(/\/$/, "");
+    const to = String(toBase || "").replace(/\/$/, "");
+    if (!from || !to || from === to) return url;
+    return String(url || "").replace(from, to);
   }
 
   function resolveProvider({ apiKey = "", providerId = "" } = {}) {
@@ -231,7 +272,7 @@
     userText = ""
   } = {}) {
     const key = normalizeKey(apiKey);
-    const chosenModel = String(model || provider.defaultModel || "").trim() || provider.defaultModel;
+    const chosenModel = resolveModelId(String(model || provider.defaultModel || "").trim() || provider.defaultModel, provider);
     const isExtract = mode === "extract_task";
     const system = String(systemPrompt || "").trim()
       || (isExtract && typeof globalThis !== "undefined" && globalThis.AiTaskDraftPolicy?.EXTRACT_SYSTEM_PROMPT)
@@ -354,6 +395,9 @@
     detectProviderId,
     isAmbiguousSkKey,
     getProvider,
+    resolveModelId,
+    providerBaseUrls,
+    swapRequestBaseUrl,
     resolveProvider,
     providerOptionsForKey,
     looksLikeChatModel,

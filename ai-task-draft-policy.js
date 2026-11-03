@@ -141,11 +141,36 @@
     return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   }
 
+  function resolveDraftTitle(source = {}) {
+    if (!source || typeof source !== "object") return "";
+    const candidates = [
+      source.title,
+      source.name,
+      source.subject,
+      source.taskTitle,
+      source.itemTitle,
+      source.meetingTitle,
+      source.task_name,
+      source.item_name,
+      source.summary,
+      source.label,
+      source.标题,
+      source.名称,
+      source.事项名称,
+      source.会议名称
+    ];
+    for (const candidate of candidates) {
+      const text = String(candidate || "").trim();
+      if (text) return text.slice(0, 80);
+    }
+    return "";
+  }
+
   function parseOneDraft(source = {}) {
     if (!source || typeof source !== "object" || Array.isArray(source)) {
       throw new Error("AI 未返回可解析的事项 JSON");
     }
-    const title = String(source.title || "").trim().slice(0, 80);
+    const title = resolveDraftTitle(source);
     if (!title) throw new Error("截图中未能识别出事项名称");
     const kind = normalizeItemKind(source, title);
     const priorityRaw = String(source.priority || "general_daily").trim();
@@ -172,8 +197,36 @@
     if (!value || typeof value !== "object") return [];
     if (Array.isArray(value.items)) return value.items;
     if (Array.isArray(value.tasks)) return value.tasks;
-    if (value.title) return [value];
+    if (Array.isArray(value.meetings)) return value.meetings;
+    if (Array.isArray(value.data)) return value.data;
+    if (Array.isArray(value.results)) return value.results;
+    if (value.item && typeof value.item === "object") return [value.item];
+    if (value.task && typeof value.task === "object") return [value.task];
+    if (value.meeting && typeof value.meeting === "object") return [value.meeting];
+    if (resolveDraftTitle(value)) return [value];
     return [];
+  }
+
+  function fallbackDraftFromPlainText(text = "") {
+    const raw = String(text || "").trim();
+    if (!raw) return null;
+    const parsed = extractJsonValue(raw);
+    if (parsed && typeof parsed === "object") return null;
+    const lines = raw
+      .replace(/```[\s\S]*?```/g, "\n")
+      .split(/\n/)
+      .map(line => line.trim())
+      .filter(line => line && !/^[\[{]/.test(line) && !/^json$/i.test(line));
+    const candidate = lines.find(line => line.length >= 2 && line.length <= 80)
+      || lines.find(line => line.length >= 2 && line.length <= 120);
+    if (!candidate) return null;
+    const title = candidate
+      .replace(/^[-*•\d.)、\s]+/, "")
+      .replace(/^(title|名称|标题)\s*[:：]\s*/i, "")
+      .trim()
+      .slice(0, 80);
+    if (!title || title.length < 2) return null;
+    return parseOneDraft({ title, confidence: 0.35, businessBackground: raw.slice(0, 800) });
   }
 
   function parseDraftResponse(text = {}) {
@@ -183,8 +236,13 @@
   }
 
   function parseDraftListResponse(text = {}) {
+    const rawText = typeof text === "string" ? text : "";
     const source = typeof text === "string" ? extractJsonValue(text) : text;
-    if (source == null) throw new Error("AI 未返回可解析的事项 JSON");
+    if (source == null) {
+      const plain = fallbackDraftFromPlainText(rawText);
+      if (plain) return [plain];
+      throw new Error("AI 未返回可解析的事项 JSON");
+    }
     const rawItems = coerceDraftSources(source);
     const drafts = [];
     rawItems.forEach(item => {
@@ -193,7 +251,11 @@
         drafts.push(parseOneDraft(item));
       } catch {}
     });
-    if (!drafts.length) throw new Error("截图中未能识别出事项名称");
+    if (!drafts.length) {
+      const plain = fallbackDraftFromPlainText(rawText);
+      if (plain) return [plain];
+      throw new Error("截图中未能识别出事项名称");
+    }
     return drafts;
   }
 
@@ -208,6 +270,8 @@
     extractJsonObject,
     extractJsonValue,
     looksLikeMeetingEventTitle,
+    resolveDraftTitle,
+    fallbackDraftFromPlainText,
     normalizeItemKind,
     parseOneDraft,
     parseDraftResponse,

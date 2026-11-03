@@ -93,4 +93,18 @@ assert.equal(fallback.confidence, 1);
 assert.throws(() => policy.parseDraftResponse("没有 JSON"), /可解析|未能识别/);
 assert.throws(() => policy.parseDraftListResponse('{"title":""}'), /未能识别/);
 
+const aliasTitle = policy.parseDraftResponse(JSON.stringify({
+  kind: "task",
+  task_name: "整理三季度经营分析材料"
+}));
+assert.equal(aliasTitle.title, "整理三季度经营分析材料");
+
+const cnKey = policy.parseOneDraft({ kind: "task", 标题: "发布费用报销管理制度" });
+assert.equal(cnKey.title, "发布费用报销管理制度");
+
+const plainFallback = policy.parseDraftListResponse("整理会议纪要并发送参会人");
+assert.equal(plainFallback.length, 1);
+assert.equal(plainFallback[0].title, "整理会议纪要并发送参会人");
+assert.ok(plainFallback[0].confidence <= 0.4);
+
 console.log("ai task draft policy tests passed");
