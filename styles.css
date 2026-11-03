@@ -2740,6 +2740,40 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   white-space: nowrap;
 }
 .project-gantt-toolbar strong { font-size: 11px; white-space: nowrap; }
+.gantt-toolbar-search {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 140px;
+  max-width: 220px;
+}
+.gantt-toolbar-search input[type="search"] {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  box-shadow: none;
+}
+.gantt-toolbar-search input[type="search"]::placeholder {
+  color: var(--muted);
+  font-weight: 600;
+}
+.gantt-toolbar-search input[type="search"]:focus {
+  border-color: var(--accent);
+  background: rgba(101, 180, 177, 0.16);
+  outline: none;
+}
+.gantt-toolbar-search input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
 .project-scale-switcher {
   display: inline-flex;
   flex-wrap: nowrap;
@@ -3359,6 +3393,22 @@ body.in-desktop.glass-mode .gantt-period-button {
 }
 body.in-desktop.glass-mode .gantt-period-button:hover,
 body.in-desktop.glass-mode .gantt-period-button:focus-visible {
+  border-color: rgba(143, 224, 215, 0.7);
+  background: rgba(143, 224, 215, 0.14);
+}
+body.in-desktop.glass-mode .gantt-toolbar-search input[type="search"] {
+  color: #e8f4ff;
+  border-color: rgba(172, 211, 233, 0.35);
+  background: rgba(0, 0, 0, 0.28);
+  caret-color: #8fe0d7;
+  box-shadow: none;
+  text-shadow: none;
+}
+body.in-desktop.glass-mode .gantt-toolbar-search input[type="search"]::placeholder {
+  color: #9eb4c2;
+}
+body.in-desktop.glass-mode .gantt-toolbar-search input[type="search"]:focus {
+  color: #f4fbff;
   border-color: rgba(143, 224, 215, 0.7);
   background: rgba(143, 224, 215, 0.14);
 }

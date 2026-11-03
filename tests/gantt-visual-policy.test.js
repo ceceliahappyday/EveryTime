@@ -257,6 +257,18 @@ if (!app.includes("ganttView.investedOnly && meetings.length")) {
 if (!app.includes("filterContextOnly") || !styles.includes("is-filter-context")) {
   throw new Error("filtered gantt trees must keep ancestor context rows");
 }
+if (!app.includes("buildGanttSearchMatcher") || !app.includes("bindGanttToolbarSearch") || !app.includes("data-gantt-search")) {
+  throw new Error("gantt keyword search must filter tasks and expose a toolbar search field");
+}
+if (!app.includes("meetingMatchesGanttSearch") || !styles.includes(".gantt-toolbar-search")) {
+  throw new Error("gantt search must filter linked meetings and style the toolbar search input");
+}
+if (!/body\.in-desktop\.glass-mode \.gantt-toolbar-search input\[type="search"\]/.test(styles)) {
+  throw new Error("gantt toolbar search must use glass-mode colors like other gantt toolbar controls");
+}
+if (!app.includes("data-gantt-clear-search")) {
+  throw new Error("empty gantt search results must offer clear search");
+}
 if (!app.includes("rowsWrap.prepend(headerSplit)") || !styles.includes("position: sticky")) {
   throw new Error("gantt axis must live in the same scrollport as chart rows");
 }

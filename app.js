@@ -121,6 +121,7 @@ let pendingSuccessorRollback = null;
 let successorDialogCommitted = false;
 let syncingAttentionMode = false;
 let taskListSearchTimer = null;
+let ganttSearchTimer = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
   [
@@ -477,7 +478,8 @@ function bindEvents() {
     clearTimeout(taskListSearchTimer);
     taskListSearchTimer = setTimeout(() => {
       const selectionStart = el.taskListSearch.selectionStart;
-      renderTasks();
+      if (state.taskView === "project") render();
+      else renderTasks();
       el.taskListSearch.focus({ preventScroll: true });
       if (selectionStart !== null) el.taskListSearch.setSelectionRange(selectionStart, selectionStart);
     }, 120);
@@ -496,7 +498,9 @@ function bindEvents() {
       state.attentionAlarmTaskIds = [];
       changed = true;
     }
-    if (changed) renderTasks();
+    if (!changed) return;
+    if (state.taskView === "project") render();
+    else renderTasks();
   });
   el.attentionAlarmBanner?.addEventListener("click", () => openAttentionAlarmList());
 
@@ -6023,6 +6027,9 @@ function mountProjectGanttToolbar(statusProjects = [], ganttView = getGanttViewC
         <button type="button" class="gantt-period-button is-today" data-period="today" title="回到今天">今天</button>
         <button type="button" class="gantt-period-button" data-period="future" title="${escapeHtml(ganttAxisNavTitle(state.projectScale, "future"))}">›</button>
       </div>
+      <label class="gantt-toolbar-search">
+        <input type="search" data-gantt-search autocomplete="off" placeholder="搜索任务…/@人员" aria-label="在甘特图中搜索任务，或 @人员" title="与左侧搜索相同；匹配任务会高亮显示，上级任务保留为上下文" value="${escapeHtml(state.taskListSearch || "")}"/>
+      </label>
     </div>
     <div class="gantt-legend">
       <span><i class="legend-span"></i>起止区间</span>
@@ -6055,10 +6062,94 @@ function mountProjectGanttToolbar(statusProjects = [], ganttView = getGanttViewC
   bindGanttColumnsPanel(toolbar, ganttView);
   bindGanttSettingsPanel(toolbar, ganttView);
   bindGanttArrangePanel(toolbar);
+  bindGanttToolbarSearch(toolbar);
   el.projectGanttChrome.innerHTML = "";
   el.projectGanttChrome.appendChild(toolbar);
   el.projectGanttChrome.classList.remove("hidden");
   return toolbar;
+}
+
+function getTaskListOwnerSearch() {
+  const query = (state.taskListSearch || el.taskListSearch?.value || "").trim();
+  return TaskOptionPolicy.parseOwnerSearchQuery?.(query) || { ownerTokens: [], textQuery: query, textTokens: [] };
+}
+
+function hasTaskListSearchQuery(ownerSearch = getTaskListOwnerSearch()) {
+  return Boolean(ownerSearch.textQuery || ownerSearch.ownerTokens?.length);
+}
+
+function buildGanttSearchMatcher(tasks = getAllTasks().map(({ task }) => task)) {
+  const ownerSearch = getTaskListOwnerSearch();
+  if (!hasTaskListSearchQuery(ownerSearch)) {
+    return { hasSearch: false, ownerSearch, matchIds: new Set(), matchesTask: () => true };
+  }
+  let candidates = uniqueTasks(tasks);
+  if (ownerSearch.textQuery) {
+    candidates = TaskOptionPolicy.searchTaskCandidates({
+      tasks: candidates,
+      query: ownerSearch.textQuery,
+      selectedId: "",
+      includeEnded: true,
+      isHiddenFutureRecurringInstance: task => isHiddenRecurringCatalogInstance(task),
+      statusText: task => statusLabel(task.status),
+      dateText: task => task.dueDate || "未计划"
+    }).map(item => item.task);
+  }
+  if (ownerSearch.ownerTokens?.length) {
+    candidates = candidates.filter(task =>
+      TaskOptionPolicy.matchesOwnerTokens?.(task.owner, ownerSearch.ownerTokens)
+    );
+  }
+  const matchIds = new Set(candidates.map(task => task.id).filter(Boolean));
+  return {
+    hasSearch: true,
+    ownerSearch,
+    matchIds,
+    matchesTask: task => Boolean(task?.id && matchIds.has(task.id))
+  };
+}
+
+function meetingMatchesGanttSearch(meeting, searchMatcher) {
+  if (!searchMatcher?.hasSearch) return true;
+  const linkedId = String(meeting?.linkedTaskId || "").trim();
+  if (linkedId && searchMatcher.matchIds.has(linkedId)) return true;
+  const textQuery = searchMatcher.ownerSearch?.textQuery || "";
+  if (!textQuery) return false;
+  const keywords = TaskOptionPolicy.normalizeSearchText(textQuery).split(" ").filter(Boolean);
+  if (!keywords.length) return false;
+  const searchable = TaskOptionPolicy.normalizeSearchText(meeting?.title || "");
+  return keywords.every(keyword => searchable.includes(keyword));
+}
+
+function syncTaskListSearchFromGantt(value = "") {
+  state.taskListSearch = value;
+  if (el.taskListSearch && el.taskListSearch.value !== value) el.taskListSearch.value = value;
+  el.taskSearchWrap?.classList.toggle("has-query", Boolean(String(value || "").trim()));
+}
+
+function bindGanttToolbarSearch(toolbar) {
+  const input = toolbar?.querySelector?.("[data-gantt-search]");
+  if (!input) return;
+  const commitSearchRender = () => {
+    const selectionStart = input.selectionStart;
+    render();
+    const next = el.projectGanttChrome?.querySelector?.("[data-gantt-search]");
+    next?.focus({ preventScroll: true });
+    if (selectionStart !== null && next) next.setSelectionRange(selectionStart, selectionStart);
+  };
+  input.addEventListener("input", () => {
+    syncTaskListSearchFromGantt(input.value);
+    clearTimeout(ganttSearchTimer);
+    ganttSearchTimer = setTimeout(commitSearchRender, 120);
+  });
+  input.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    if (!(input.value || "").trim()) return;
+    syncTaskListSearchFromGantt("");
+    clearTimeout(ganttSearchTimer);
+    commitSearchRender();
+  });
 }
 
 function renderSchedule() {
@@ -7229,13 +7320,15 @@ function taskMatchesGanttViewFilters(task, ganttView = {}, windowInfo = {}) {
   return true;
 }
 
-function filterProjectsByGanttView(projects, ganttView = getGanttViewConfig(), windowInfo = {}) {
+function filterProjectsByGanttView(projects, ganttView = getGanttViewConfig(), windowInfo = {}, searchMatcher = buildGanttSearchMatcher()) {
   return projects.map(project => {
     if (typeof GanttViewPolicy?.filterProjectTree === "function") {
       const filtered = GanttViewPolicy.filterProjectTree({
         parent: project.parent,
         children: project.children || [],
-        matchesTask: task => taskMatchesGanttViewFilters(task, ganttView, windowInfo)
+        matchesTask: task =>
+          taskMatchesGanttViewFilters(task, ganttView, windowInfo) &&
+          searchMatcher.matchesTask(task)
       });
       if (!filtered.keep) return null;
       return {
@@ -7246,9 +7339,10 @@ function filterProjectsByGanttView(projects, ganttView = getGanttViewConfig(), w
       };
     }
     const children = (project.children || []).filter(task =>
-      taskMatchesGanttViewFilters(task, ganttView, windowInfo)
+      taskMatchesGanttViewFilters(task, ganttView, windowInfo) && searchMatcher.matchesTask(task)
     );
-    const parentMatches = taskMatchesGanttViewFilters(project.parent, ganttView, windowInfo);
+    const parentMatches = taskMatchesGanttViewFilters(project.parent, ganttView, windowInfo)
+      && searchMatcher.matchesTask(project.parent);
     if (!parentMatches && !children.length) return null;
     return { ...project, children };
   }).filter(Boolean);
@@ -7344,11 +7438,15 @@ function renderProjectSchedule() {
     endKey: state.projectWindowEnd,
     scale: state.projectScale
   };
-  const projects = filterProjectsByGanttView(statusProjects, ganttView, windowInfo);
+  const searchMatcher = buildGanttSearchMatcher(getAllTasks().map(({ task }) => task));
+  const projects = filterProjectsByGanttView(statusProjects, ganttView, windowInfo, searchMatcher);
   const sourceMeetings = getCalendarMeetingSummaries();
   let meetings = ganttView.showMeetings === false ? [] : sourceMeetings;
   if (ganttView.investedOnly && meetings.length) {
     meetings = meetings.filter(meeting => meetingHasInvestedInGanttWindow(meeting, windowInfo));
+  }
+  if (searchMatcher.hasSearch && meetings.length) {
+    meetings = meetings.filter(meeting => meetingMatchesGanttSearch(meeting, searchMatcher));
   }
   el.timeline.innerHTML = "";
   el.timeline.className = "project-gantt";
@@ -7362,14 +7460,20 @@ function renderProjectSchedule() {
     const filterActive = typeof GanttViewPolicy?.activeFilterCount === "function"
       ? GanttViewPolicy.activeFilterCount(ganttView) > 0
       : false;
-    if (hasSource || filterActive) {
+    const searchActive = searchMatcher.hasSearch;
+    if (hasSource || filterActive || searchActive) {
       el.timeline.innerHTML = `<div class="empty-state gantt-empty-filtered">
-        <p>当前筛选下没有可展示的任务</p>
+        <p>${searchActive ? "没有符合搜索条件的任务" : "当前筛选下没有可展示的任务"}</p>
         <div class="gantt-empty-actions">
+          ${searchActive ? `<button type="button" class="soft-button" data-gantt-clear-search>清除搜索</button>` : ""}
           <button type="button" class="soft-button" data-gantt-open-filter>调整筛选</button>
           <button type="button" class="primary-button" data-gantt-reset-filters>恢复默认筛选</button>
         </div>
       </div>`;
+      el.timeline.querySelector("[data-gantt-clear-search]")?.addEventListener("click", () => {
+        syncTaskListSearchFromGantt("");
+        render();
+      });
       el.timeline.querySelector("[data-gantt-reset-filters]")?.addEventListener("click", () => {
         const defaults = GanttViewPolicy?.defaultConfig?.() || {};
         saveGanttViewConfig({
