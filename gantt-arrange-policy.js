@@ -354,19 +354,29 @@
       }));
     };
 
-    if (shouldRenderSingleRow?.(project)) {
+    const directChildren = getChildTasks(parent.id);
+    const singleRow = shouldRenderSingleRow?.(project) && !directChildren.length;
+    if (singleRow) {
       push(parent, { isParent: false, depth: 0 });
       return rows;
     }
     if (!treeOn) {
-      push(parent, { isParent: descendants.length > 0, depth: 0 });
-      descendants.forEach(task => push(task, { isParent: false, depth: 0 }));
+      push(parent, { isParent: directChildren.length > 0 || descendants.length > 0, depth: 0 });
+      if (collapsedSections.has(parent.id)) return rows;
+      listVisibleChildren(project, { collapsedTasks, visibleTreeItems, treeDepth })
+        .forEach(({ task, depth }) => push(task, {
+          isParent: getChildTasks(task.id).length > 0,
+          depth
+        }));
       return rows;
     }
     push(parent, { isParent: true, depth: 0 });
     if (collapsedSections.has(parent.id)) return rows;
     listVisibleChildren(project, { collapsedTasks, visibleTreeItems, treeDepth })
-      .forEach(({ task, depth }) => push(task, { isParent: false, depth }));
+      .forEach(({ task, depth }) => push(task, {
+        isParent: getChildTasks(task.id).length > 0,
+        depth
+      }));
     return rows;
   }
 
@@ -403,7 +413,8 @@
       parentRow.projectStatusLabel = statusLabel(parentRow.projectStatus);
     }
 
-    if (shouldRenderSingleRow?.(project) || collapsedSections.has(parent.id)) {
+    const directChildren = getChildTasks(parent.id);
+    if ((shouldRenderSingleRow?.(project) && !directChildren.length) || collapsedSections.has(parent.id)) {
       return {
         key: `tree:${parent.id}`,
         status: `tree:${parent.id}`,
@@ -419,7 +430,7 @@
     const childRows = listVisibleChildren(project, { collapsedTasks, visibleTreeItems, treeDepth })
       .map(({ task, depth: childDepth }) => makeRow(task, {
         ...rowOpts,
-        isParent: false,
+        isParent: getChildTasks(task.id).length > 0,
         depth: childDepth
       }));
 

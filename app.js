@@ -8348,7 +8348,8 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   };
   labelRow.querySelector(".task-tree-toggle")?.addEventListener("click", event => {
     event.stopPropagation();
-    if (options.isParent) toggleProjectSection(task.id);
+    const isProjectRoot = Boolean(options.isParent && (!rootId || task.id === rootId));
+    if (isProjectRoot) toggleProjectSection(task.id);
     else toggleProjectTask(task.id);
   });
   labelRow.querySelector(".gantt-add-child")?.addEventListener("click", event => {
@@ -8706,6 +8707,19 @@ function ensureGanttTreeDepthForChild(minDepth = 1) {
   return true;
 }
 
+function ensureGanttTaskTreeForReparent() {
+  const config = getGanttArrangeConfig();
+  if (typeof GanttArrangePolicy?.isTreeEnabled === "function" && GanttArrangePolicy.isTreeEnabled(config)) {
+    return false;
+  }
+  const dimensions = Array.isArray(config?.dimensions) ? config.dimensions.map(dim => ({ ...dim })) : [];
+  const treeDim = dimensions.find(dim => dim.id === "taskTree");
+  if (treeDim) treeDim.enabled = true;
+  else dimensions.unshift({ id: "taskTree", enabled: true });
+  saveGanttArrangeConfig({ ...config, dimensions });
+  return true;
+}
+
 function reparentTaskOnto(sourceId, parentId) {
   if (!sourceId || !parentId) return false;
   const tasks = uniqueTasks(getAllTasks().map(({ task }) => task));
@@ -8730,6 +8744,7 @@ function reparentTaskOnto(sourceId, parentId) {
   // Parent must stay expanded so the new child is visible.
   state.projectCollapsedSections.delete(parentId);
   state.projectCollapsedTasks.delete(parentId);
+  const treeEnabled = ensureGanttTaskTreeForReparent();
   const deepened = ensureGanttTreeDepthForChild(1);
   saveData();
   render();
@@ -8741,8 +8756,11 @@ function reparentTaskOnto(sourceId, parentId) {
     document.querySelector(`.project-gantt-row-label[data-task-id="${safeId}"]`)
       ?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
   });
-  const depthHint = deepened ? "；已把展开深度调到第 1 层以便看见子任务" : "";
-  showToast(`已将「${source.title}」挂到「${parent.title}」下，成为其子任务${depthHint}`, 4200);
+  const hints = [];
+  if (treeEnabled) hints.push("已开启甘特「任务项」层级以便显示子任务");
+  if (deepened) hints.push("已把展开深度调到第 1 层");
+  const hintText = hints.length ? `（${hints.join("；")}）` : "";
+  showToast(`已将「${source.title}」挂到「${parent.title}」下，成为其子任务${hintText}`, 4600);
   return true;
 }
 

@@ -155,6 +155,8 @@
     if (!child || !relatedParentIds?.size) return false;
     const pid = child.parentId || child.parentTaskId || child.parentTask || child.parent || "";
     if (!relatedParentIds.has(pid)) return false;
+    // Month alignment only applies to monthly recurring parent instances.
+    if (!parent || !isMonthlyRecurringTask(parent)) return true;
     const parentMonth = parent?.dueDate?.slice(0, 7) || "";
     const childMonth = child.dueDate?.slice(0, 7) || "";
     if (!parentMonth || !childMonth) return true;

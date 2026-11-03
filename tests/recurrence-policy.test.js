@@ -106,6 +106,18 @@ assert.equal(
   "same-month dated children must resolve even when parentId still points at last month"
 );
 
+const plainParent = { id: "plain-p", title: "父", dueDate: "2026-11-10", status: "planned" };
+const plainChild = { id: "plain-c", title: "子", parentId: "plain-p", dueDate: "2026-12-05", status: "planned" };
+assert.equal(
+  childBelongsToParentInstance({
+    child: plainChild,
+    parent: plainParent,
+    relatedParentIds: new Set(["plain-p"])
+  }),
+  true,
+  "ordinary tasks must stay parent-linked across different due months"
+);
+
 assert.equal(
   shouldGenerateRecurringMonth({
     targetMonth: "2026-08",
