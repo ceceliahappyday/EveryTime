@@ -208,6 +208,28 @@
     return normalized;
   }
 
+  function normalizeCustomBaseUrl(url = "") {
+    let normalized = normalizeApiBaseUrl(url);
+    if (!normalized) return "";
+    normalized = normalized
+      .replace(/\/chat\/completions$/i, "")
+      .replace(/\/models$/i, "")
+      .replace(/\/+$/, "");
+    const lower = normalized.toLowerCase();
+    if (/tokenhub/.test(lower) && /tencent(?:cloud)?maas/.test(lower)) {
+      if (/\/plan\/(v3|anthropic)$/i.test(normalized)) return normalized;
+      if (!/\/v1$/i.test(normalized) && !/\/plan\//i.test(normalized)) {
+        normalized = `${normalized}/v1`;
+      }
+    }
+    return normalized;
+  }
+
+  function resolveEffectiveBaseUrl(provider = {}, { customBaseUrl = "", moonshotRegion = "auto" } = {}) {
+    const bases = providerBaseUrls(provider, { customBaseUrl, moonshotRegion });
+    return bases[0] || String(provider.baseUrl || "").replace(/\/+$/, "");
+  }
+
   /** sk- 密钥无法区分 TokenHub / DeepSeek 等；根据 Base URL 推断供应商（与 Workbuddy 预置目录一致） */
   function inferProviderIdFromBaseUrl(url = "") {
     const raw = String(url || "").trim().toLowerCase();
@@ -229,7 +251,7 @@
   function providerBaseUrls(provider = {}, { moonshotRegion = "auto", customBaseUrl = "", moonshotBaseUrl = "" } = {}) {
     const cn = "https://api.moonshot.cn/v1";
     const intl = "https://api.moonshot.ai/v1";
-    const custom = normalizeApiBaseUrl(customBaseUrl || moonshotBaseUrl);
+    const custom = normalizeCustomBaseUrl(customBaseUrl || moonshotBaseUrl);
     if (custom) return [custom];
     if (provider?.id === "moonshot") {
       const region = normalizeMoonshotRegion(moonshotRegion);
@@ -307,11 +329,12 @@
       .filter(Boolean);
   }
 
-  function buildModelsRequest(provider, apiKey) {
+  function buildModelsRequest(provider, apiKey, { baseUrl = "" } = {}) {
     const key = normalizeKey(apiKey);
+    const root = String(baseUrl || provider.baseUrl || "").replace(/\/+$/, "");
     if (provider.protocol === "anthropic-messages") {
       return {
-        url: `${provider.baseUrl}/models`,
+        url: `${root}/models`,
         headers: {
           "x-api-key": key,
           "anthropic-version": "2023-06-01"
@@ -321,14 +344,14 @@
     }
     if (provider.protocol === "gemini") {
       return {
-        url: `${provider.baseUrl}/models?key=${encodeURIComponent(key)}`,
+        url: `${root}/models?key=${encodeURIComponent(key)}`,
         headers: {},
         fallbackOnly: false,
         parser: "gemini"
       };
     }
     return {
-      url: `${provider.baseUrl.replace(/\/$/, "")}/models`,
+      url: `${root}/models`,
       headers: {
         Authorization: `Bearer ${key}`
       },
@@ -340,6 +363,7 @@
     provider,
     apiKey,
     model,
+    baseUrl = "",
     question = "",
     rangeLabel = "",
     context = {},
@@ -349,6 +373,7 @@
     userText = ""
   } = {}) {
     const key = normalizeKey(apiKey);
+    const root = String(baseUrl || provider.baseUrl || "").replace(/\/+$/, "");
     const chosenModel = resolveModelId(String(model || provider.defaultModel || "").trim() || provider.defaultModel, provider);
     const isExtract = mode === "extract_task";
     const system = String(systemPrompt || "").trim()
@@ -376,7 +401,7 @@
         });
       });
       return {
-        url: `${provider.baseUrl}/messages`,
+        url: `${root}/messages`,
         headers: {
           "content-type": "application/json",
           "x-api-key": key,
@@ -402,7 +427,7 @@
         });
       });
       return {
-        url: `${provider.baseUrl}/models/${encodeURIComponent(chosenModel)}:generateContent?key=${encodeURIComponent(key)}`,
+        url: `${root}/models/${encodeURIComponent(chosenModel)}:generateContent?key=${encodeURIComponent(key)}`,
         headers: { "content-type": "application/json" },
         body: {
           system_instruction: { parts: [{ text: system }] },
@@ -422,7 +447,7 @@
       : text;
 
     return {
-      url: `${provider.baseUrl.replace(/\/$/, "")}/chat/completions`,
+      url: `${root}/chat/completions`,
       headers: {
         "content-type": "application/json",
         Authorization: `Bearer ${key}`
@@ -475,6 +500,8 @@
     resolveModelId,
     normalizeMoonshotRegion,
     normalizeApiBaseUrl,
+    normalizeCustomBaseUrl,
+    resolveEffectiveBaseUrl,
     inferProviderIdFromBaseUrl,
     providerBaseUrls,
     swapRequestBaseUrl,

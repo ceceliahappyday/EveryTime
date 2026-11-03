@@ -133,5 +133,19 @@ assert.equal(
   "tokenhub_intl"
 );
 assert.equal(policy.getProvider("tokenhub_gz").name, "腾讯云 TokenHub（广州）");
+assert.equal(
+  policy.normalizeCustomBaseUrl("https://tokenhub.tencentmaas.com"),
+  "https://tokenhub.tencentmaas.com/v1"
+);
+assert.equal(
+  policy.normalizeCustomBaseUrl("https://tokenhub.tencentmaas.com/v1/chat/completions"),
+  "https://tokenhub.tencentmaas.com/v1"
+);
+assert.equal(
+  policy.resolveEffectiveBaseUrl(policy.getProvider("tokenhub_gz"), {
+    customBaseUrl: "https://tokenhub.tencentmaas.com"
+  }),
+  "https://tokenhub.tencentmaas.com/v1"
+);
 
 console.log("ai provider policy tests passed");

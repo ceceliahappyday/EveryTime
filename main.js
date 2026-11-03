@@ -761,6 +761,11 @@ function extractResponseText(payload) {
 
 function providerErrorMessage(body = {}, status = 0, provider = {}, settings = {}) {
   const message = body?.error?.message || body?.message || `AI 请求失败（${status}）`;
+  const baseUrl = String(settings?.aiBaseUrl || "").toLowerCase();
+  const tokenhubLike = /^tokenhub/.test(provider?.id || "") || /tokenhub/.test(baseUrl);
+  if (tokenhubLike && status === 404) {
+    return "TokenHub 返回 404：请核对 API 接口地址与 Workbuddy 一致。OpenAI 兼容常用 https://tokenhub.tencentmaas.com/v1 ；若 WB 使用 plan 线路，请填 https://tokenhub.tencentcloudmaas.com/plan/v3（不要带 /chat/completions）。模型 ID 需与控制台一致。";
+  }
   if (provider?.id === "moonshot" && (status === 401 || /invalid authentication/i.test(message))) {
     const customBase = String(settings?.aiBaseUrl || "").trim();
     if (customBase) {
@@ -775,9 +780,16 @@ function aiSettingsForRequest(payload = {}, baseSettings = loadSettings()) {
   const settings = { ...baseSettings };
   if (payload.providerId) settings.aiProvider = String(payload.providerId).trim();
   if (Object.prototype.hasOwnProperty.call(payload, "aiBaseUrl")) {
-    settings.aiBaseUrl = String(payload.aiBaseUrl || "").trim();
+    settings.aiBaseUrl = AiProviderPolicy.normalizeCustomBaseUrl(payload.aiBaseUrl);
   }
   return settings;
+}
+
+function aiEffectiveBase(provider, settings = {}) {
+  return AiProviderPolicy.resolveEffectiveBaseUrl(provider, {
+    customBaseUrl: settings.aiBaseUrl,
+    moonshotRegion: settings.aiMoonshotRegion
+  });
 }
 
 async function fetchProviderJson(request, provider, { method = "POST", body, settings = loadSettings() } = {}) {
@@ -871,10 +883,12 @@ async function listAiModels(payload = {}) {
     apiKey,
     providerId: payload.providerId || settings.aiProvider || ""
   });
-  const request = AiProviderPolicy.buildModelsRequest(provider, apiKey);
   const effectiveSettings = aiSettingsForRequest(payload, settings);
+  const effectiveBase = aiEffectiveBase(provider, effectiveSettings);
+  const request = AiProviderPolicy.buildModelsRequest(provider, apiKey, { baseUrl: effectiveBase });
   let models = [];
   let source = "fallback";
+  let chatProbeOk = false;
   try {
     const { response, body } = await fetchProviderJson(request, provider, { method: "GET", settings: effectiveSettings });
     if (response.ok) {
@@ -894,9 +908,25 @@ async function listAiModels(payload = {}) {
     if (error?.message && /鉴权|authentication|api key|unauthorized/i.test(error.message)) throw error;
     models = [];
   }
+  if (!models.length && /^tokenhub/.test(provider.id)) {
+    try {
+      const probe = AiProviderPolicy.buildChatRequest({
+        provider,
+        apiKey,
+        baseUrl: effectiveBase,
+        model: settings.aiModel || provider.defaultModel,
+        mode: "query",
+        userText: "ping"
+      });
+      const { response } = await fetchProviderJson(probe, provider, { settings: effectiveSettings });
+      chatProbeOk = response.ok;
+    } catch {
+      chatProbeOk = false;
+    }
+  }
   if (!models.length) {
     models = AiProviderPolicy.normalizeModelEntries(provider.fallbackModels || [], provider);
-    source = "fallback";
+    source = chatProbeOk ? "remote" : "fallback";
   }
   const resolvedSaved = AiProviderPolicy.resolveModelId(settings.aiModel, provider);
   const selectedModel = models.includes(resolvedSaved)
@@ -911,7 +941,9 @@ async function listAiModels(payload = {}) {
     selectedModel,
     source,
     message: source === "remote"
-      ? `已从 ${provider.name} 加载 ${models.length} 个可用模型`
+      ? (/^tokenhub/.test(provider.id) && chatProbeOk
+        ? `${provider.name} 聊天接口可用（TokenHub 不提供 /models，请确认模型 ID 与 WB 一致）`
+        : `已从 ${provider.name} 加载 ${models.length} 个可用模型`)
       : `无法在线拉取模型列表，已提供 ${provider.name} 常用模型`
   };
 }
@@ -925,9 +957,11 @@ async function askAi(payload) {
     apiKey,
     providerId: settings.aiProvider || ""
   });
+  const effectiveBase = aiEffectiveBase(provider, settings);
   const request = AiProviderPolicy.buildChatRequest({
     provider,
     apiKey,
+    baseUrl: effectiveBase,
     model: AiProviderPolicy.resolveModelId(settings.aiModel || provider.defaultModel, provider),
     question: payload?.question,
     rangeLabel: payload?.rangeLabel,
@@ -958,9 +992,11 @@ async function extractAiTask(payload = {}) {
     apiKey,
     providerId: settings.aiProvider || ""
   });
+  const effectiveBase = aiEffectiveBase(provider, settings);
   const request = AiProviderPolicy.buildChatRequest({
     provider,
     apiKey,
+    baseUrl: effectiveBase,
     model: AiProviderPolicy.resolveModelId(settings.aiModel || provider.defaultModel, provider),
     mode: "extract_task",
     systemPrompt: AiTaskDraftPolicy.EXTRACT_SYSTEM_PROMPT,
@@ -970,7 +1006,7 @@ async function extractAiTask(payload = {}) {
   const { response, body } = await fetchProviderJson(request, provider, { settings });
   if (!response.ok) {
     const message = providerErrorMessage(body, response.status, provider, settings);
-    if (/image|vision|multimodal|does not support|不支持|resource_not_found|model/i.test(message)) {
+    if (response.status !== 404 && /image|vision|multimodal|does not support|不支持|resource_not_found|model/i.test(message)) {
       throw new Error("当前模型可能不支持识图。Kimi 请选 kimi-k3.1-pro；也可用 gpt-4o / Claude / Gemini 等视觉模型。");
     }
     throw new Error(message);
@@ -989,6 +1025,9 @@ async function extractAiTask(payload = {}) {
 
 function saveSettings(nextSettings) {
   const settings = { ...loadSettings(), ...nextSettings };
+  if (Object.prototype.hasOwnProperty.call(nextSettings, "aiBaseUrl")) {
+    settings.aiBaseUrl = AiProviderPolicy.normalizeCustomBaseUrl(settings.aiBaseUrl);
+  }
   if (
     nextSettings.morningStart !== undefined ||
     nextSettings.morningEnd !== undefined ||
