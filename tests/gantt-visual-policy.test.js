@@ -6,6 +6,15 @@ const requiredApp = [
   "taskActualTimelineParts",
   "calendarMeetingTimelineParts",
   "createCalendarGanttRow",
+  "bindGanttCalendarEntryDrag",
+  "bindGanttMeetingLinkDrag",
+  "linkMeetingToTaskByEntryId",
+  "unlinkMeetingFromTaskByEntryId",
+  "treeDepth: row.depth",
+  "is-task-tree",
+  "is-tree-node",
+  "isGanttMeetingLinkDrag",
+  "text/gantt-link-meeting",
   "getCalendarMeetingSummaries",
   "buildMeetingArrangeRows",
   "attachMeetingRowsUnderTasks",
@@ -69,8 +78,17 @@ if (/depth - \(rootId \? 1 : 0\)/.test(app)) {
 if (!styles.includes(".project-gantt-resize-handle")) {
   throw new Error("gantt label pane needs a visible resize handle");
 }
-if (!/padding-left:\s*calc\(2px \+ var\(--task-depth, 0\) \* 12px\)/.test(styles)) {
-  throw new Error("gantt task rows must indent by task depth");
+if (!/var\(--gantt-group-indent,\s*0\)/.test(styles) || !/var\(--task-depth,\s*0\)/.test(styles)) {
+  throw new Error("gantt task rows must indent by group + task depth");
+}
+if (!styles.includes(".project-gantt-root.is-task-tree") || !styles.includes(".gantt-fold-toggle")) {
+  throw new Error("gantt task tree mode needs outline indent and fold chevrons");
+}
+if (!app.includes("gantt-tree-rail") || !app.includes("gantt-fold-toggle") || !app.includes("hasChildTasks")) {
+  throw new Error("gantt tree rows must align leaves, hide empty toggles, and use CSS chevron toggles");
+}
+if (!styles.includes("--gantt-indent-step")) {
+  throw new Error("gantt task tree must use one indent step for every layer");
 }
 
 if (app.includes("projectHorizontalScrollbar")) {

@@ -10,23 +10,27 @@
     "important_urgent",
     "paused"
   ]);
-  const MAX_DRAFTS = 12;
+  const MAX_DRAFTS = 24;
 
   const EXTRACT_SYSTEM_PROMPT = [
-    "你是 EveryTime 的截图事项提取助手。先判断截图场景，再决定输出几条——不要按行/段落机械拆分。",
-    "场景规则（优先）：",
-    "1) 会议邀请/日程卡片/预约详情（含标题、主题、时间、地点、正文）：只输出 1 条 meeting；标题用会议名称，主题与正文要点写入 businessBackground。",
+    "你是 EveryTime 的截图事项提取助手。先判断截图属于哪一类，再决定输出几条。",
+    "场景规则（按优先级匹配）：",
+    "1) 会议排期表/安排表（表格：场次、会议日期、开始/结束时间、周几列或汇报主题、地点、参会人等）：",
+    "   每一行有效会议（含无场次号但有日期与时间的行）输出 1 条 kind=meeting；合并单元格的日期沿用上一行；",
+    "   title 取该行有文字的主题/汇报内容（可能在「周一…周日」某一列）；dueDate 用会议日期（无年份时用用户提供的今天推断年份）；",
+    "   dueTime/endTime 分别用「开始时间」「结束时间」列（可含秒，如 14:00:00）；地点、参会人摘要写入 businessBackground；按表格顺序输出，最多 24 条。",
+    "2) 单封会议邀请/日程卡片/Outlook 详情：只输出 1 条 meeting；标题用会议名称。",
     "   会议时间：必填 dueTime 与 endTime，须与邀请「时间/会议时间」整段一致（如 9:00-11:30）；优先读顶部时间行，不要只看日视图色块或议程第一段。",
-    "   businessBackground 须原文包含「时间」或「会议时间」那一行（含起止时刻）；若正文有多段议程时间，endTime 仍取整场结束时刻（如 11:30），不是 9:00-9:30。",
-    "2) 单个任务的详细说明/需求描述/长文备注：只输出 1 条 task；提炼可执行短标题，细节写入 businessBackground。",
-    "3) 聊天或清单里确实有多件彼此独立、可分别执行的事项：才输出多条，每条一个独立动作。",
-    "4) 拿不准时默认只输出 1 条，把可见信息放进 businessBackground，切勿把同一事项的多行文字拆成多条。",
+    "   businessBackground 须包含「时间/会议时间」行；若正文有多段议程时间，endTime 仍取整场结束（如 11:30）。",
+    "3) 单个任务说明/长文备注：只输出 1 条 task。",
+    "4) 聊天或清单里多件独立待办：每条 1 个 task。",
+    "5) 拿不准且不是排期表时默认 1 条，勿把同一会议邀请拆成多条。",
     "不要把会议正文的每一行、邮件签名、系统栏、无动作的说明文字拆成待办。",
     "每条必须判断类型 kind：",
     '  meeting = 需要出席/参加的会议或日程本身；',
     "  task = 需要执行的待办工作。",
     "若同一张图里既有一场会议安排、又有明确的会后独立待办，可拆成 meeting + task；否则保持单条。",
-    "最多输出 12 条。只根据截图与说明中可见的信息填写；看不到的日期、责任人/参会人不要编造。",
+    "最多输出 24 条（排期表尽量多行）；只根据截图与说明中可见的信息填写；看不到的不要编造。",
     "只输出一个 JSON 对象，不要 Markdown、不要代码围栏、不要解释文字。",
     '格式：{"items":[...]}；兼容 {"tasks":[...]}；若只有一条也可直接输出单个对象。',
     "每条字段：",
@@ -60,7 +64,7 @@
   function buildExtractUserText({ note = "", today = "" } = {}) {
     const lines = [
       `今天日期：${String(today || "").trim() || "未知"}`,
-      "请先判断场景（会议邀请 / 单任务详情 / 多独立事项），优先输出 1 条；仅在确实有多件独立事项时再拆多条。会议请填 dueTime 与 endTime（以邀请正文显式时段为准，勿只看日历色块）。每条标明 kind=task 或 meeting，并只返回 JSON：{\"items\":[...]}。"
+      "先判断是「会议排期表」还是「单封邀请/任务/清单」。排期表按行输出多条 meeting（最多 24）；单封邀请只 1 条 meeting。会议请填 dueDate、dueTime、endTime。只返回 JSON：{\"items\":[...]}。"
     ];
     const hint = String(note || "").trim().slice(0, 1000);
     if (hint) lines.push(`用户补充说明：${hint}`);
@@ -127,11 +131,28 @@
     return extractJsonValue(text);
   }
 
-  function normalizeDate(value = "") {
+  function normalizeDate(value = "", referenceDateKey = "") {
     const text = String(value || "").trim();
     if (!text) return "";
-    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
+    const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+    const slash = text.match(/^(\d{4})[/.](\d{1,2})[/.](\d{1,2})/);
+    if (slash) {
+      return `${slash[1]}-${String(Number(slash[2])).padStart(2, "0")}-${String(Number(slash[3])).padStart(2, "0")}`;
+    }
+    const cn = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/)
+      || text.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+    if (cn) {
+      const year = cn[1] && cn[1].length === 4
+        ? Number(cn[1])
+        : Number(String(referenceDateKey || "").slice(0, 4)) || new Date().getFullYear();
+      const month = Number(cn[cn.length === 4 ? 2 : 1]);
+      const day = Number(cn[cn.length === 4 ? 3 : 2]);
+      if (Number.isFinite(year) && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      }
+    }
+    return "";
   }
 
   function normalizeTimeText(value = "") {
@@ -311,10 +332,11 @@
     return "";
   }
 
-  function parseOneDraft(source = {}) {
+  function parseOneDraft(source = {}, options = {}) {
     if (!source || typeof source !== "object" || Array.isArray(source)) {
       throw new Error("AI 未返回可解析的事项 JSON");
     }
+    const referenceDateKey = String(options.referenceDateKey || "").trim();
     const title = resolveDraftTitle(source);
     if (!title) throw new Error("截图中未能识别出事项名称");
     const kind = normalizeItemKind(source, title);
@@ -328,7 +350,7 @@
     const draft = {
       kind,
       title,
-      dueDate: normalizeDate(source.dueDate),
+      dueDate: normalizeDate(source.dueDate || source.date || source.meetingDate, referenceDateKey),
       dueTime: normalizeTime(source.dueTime),
       endTime: normalizeTime(source.endTime || source.end_time || source.meetingEndTime),
       owner: String(source.owner || ownerDefault).trim().slice(0, ownerLimit) || ownerDefault,
@@ -379,13 +401,12 @@
     return parseOneDraft({ title, confidence: 0.35, businessBackground: raw.slice(0, 800) });
   }
 
-  function parseDraftResponse(text = {}) {
-    const source = typeof text === "string" ? extractJsonValue(text) : text;
-    const drafts = parseDraftListResponse(source);
+  function parseDraftResponse(text = {}, options = {}) {
+    const drafts = parseDraftListResponse(text, options);
     return drafts[0];
   }
 
-  function parseDraftListResponse(text = {}) {
+  function parseDraftListResponse(text = {}, options = {}) {
     const rawText = typeof text === "string" ? text : "";
     const source = typeof text === "string" ? extractJsonValue(text) : text;
     if (source == null) {
@@ -398,7 +419,7 @@
     rawItems.forEach(item => {
       if (drafts.length >= MAX_DRAFTS) return;
       try {
-        drafts.push(enrichMeetingDraftTimes(parseOneDraft(item), rawText));
+        drafts.push(enrichMeetingDraftTimes(parseOneDraft(item, options), rawText));
       } catch {}
     });
     if (!drafts.length) {

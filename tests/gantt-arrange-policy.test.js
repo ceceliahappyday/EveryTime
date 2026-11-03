@@ -66,27 +66,17 @@ const treeSections = policy.buildSections({ ...buildArgs, config: treeFirst });
 assert.equal(treeSections[0].label, "任务");
 const unit = treeSections[0].children[0];
 assert.equal(unit.rows[0].task.id, "p", "parent first");
-const statusGroups = unit.children;
-assert.ok(statusGroups.some(g => g.label === "进行中"));
-assert.ok(statusGroups.some(g => g.label === "已结束"));
-const endedGroup = statusGroups.find(g => g.label === "已结束");
+assert.equal(unit.children.length, 0, "task tree must not insert status headers between parent and children");
+const treeRowIds = unit.rows.map(row => row.task.id);
+assert.ok(treeRowIds.includes("c1") && treeRowIds.includes("c2"), "children stay in the same tree block as parent");
 assert.ok(
-  endedGroup.children?.length || endedGroup.rows.some(r => r.task.id === "c2"),
-  "closed child stays under parent in within-tree 已结束"
+  treeRowIds.indexOf("c1") > treeRowIds.indexOf("p") && treeRowIds.indexOf("c2") > treeRowIds.indexOf("p"),
+  "children follow parent in tree order regardless of status"
 );
 assert.ok(
   !treeSections.some(s => s.label === "已结束" && s.rows?.some(r => r.task.id === "c2")),
   "closed child must not teleport to outer 已结束"
 );
-
-// owner nested under status within tree
-const inProgress = statusGroups.find(g => g.label === "进行中");
-assert.ok(inProgress);
-if (inProgress.children?.length) {
-  assert.ok(inProgress.children.some(g => String(g.label).includes("责任人")));
-} else {
-  assert.ok(inProgress.rows.some(r => r.task.id === "c1"));
-}
 
 // B: 状态 → 树 —— 外层按父块，一家不拆
 const statusFirst = policy.normalizeConfig({

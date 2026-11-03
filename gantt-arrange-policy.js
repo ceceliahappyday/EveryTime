@@ -79,7 +79,7 @@
    * Notion 式：
    * - 任务项：一家不拆散
    * - 树前字段：外层 Group by「整棵父任务块」
-   * - 树后字段：仅在父任务内对子任务再 Group by
+   * - 树后字段：任务项开启时不拆分组标题（避免打断父子），状态等走列展示
    */
   function splitArrangeDimensions(config) {
     const enabled = normalizeConfig(config).dimensions.filter(dim => dim.enabled);
@@ -434,19 +434,8 @@
         depth: childDepth
       }));
 
-    if (!split.withinTreeDimensions.length) {
-      return {
-        key: `tree:${parent.id}`,
-        status: `tree:${parent.id}`,
-        label: "",
-        silent: true,
-        depth,
-        parentRow,
-        rows: [parentRow, ...childRows],
-        children: []
-      };
-    }
-
+    // Keep the whole family in tree order under the parent row. Splitting siblings by
+    // status (or other within-tree dimensions) hides parent-child relationships.
     return {
       key: `tree:${parent.id}`,
       status: `tree:${parent.id}`,
@@ -454,13 +443,8 @@
       silent: true,
       depth,
       parentRow,
-      rows: [parentRow],
-      children: nestRowsByDimensions(
-        childRows,
-        split.withinTreeDimensions,
-        helpers,
-        depth + 1
-      )
+      rows: [parentRow, ...childRows],
+      children: []
     };
   }
 

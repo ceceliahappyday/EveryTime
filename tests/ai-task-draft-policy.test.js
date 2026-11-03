@@ -4,13 +4,14 @@ const policy = require("../ai-task-draft-policy.js");
 assert.ok(policy.EXTRACT_SYSTEM_PROMPT.includes("meeting"));
 assert.ok(policy.EXTRACT_SYSTEM_PROMPT.includes("kind"));
 assert.ok(
-  policy.EXTRACT_SYSTEM_PROMPT.includes("先判断截图场景"),
+  policy.EXTRACT_SYSTEM_PROMPT.includes("先判断截图属于哪一类"),
   "screenshot extract must classify scene before splitting items"
 );
 assert.ok(
-  policy.EXTRACT_SYSTEM_PROMPT.includes("默认只输出 1 条"),
-  "screenshot extract should prefer a single draft for invites and detail pages"
+  policy.EXTRACT_SYSTEM_PROMPT.includes("会议排期表"),
+  "screenshot extract must support multi-row meeting schedule tables"
 );
+assert.equal(policy.MAX_DRAFTS, 24);
 const parts = policy.buildVisionUserParts({
   note: "跟进合同",
   imageBase64: "data:image/png;base64,AAAA",
@@ -20,8 +21,8 @@ assert.equal(parts.mimeType, "image/png");
 assert.equal(parts.base64, "AAAA");
 assert.match(parts.text, /2026-09-23/);
 assert.match(parts.text, /跟进合同/);
-assert.match(parts.text, /kind=task 或 meeting/);
-assert.match(parts.text, /优先输出 1 条/, "user extract prompt should reinforce single-item preference");
+assert.match(parts.text, /meeting/);
+assert.match(parts.text, /会议排期表/, "user extract prompt should mention schedule tables");
 
 const draft = policy.parseDraftResponse(`\`\`\`json
 {
@@ -83,6 +84,23 @@ assert.equal(policy.resolveMeetingScheduleRange(agendaOnly).end, 11.5);
 const fromRawJson = policy.parseDraftListResponse(`{"items":[{"kind":"meeting","title":"财务联席会议","dueDate":"2026-11-05","dueTime":"9:00","businessBackground":"地点：新闻中心"}]}\n会议时间 9:00-11:30`);
 assert.equal(fromRawJson[0].endTime, "11:30");
 
+const cnDate = policy.parseOneDraft(
+  { kind: "meeting", title: "预算组汇报", dueDate: "11月6日", dueTime: "14:00", endTime: "17:00" },
+  { referenceDateKey: "2026-11-03" }
+);
+assert.equal(cnDate.dueDate, "2026-11-06");
+
+const scheduleRows = policy.parseDraftListResponse(JSON.stringify({
+  items: [
+    { kind: "meeting", title: "会议A", dueDate: "11月6日", dueTime: "14:00:00", endTime: "17:00:00" },
+    { kind: "meeting", title: "会议B", dueDate: "11月7日", dueTime: "10:00:00", endTime: "11:00:00" }
+  ]
+}), { referenceDateKey: "2026-11-03" });
+assert.equal(scheduleRows.length, 2);
+assert.equal(scheduleRows[0].dueDate, "2026-11-06");
+assert.equal(scheduleRows[0].dueTime, "14:00");
+assert.equal(scheduleRows[0].endTime, "17:00");
+
 const inferred = policy.parseOneDraft({ title: "7月财务例会会议纪要修改" });
 assert.equal(inferred.kind, "task", "follow-up work about a meeting should stay a task");
 const inferredMeeting = policy.parseOneDraft({ title: "2026年07月集团财务月度会议" });
@@ -120,7 +138,7 @@ assert.equal(fallback.dueDate, "");
 assert.equal(fallback.dueTime, "09:05");
 assert.equal(fallback.confidence, 1);
 
-assert.throws(() => policy.parseDraftResponse("没有 JSON"), /可解析|未能识别/);
+assert.throws(() => policy.parseDraftListResponse(""), /可解析|未能识别/);
 assert.throws(() => policy.parseDraftListResponse('{"title":""}'), /未能识别/);
 
 const aliasTitle = policy.parseDraftResponse(JSON.stringify({

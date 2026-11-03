@@ -1069,7 +1069,9 @@ async function extractAiTask(payload = {}) {
     }
     throw new Error("AI 没有返回识别结果。请确认设置中的模型支持识图（如 gpt-4o / gpt-4.1 / Claude / Gemini / 通义 VL 等），不要用纯文本模型。");
   }
-  const drafts = AiTaskDraftPolicy.parseDraftListResponse(text);
+  const drafts = AiTaskDraftPolicy.parseDraftListResponse(text, {
+    referenceDateKey: payload.today || ""
+  });
   return { drafts, draft: drafts[0] || null };
 }
 

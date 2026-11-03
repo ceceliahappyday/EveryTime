@@ -498,7 +498,7 @@
 
     const body = {
       model: chosenModel,
-      max_tokens: isExtract ? 4096 : 2048,
+      max_tokens: isExtract ? 8192 : 2048,
       messages
     };
     const tokenHubKimi = tokenHub && (isKimiK3FamilyModel(chosenModel) || isKimiLegacyThinkingModel(chosenModel) || imageList.length > 0);

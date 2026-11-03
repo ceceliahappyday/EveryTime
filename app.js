@@ -2718,11 +2718,13 @@ function setTaskAiDropzoneStatus(message = "", kind = "") {
   el.taskAiDropzoneStatus.classList.toggle("error", kind === "error");
 }
 
-async function readImageAsAttachment(fileOrBlob) {
+async function readImageAsAttachment(fileOrBlob, { forAiExtract = false } = {}) {
   if (!fileOrBlob) throw new Error("未找到图片");
   const type = String(fileOrBlob.type || "").toLowerCase();
   if (type && !type.startsWith("image/")) throw new Error("请选择图片文件");
-  const dataUrl = await compressImageToDataUrl(fileOrBlob);
+  const dataUrl = await compressImageToDataUrl(fileOrBlob, forAiExtract
+    ? { maxEdge: 2400, maxWidth: 3600, maxHeight: 2200, maxBytes: 2.2 * 1024 * 1024 }
+    : {});
   const parsed = (typeof AiTaskDraftPolicy !== "undefined" && AiTaskDraftPolicy.stripDataUrl)
     ? AiTaskDraftPolicy.stripDataUrl(dataUrl)
     : (() => {
@@ -2737,13 +2739,15 @@ async function readImageAsAttachment(fileOrBlob) {
   };
 }
 
-function compressImageToDataUrl(fileOrBlob, { maxEdge = 1600, maxBytes = 1.2 * 1024 * 1024 } = {}) {
+function compressImageToDataUrl(fileOrBlob, { maxEdge = 1600, maxWidth = 0, maxHeight = 0, maxBytes = 1.2 * 1024 * 1024 } = {}) {
   return new Promise((resolve, reject) => {
     const objectUrl = URL.createObjectURL(fileOrBlob);
     const image = new Image();
     image.onload = () => {
       URL.revokeObjectURL(objectUrl);
-      const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+      let scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+      if (maxWidth > 0 && image.width > maxWidth) scale = Math.min(scale, maxWidth / image.width);
+      if (maxHeight > 0 && image.height > maxHeight) scale = Math.min(scale, maxHeight / image.height);
       const width = Math.max(1, Math.round(image.width * scale));
       const height = Math.max(1, Math.round(image.height * scale));
       const canvas = document.createElement("canvas");
@@ -3086,7 +3090,10 @@ function openAiBatchDraftDialog(drafts = [], source = "task-dialog") {
       : "确认事项";
   }
   if (el.aiBatchDraftHint) {
-    el.aiBatchDraftHint.textContent = "请核对名称与类型（任务 / 会议）。任务会进待办顶部待完善；会议会写入日程。";
+    const meetingCount = drafts.filter(item => resolveAiDraftKind(item) === "meeting").length;
+    el.aiBatchDraftHint.textContent = meetingCount === drafts.length && drafts.length > 1
+      ? `识别到 ${drafts.length} 场会议，确认后将写入对应日期的日程（可在日/周历查看）。`
+      : "请核对名称与类型（任务 / 会议）。任务会进待办顶部待完善；会议会写入日程。";
   }
   renderAiBatchDraftList();
   el.aiBatchDraftDialog?.showModal();
@@ -3184,7 +3191,7 @@ async function extractAndCreateTaskFromImage({ file = null, attachment = null, n
     appendAiChat("user", note ? `${note}\n（附截图）` : "（附截图，请提取任务或会议）");
   }
   try {
-    const image = attachment || await readImageAsAttachment(file);
+    const image = attachment || await readImageAsAttachment(file, { forAiExtract: true });
     const result = await window.desktopAPI.aiExtractTask({
       note,
       imageBase64: image.base64,
@@ -3222,6 +3229,9 @@ async function extractAndCreateTaskFromImage({ file = null, attachment = null, n
     if (source === "ai-dialog") {
       appendAiChat("assistant", `识别到 ${drafts.length} 条事项（含任务/会议），请核对类型与名称后创建。`);
       el.aiStatus.textContent = `识别到 ${drafts.length} 条，请确认后创建。`;
+    }
+    if (source === "task-dialog") {
+      setTaskAiDropzoneStatus(`识别到 ${drafts.length} 条，请在确认窗口勾选后创建。`, "busy");
     }
     openAiBatchDraftDialog(drafts, source);
     return drafts;
@@ -6333,7 +6343,7 @@ function appendGanttGroupHeading(labelContainer, chartContainer, group, onToggle
   heading.type = "button";
   heading.style.setProperty("--group-depth", String(depth));
   heading.dataset.depth = String(depth);
-  heading.innerHTML = `<strong><i>${collapsed ? "▸" : "▾"}</i>${escapeHtml(group.label)}</strong><span>${group.count} 项</span>`;
+  heading.innerHTML = `<strong><span class="gantt-fold-toggle${collapsed ? " is-collapsed" : ""}" aria-hidden="true"></span>${escapeHtml(group.label)}</strong><span>${group.count} 项</span>`;
   heading.addEventListener("click", onToggle);
   labelContainer.appendChild(heading);
   const spacer = document.createElement("div");
@@ -7614,8 +7624,11 @@ function renderProjectSchedule() {
     ? `${projects.length} 项 · ${meetings.length} 会议`
     : `${projects.length} 项`;
 
+  const arrangeConfig = getGanttArrangeConfig();
+  const taskTreeOutline = typeof GanttArrangePolicy?.isTreeEnabled === "function"
+    && GanttArrangePolicy.isTreeEnabled(arrangeConfig);
   const ganttRoot = document.createElement("div");
-  ganttRoot.className = "project-gantt-root";
+  ganttRoot.className = `project-gantt-root${taskTreeOutline ? " is-task-tree" : ""}`;
   const enabledLabelColumns = getEnabledGanttLabelColumns(ganttView);
   const labelWidthCss = `${getEffectiveGanttLabelWidth(ganttView)}px`;
 
@@ -7763,8 +7776,10 @@ function renderProjectSchedule() {
           labelGroup,
           chartGroup,
           createCalendarGanttRow(row.meeting, buckets, state.projectScale, {
-            indentBase: indentBase + Math.max(0, Number(row.depth) || 0),
+            groupIndent: indentBase,
+            treeDepth: Math.max(0, Number(row.depth) || 0),
             category: row.task?.category,
+            treeOutline: taskTreeOutline,
             enabledLabelColumns
           })
         );
@@ -7787,6 +7802,8 @@ function renderProjectSchedule() {
           isParent: Boolean(row.isParent),
           collapsed: Boolean(row.collapsed),
           indentBase,
+          treeDepth: row.depth,
+          treeOutline: taskTreeOutline,
           filterContextOnly: contextOnlyIds.has(row.task.id),
           enabledLabelColumns
         }
@@ -7866,6 +7883,7 @@ function renderProjectSchedule() {
       ? (chartPane.clientWidth || ganttContentWidth)
       : layout.contentWidth;
     bindProjectDrop(body, buckets, contentWidth, state.projectScale);
+    bindGanttMeetingLinkDropSurface(labelBody);
   };
   syncBucketDropWidth();
   requestAnimationFrame(() => {
@@ -8380,7 +8398,8 @@ function ganttBarLabelGeometry(actual) {
 function createProjectGanttRow(task, buckets, scale = "day", rootId = "", options = {}) {
   const taskTitle = String(task?.title || "").trim();
   if (!TodoListPolicy.hasDisplayTitle(taskTitle)) return null;
-  const isParentRow = Boolean(options.isParent || getChildTasks(task.id).length > 0);
+  const hasChildTasks = getChildTasks(task.id).length > 0;
+  const isParentRow = Boolean(options.isParent || hasChildTasks);
   const progressInfo = resolveGanttRowProgress(task, {
     isParent: isParentRow,
     progress: options.progress
@@ -8391,22 +8410,33 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   });
   const cutoff = task.dueDate ? taskTimelineOffset(task.dueDate, buckets, scale) : null;
   const showDueFlag = cutoff !== null;
-  const hasChildren = isParentRow;
   const collapsed = options.isParent ? Boolean(options.collapsed) : state.projectCollapsedTasks.has(task.id);
   const progressText = ganttProgressBarText(progressInfo);
   const selected = ensureGanttSelectionSet().has(task.id) || state.selectedGanttTaskId === task.id;
   const filterContextOnly = Boolean(options.filterContextOnly);
   const enabledLabelColumns = options.enabledLabelColumns || getEnabledGanttLabelColumns();
   const labelRow = document.createElement("div");
-  const depth = getTaskDepth(task, rootId) + Math.max(0, Number(options.indentBase) || 0);
-  labelRow.className = `project-gantt-row-label ${task.status}${isParentRow ? " is-parent" : ""}${selected ? " is-selected" : ""}${filterContextOnly ? " is-filter-context" : ""}${enabledLabelColumns.length ? " has-columns" : ""}`;
-  labelRow.style.setProperty("--task-depth", depth);
+  const hopDepth = getTaskDepth(task, rootId);
+  const arrangeDepth = Math.max(0, Number(options.treeDepth) || 0);
+  const treeDepth = Math.max(hopDepth, arrangeDepth);
+  const groupIndent = Math.max(0, Number(options.indentBase) || 0);
+  const treeOutline = Boolean(options.treeOutline);
+  let foldPrefix = "";
+  if (hasChildTasks) {
+    foldPrefix = `<button class="project-collapse-button task-tree-toggle gantt-fold-toggle${collapsed ? " is-collapsed" : ""}" type="button" aria-expanded="${collapsed ? "false" : "true"}" aria-label="${collapsed ? "展开子任务" : "折叠子任务"}"></button>`;
+  } else if (treeOutline && treeDepth > 0) {
+    foldPrefix = `<span class="gantt-tree-rail" aria-hidden="true"></span>`;
+  }
+  labelRow.className = `project-gantt-row-label ${task.status}${isParentRow ? " is-parent" : ""}${treeOutline ? " is-tree-node" : ""}${selected ? " is-selected" : ""}${filterContextOnly ? " is-filter-context" : ""}${enabledLabelColumns.length ? " has-columns" : ""}`;
+  labelRow.style.setProperty("--task-depth", String(treeDepth));
+  labelRow.style.setProperty("--gantt-group-indent", String(groupIndent));
   labelRow.style.setProperty("--gantt-extra-cols", String(enabledLabelColumns.length));
-  labelRow.dataset.depth = String(depth);
+  labelRow.dataset.depth = String(treeDepth);
+  labelRow.dataset.treeDepth = String(treeDepth);
   labelRow.dataset.taskId = task.id;
   labelRow.title = "单击高亮整行；Ctrl+单击多选；悬停显示＋新建子任务；右键分类/更多操作；拖到其他名称可改挂接；双击编辑；右侧拖到日期可安排投入";
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin">
-        ${hasChildren ? `<button class="project-collapse-button task-tree-toggle" type="button">${collapsed ? "▸" : "▾"}</button>` : ""}
+        ${foldPrefix}
         <strong title="${escapeHtml(taskTitle)}">${escapeHtml(taskTitle)}</strong>
         <button type="button" class="gantt-add-child" title="在此任务下新建子任务" aria-label="在此任务下新建子任务">＋</button>
       </div>${ganttLabelColumnCellsHtml(ganttTaskLabelColumnValues(task), enabledLabelColumns)}`;
@@ -8750,6 +8780,111 @@ function isGanttReparentDrag(dataTransfer) {
   return types.includes("text/gantt-reparent");
 }
 
+function isGanttMeetingLinkDrag(dataTransfer) {
+  const types = [...(dataTransfer?.types || [])];
+  return types.includes("text/gantt-link-meeting");
+}
+
+function findMeetingSummaryForEntry(entryId = "") {
+  const id = String(entryId || "").trim();
+  if (!id) return null;
+  return getCalendarMeetingSummaries().find(meeting =>
+    (meeting.entries || []).some(({ entry }) => entry.id === id)
+  ) || null;
+}
+
+function linkMeetingToTaskByEntryId(entryId, taskId) {
+  const meeting = findMeetingSummaryForEntry(entryId);
+  const parentId = String(taskId || "").trim();
+  if (!meeting || !parentId) return false;
+  if (parentId.startsWith("meeting:")) {
+    showToast("请拖到真实待办任务行上", 2600);
+    return false;
+  }
+  const parent = findTask(parentId)?.task;
+  if (!parent) {
+    showToast("未找到目标任务", 2600);
+    return false;
+  }
+  const category = typeof TaskCategoryPolicy?.resolveTaskCategory === "function"
+    ? TaskCategoryPolicy.resolveTaskCategory(parent)
+    : (parent.category || "work");
+  const color = typeof TaskCategoryPolicy?.resolveTaskColor === "function"
+    ? TaskCategoryPolicy.resolveTaskColor(parent)
+    : (parent.color || "amber");
+  let linked = 0;
+  (meeting.entries || []).forEach(({ entry }) => {
+    if (!entry?.id) return;
+    entry.taskId = parentId;
+    entry.category = category;
+    entry.color = color;
+    linked += 1;
+  });
+  if (!linked) return false;
+  state.projectCollapsedSections.delete(parentId);
+  state.projectCollapsedTasks.delete(parentId);
+  ensureGanttTaskTreeForReparent();
+  ensureGanttTreeDepthForChild(1);
+  saveData();
+  render();
+  selectGanttTaskRow(parentId);
+  showToast(`已将会议「${meeting.title}」挂到「${parent.title}」下（会议计入该任务投入）`, 4600);
+  return true;
+}
+
+function unlinkMeetingFromTaskByEntryId(entryId) {
+  const meeting = findMeetingSummaryForEntry(entryId);
+  if (!meeting) {
+    showToast("未找到该会议", 2600);
+    return false;
+  }
+  const linkedEntries = (meeting.entries || []).filter(({ entry }) => String(entry?.taskId || "").trim());
+  if (!linkedEntries.length) {
+    showToast("该会议未挂接任务", 2200);
+    return false;
+  }
+  linkedEntries.forEach(({ entry }) => {
+    entry.taskId = "";
+  });
+  saveData();
+  render();
+  showToast(`已解除「${meeting.title}」的任务挂接`, 3600);
+  return true;
+}
+
+function handleGanttMeetingLinkDrop(event) {
+  if (!isGanttMeetingLinkDrag(event.dataTransfer)) return false;
+  event.preventDefault();
+  clearGanttReparentDropMarks();
+  const entryId = event.dataTransfer.getData("text/entry-id");
+  if (!entryId) return true;
+  const parentId = ganttDropTargetTaskIdFromEvent(event);
+  if (parentId) linkMeetingToTaskByEntryId(entryId, parentId);
+  else unlinkMeetingFromTaskByEntryId(entryId);
+  return true;
+}
+
+function bindGanttMeetingLinkDropSurface(container) {
+  if (!container || container.dataset.meetingLinkDropBound === "1") return;
+  container.dataset.meetingLinkDropBound = "1";
+  container.addEventListener("dragover", event => {
+    if (!isGanttMeetingLinkDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  });
+  container.addEventListener("drop", event => {
+    handleGanttMeetingLinkDrop(event);
+  });
+}
+
+function ganttDropTargetTaskIdFromEvent(event) {
+  const hit = document.elementFromPoint(event.clientX, event.clientY)
+    ?.closest?.("[data-task-id].project-gantt-row-label, [data-task-id].project-gantt-row-chart");
+  const taskId = String(hit?.dataset?.taskId || "").trim();
+  if (!taskId || taskId.startsWith("meeting:")) return "";
+  return taskId;
+}
+
 function clearGanttReparentDropMarks() {
   document.querySelectorAll(".drop-reparent").forEach(node => node.classList.remove("drop-reparent"));
 }
@@ -8757,7 +8892,7 @@ function clearGanttReparentDropMarks() {
 function bindGanttReparentDropTarget(node, task) {
   if (!node || !task?.id) return;
   node.addEventListener("dragover", event => {
-    if (!isGanttReparentDrag(event.dataTransfer)) return;
+    if (!isGanttReparentDrag(event.dataTransfer) && !isGanttMeetingLinkDrag(event.dataTransfer)) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
@@ -8774,6 +8909,14 @@ function bindGanttReparentDropTarget(node, task) {
     document.querySelector(`.project-gantt-row-chart[data-task-id="${task.id}"]`)?.classList.remove("drop-reparent");
   });
   node.addEventListener("drop", event => {
+    if (isGanttMeetingLinkDrag(event.dataTransfer)) {
+      event.preventDefault();
+      event.stopPropagation();
+      clearGanttReparentDropMarks();
+      const entryId = event.dataTransfer.getData("text/entry-id");
+      if (entryId) linkMeetingToTaskByEntryId(entryId, task.id);
+      return;
+    }
     if (!isGanttReparentDrag(event.dataTransfer)) return;
     event.preventDefault();
     event.stopPropagation();
@@ -8781,6 +8924,22 @@ function bindGanttReparentDropTarget(node, task) {
     const sourceId = event.dataTransfer.getData("text/task-id");
     if (!sourceId) return;
     reparentTaskOnto(sourceId, task.id);
+  });
+}
+
+function bindGanttMeetingLinkDrag(labelRow, meeting, chartRow = null) {
+  const entryId = meeting?.entries?.[0]?.entry?.id || "";
+  if (!labelRow || !entryId) return;
+  labelRow.draggable = true;
+  labelRow.addEventListener("dragstart", event => {
+    event.dataTransfer.setData("text/entry-id", entryId);
+    event.dataTransfer.setData("text/gantt-link-meeting", "1");
+    event.dataTransfer.effectAllowed = "move";
+    labelRow.classList.add("dragging");
+  });
+  labelRow.addEventListener("dragend", () => {
+    labelRow.classList.remove("dragging");
+    clearGanttReparentDropMarks();
   });
 }
 
@@ -8875,10 +9034,26 @@ function reparentTaskOnto(sourceId, parentId) {
 }
 
 function calendarMeetingTimelineParts(meeting, buckets, scale = "day") {
-  const invested = (meeting.entries || [])
-    .filter(({ dateKey, entry }) => getEntryInvestedHours(dateKey, entry) > 0);
-  const segments = mapEntryGanttSegments(invested, buckets, scale);
+  const items = (meeting.entries || []).filter(({ entry }) => isGanttMeetingEntry(entry));
+  const segments = mapEntryGanttSegments(items, buckets, scale);
   return { segments };
+}
+
+function bindGanttCalendarEntryDrag(node, entryId, chartRow) {
+  const id = String(entryId || "").trim();
+  if (!id || !node) return;
+  node.draggable = true;
+  node.addEventListener("dragstart", event => {
+    event.stopPropagation();
+    event.dataTransfer.setData("text/entry-id", id);
+    event.dataTransfer.effectAllowed = "copy";
+    node.classList.add("dragging");
+    chartRow?.classList.add("dragging");
+  });
+  node.addEventListener("dragend", () => {
+    node.classList.remove("dragging");
+    chartRow?.classList.remove("dragging");
+  });
 }
 
 function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
@@ -8891,16 +9066,24 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
     : "#AA7B39";
   const enabledLabelColumns = options.enabledLabelColumns || getEnabledGanttLabelColumns();
   const labelRow = document.createElement("div");
-  const depth = Math.max(0, Number(options.indentBase) || 0);
-  labelRow.className = `project-gantt-row-label meeting${enabledLabelColumns.length ? " has-columns" : ""}`;
-  labelRow.style.setProperty("--task-depth", depth);
+  const treeDepth = Math.max(0, Number(options.treeDepth) || 0);
+  const groupIndent = Math.max(0, Number(options.groupIndent ?? options.indentBase) || 0);
+  const treeOutline = Boolean(options.treeOutline);
+  const meetingLead = treeOutline && treeDepth > 0
+    ? `<span class="gantt-tree-rail" aria-hidden="true"></span>`
+    : "";
+  labelRow.className = `project-gantt-row-label meeting${treeOutline && treeDepth > 0 ? " is-tree-node" : ""}${enabledLabelColumns.length ? " has-columns" : ""}`;
+  labelRow.style.setProperty("--task-depth", String(treeDepth));
+  labelRow.style.setProperty("--gantt-group-indent", String(groupIndent));
   labelRow.style.setProperty("--gantt-extra-cols", String(enabledLabelColumns.length));
-  labelRow.dataset.depth = String(depth);
+  labelRow.dataset.depth = String(treeDepth);
+  labelRow.dataset.treeDepth = String(treeDepth);
   const meetingCategoryLabel = typeof TaskCategoryPolicy?.labelForCategory === "function"
     ? TaskCategoryPolicy.labelForCategory(category)
     : String(category || "");
+  labelRow.title = "拖动名称可挂到待办任务下（会议计入该任务投入）；拖到空白处可取消挂接；双击编辑；右侧色条拖到日期可改期";
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin is-meeting">
-      <strong title="${escapeHtml(meetingTitle)}">${escapeHtml(meetingTitle)}</strong>
+      ${meetingLead}<strong title="${escapeHtml(meetingTitle)}">${escapeHtml(meetingTitle)}</strong>
     </div>${ganttLabelColumnCellsHtml({
     status: "—",
     priority: "—",
@@ -8911,9 +9094,16 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
   chartRow.className = "project-gantt-row-chart meeting";
   applyCategoryColorStyle(chartRow, color);
   chartRow.innerHTML = `<div class="project-gantt-lane">
-      ${parts.segments.map(segment => `<i class="gantt-meeting-bar" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label || "会议投入")}"></i>
+      ${parts.segments.map(segment => `<i class="gantt-meeting-bar" data-entry-id="${escapeHtml(segment.entryId || "")}" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label || "会议")}"></i>
       ${segment.label ? `<span class="gantt-progress-pct gantt-entry-label" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label)}">${escapeHtml(segment.label)}</span>` : ""}`).join("")}
     </div>`;
+  bindGanttMeetingLinkDrag(labelRow, meeting, chartRow);
+  chartRow.querySelectorAll(".gantt-meeting-bar").forEach(node => {
+    bindGanttCalendarEntryDrag(node, node.dataset.entryId, chartRow);
+  });
+  if (parts.segments.length === 1 && parts.segments[0]?.entryId) {
+    bindGanttCalendarEntryDrag(chartRow, parts.segments[0].entryId, chartRow);
+  }
   chartRow.querySelectorAll(".gantt-entry-label").forEach(node => fitGanttProgressLabel(node, node.textContent));
   const openMeeting = () => {
     const first = meeting.entries[0];
@@ -9176,13 +9366,24 @@ function isGanttMeetingEntry(entry) {
   return entry?.entryType === "calendar" || entry?.category === "meeting";
 }
 
+function ganttEntrySegmentLabel(source = {}, hours = 0, fallback = "有投入") {
+  const note = String(source.note || "").trim();
+  const parts = [];
+  if (hours > 0) parts.push(`${trimNumber(hours)}h`);
+  else if (Number.isFinite(source.start) && Number.isFinite(source.end) && source.end > source.start) {
+    parts.push(`${formatTime(source.start)}–${formatTime(source.end)}`);
+  }
+  if (note) parts.push(note);
+  return parts.join(" · ") || fallback;
+}
+
 function mapEntryGanttSegments(investedItems, buckets, scale = "day") {
   const entries = investedItems.map(({ dateKey, entry }) => ({
     dateKey,
     start: Number(entry.start),
     end: Number(entry.end),
     note: String(entry.note || "").trim(),
-    hours: getEntryInvestedHours(dateKey, entry)
+    hours: getEntryInvestedHours(dateKey, entry) || Math.max(0, Number(entry.end) - Number(entry.start))
   }));
   // Day: split by clock time. Week/month: consecutive days. Quarter: weeks. Year: months.
   if (scale === "day") {
@@ -9195,11 +9396,8 @@ function mapEntryGanttSegments(investedItems, buckets, scale = "day") {
     return geometry.map(segment => {
       const source = entries[segment.entryIndex] || {};
       const hours = Number(source.hours) || 0;
-      const note = source.note || "";
-      const parts = [];
-      if (hours > 0) parts.push(`${trimNumber(hours)}h`);
-      if (note) parts.push(note);
-      const label = parts.join(" · ") || "有投入";
+      const item = investedItems[segment.entryIndex];
+      const label = ganttEntrySegmentLabel(source, getEntryInvestedHours(item?.dateKey, item?.entry), "有投入");
       return {
         left: segment.leftRatio * 100,
         width: segment.widthRatio * 100,
@@ -9207,7 +9405,8 @@ function mapEntryGanttSegments(investedItems, buckets, scale = "day") {
         full: label,
         dateKey: segment.dateKey,
         hours,
-        note
+        note: source.note || "",
+        entryId: item?.entry?.id || ""
       };
     });
   }
@@ -9217,23 +9416,28 @@ function mapEntryGanttSegments(investedItems, buckets, scale = "day") {
     ...ganttSegmentPolicyArgs(buckets, scale)
   });
   return geometry.map(segment => {
-    const covered = entries.filter(item => {
-      const index = buckets.findIndex(bucket =>
-        bucket.key === projectBucketKey(item.dateKey, scale)
-      );
-      return index >= segment.startIndex && index <= segment.endIndex;
-    });
+    const coveredMeta = entries
+      .map((item, entryIndex) => ({ item, entryIndex }))
+      .filter(({ item }) => {
+        const index = buckets.findIndex(bucket =>
+          bucket.key === projectBucketKey(item.dateKey, scale)
+        );
+        return index >= segment.startIndex && index <= segment.endIndex;
+      });
+    const covered = coveredMeta.map(row => row.item);
+    const firstSource = coveredMeta[0] ? investedItems[coveredMeta[0].entryIndex] : null;
+    const investedHours = firstSource ? getEntryInvestedHours(firstSource.dateKey, firstSource.entry) : 0;
     const hours = covered.reduce((sum, item) => sum + (Number(item.hours) || 0), 0);
     const note = covered.length === 1 ? (covered[0].note || "") : "";
-    const parts = [];
-    if (hours > 0) parts.push(`${trimNumber(hours)}h`);
-    if (note) parts.push(note);
     const startKey = buckets[segment.startIndex]?.key || covered[0]?.dateKey || "";
     const endKey = buckets[segment.endIndex]?.key || covered.at(-1)?.dateKey || startKey;
-    const label = parts.join(" · ") || "有投入";
+    const label = covered.length === 1
+      ? ganttEntrySegmentLabel(covered[0], investedHours, "会议")
+      : (hours > 0 ? `${trimNumber(hours)}h` : "会议");
     const full = startKey && endKey && startKey !== endKey
       ? `${label}（${startKey.slice(5)}–${endKey.slice(5)}）`
       : label;
+    const entryId = firstSource?.entry?.id || "";
     return {
       left: segment.leftRatio * 100,
       width: segment.widthRatio * 100,
@@ -9241,7 +9445,8 @@ function mapEntryGanttSegments(investedItems, buckets, scale = "day") {
       full,
       dateKey: startKey,
       hours,
-      note
+      note,
+      entryId
     };
   });
 }
@@ -10115,7 +10320,7 @@ function copyEntryToDate(entryId, dateKey, hour) {
 
 function bindProjectDrop(target, buckets, paneWidth = 0, scale = "day") {
   target.addEventListener("dragover", event => {
-    if (isGanttReparentDrag(event.dataTransfer)) {
+    if (isGanttReparentDrag(event.dataTransfer) || isGanttMeetingLinkDrag(event.dataTransfer)) {
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
       return;
@@ -10127,12 +10332,11 @@ function bindProjectDrop(target, buckets, paneWidth = 0, scale = "day") {
   target.addEventListener("drop", event => {
     event.preventDefault();
     target.classList.remove("drag-over");
+    if (handleGanttMeetingLinkDrop(event)) return;
     // Left-name drag means reparent; do not treat it as schedule invest on the chart body.
     if (isGanttReparentDrag(event.dataTransfer)) {
       const sourceId = event.dataTransfer.getData("text/task-id");
-      const hit = document.elementFromPoint(event.clientX, event.clientY)
-        ?.closest?.("[data-task-id].project-gantt-row-label, [data-task-id].project-gantt-row-chart");
-      const parentId = hit?.dataset?.taskId || "";
+      const parentId = ganttDropTargetTaskIdFromEvent(event);
       clearGanttReparentDropMarks();
       if (sourceId && parentId) reparentTaskOnto(sourceId, parentId);
       else showToast("请拖到目标任务行上，才能挂成子任务", 2600);

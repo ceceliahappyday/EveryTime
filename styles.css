@@ -139,8 +139,8 @@
 }
 
 .ai-modal { width: min(760px, calc(100vw - 32px)); }
-.task-trace-item[draggable="true"], .due-task-item[draggable="true"], .completed-task-item[draggable="true"], .schedule-entry[draggable="true"], .project-gantt-row-chart[draggable="true"] { cursor: grab; }
-.task-trace-item.dragging, .due-task-item.dragging, .completed-task-item.dragging, .schedule-entry.dragging, .project-gantt-row-chart.dragging, .project-gantt-row-label.dragging { opacity: .55; }
+.task-trace-item[draggable="true"], .due-task-item[draggable="true"], .completed-task-item[draggable="true"], .schedule-entry[draggable="true"], .project-gantt-row-chart[draggable="true"], .project-gantt-row-label.meeting[draggable="true"], .project-gantt-lane i.gantt-meeting-bar[draggable="true"] { cursor: grab; }
+.task-trace-item.dragging, .due-task-item.dragging, .completed-task-item.dragging, .schedule-entry.dragging, .project-gantt-row-chart.dragging, .project-gantt-row-label.dragging, .project-gantt-lane i.gantt-meeting-bar.dragging { opacity: .55; }
 .ai-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .ai-range { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ai-status { min-height: 24px; color: var(--muted-text); font-size: 13px; margin-top: 10px; }
@@ -2457,12 +2457,88 @@ body.gantt-label-resizing * {
 .project-gantt-row-chart.is-filter-context {
   opacity: 0.55;
 }
+.project-gantt-root.is-task-tree {
+  --gantt-indent-step: 16px;
+  --gantt-tree-rail: 18px;
+}
 .project-gantt-row-label {
   display: flex;
   align-items: center;
   padding-right: 0;
-  padding-left: calc(2px + var(--task-depth, 0) * 12px);
+  padding-left: calc(2px + var(--gantt-group-indent, 0) * 12px + var(--task-depth, 0) * 12px);
   cursor: grab;
+}
+.project-gantt-root.is-task-tree .project-gantt-group-heading {
+  padding-left: calc(2px + var(--group-depth, 0) * var(--gantt-indent-step, 16px));
+}
+.project-gantt-root.is-task-tree .project-gantt-row-label {
+  padding-left: calc(2px + (var(--gantt-group-indent, 0) + var(--task-depth, 0)) * var(--gantt-indent-step, 16px));
+}
+.project-gantt-root.is-task-tree .project-gantt-row-label .project-gantt-title.is-title-pin {
+  padding-left: 0;
+}
+.project-gantt-root.is-task-tree .project-gantt-row-label.is-tree-node[data-tree-depth="0"] .project-gantt-title strong,
+.project-gantt-root.is-task-tree .project-gantt-row-label.is-tree-node[data-depth="0"] .project-gantt-title strong {
+  font-weight: 800;
+}
+.project-gantt-root.is-task-tree .project-gantt-row-label.is-tree-node.is-parent .project-gantt-title strong {
+  font-weight: 700;
+}
+.project-gantt-root.is-task-tree .project-gantt-row-label.is-tree-node:not(.is-parent):not(.meeting) .project-gantt-title strong {
+  font-weight: 600;
+}
+.project-gantt-root.is-task-tree .project-gantt-row-label.meeting .project-gantt-title strong {
+  font-weight: 600;
+  color: color-mix(in srgb, var(--ink) 88%, var(--muted));
+}
+.gantt-fold-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+}
+.gantt-fold-toggle::before {
+  content: "";
+  display: block;
+  width: 5px;
+  height: 5px;
+  margin: 0 auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-1px);
+  transition: transform .14s ease;
+}
+.gantt-fold-toggle.is-collapsed::before {
+  transform: rotate(-45deg) translate(-1px, 1px);
+}
+.gantt-tree-rail {
+  flex: 0 0 var(--gantt-tree-rail, 18px);
+  width: var(--gantt-tree-rail, 18px);
+  min-width: var(--gantt-tree-rail, 18px);
+  height: var(--gantt-tree-rail, 18px);
+}
+.project-gantt-group-heading .gantt-fold-toggle {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 3px;
+  vertical-align: -2px;
+  color: currentColor;
+}
+.project-gantt-root.is-task-tree .project-gantt-title .task-tree-toggle {
+  width: var(--gantt-tree-rail, 18px);
+  height: var(--gantt-tree-rail, 18px);
+  min-width: var(--gantt-tree-rail, 18px);
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: color-mix(in srgb, var(--muted) 92%, var(--ink));
+  background: transparent;
+  box-shadow: none;
+}
+.project-gantt-root.is-task-tree .project-gantt-title .task-tree-toggle:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--line-soft) 42%, transparent);
+  border-color: transparent;
 }
 .project-gantt-row-label.dragging { opacity: .55; cursor: grabbing; }
 .project-gantt-row-label.drop-reparent,
@@ -2850,13 +2926,6 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
 .project-gantt-group { width: max-content; min-width: 100%; margin-bottom: 16px; }
 .project-gantt-chart-group { width: max-content; min-width: 100%; margin-bottom: 0; }
 .project-gantt-group-heading strong { color: var(--ink); font-size: 12px; }
-.project-gantt-group-heading strong i {
-  display: inline-block;
-  width: 14px;
-  margin-right: 3px;
-  color: currentColor;
-  font-style: normal;
-}
 .project-collapse-button,
 .task-tree-toggle {
   width: 20px;
