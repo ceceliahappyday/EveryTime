@@ -48,10 +48,40 @@ const meeting = policy.parseDraftResponse(JSON.stringify({
   title: "2026年集团财务月度会议",
   dueDate: "2026-09-25",
   dueTime: "14:00",
+  endTime: "18:00",
   owner: "我,王芳"
 }));
 assert.equal(meeting.kind, "meeting");
 assert.equal(meeting.owner, "我,王芳");
+assert.equal(meeting.endTime, "18:00");
+const range = policy.resolveMeetingScheduleRange(meeting);
+assert.equal(range.start, 14);
+assert.equal(range.end, 18);
+
+const inviteRange = policy.parseDraftResponse(JSON.stringify({
+  kind: "meeting",
+  title: "部门例会",
+  dueDate: "2026-11-17",
+  dueTime: "14:00",
+  businessBackground: "2026年11月17日 14:00-18:00 创维半导体大厦23楼"
+}));
+assert.equal(inviteRange.dueTime, "14:00");
+assert.equal(inviteRange.endTime, "18:00");
+assert.equal(policy.resolveMeetingScheduleRange(inviteRange).end, 18);
+
+const agendaOnly = policy.parseDraftResponse(JSON.stringify({
+  kind: "meeting",
+  title: "2026年10月度财务数据联席会议",
+  dueDate: "2026-11-05",
+  dueTime: "9:00",
+  businessBackground: "议程：9:00-9:30 财务公司；9:30-9:50 税务组；9:50-11:00 会计预算；11:00-11:30 总部费用专项"
+}));
+assert.equal(agendaOnly.endTime, "11:30");
+assert.equal(policy.resolveMeetingScheduleRange(agendaOnly).start, 9);
+assert.equal(policy.resolveMeetingScheduleRange(agendaOnly).end, 11.5);
+
+const fromRawJson = policy.parseDraftListResponse(`{"items":[{"kind":"meeting","title":"财务联席会议","dueDate":"2026-11-05","dueTime":"9:00","businessBackground":"地点：新闻中心"}]}\n会议时间 9:00-11:30`);
+assert.equal(fromRawJson[0].endTime, "11:30");
 
 const inferred = policy.parseOneDraft({ title: "7月财务例会会议纪要修改" });
 assert.equal(inferred.kind, "task", "follow-up work about a meeting should stay a task");

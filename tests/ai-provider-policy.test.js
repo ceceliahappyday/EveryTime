@@ -161,9 +161,12 @@ const tokenhubVision = policy.buildChatRequest({
   userText: "today",
   images: [{ mimeType: "image/png", base64: "AAAA" }]
 });
-assert.equal(tokenhubVision.body.reasoning_effort, "low");
+assert.equal(tokenhubVision.body.reasoning_effort, "high");
+assert.equal(tokenhubVision.body.temperature, undefined);
 assert.equal(tokenhubVision.body.messages.length, 1);
 assert.equal(tokenhubVision.body.messages[0].role, "user");
-assert.ok(tokenhubVision.body.messages[0].content.some(part => part.type === "image_url"));
+const imagePart = tokenhubVision.body.messages[0].content.find(part => part.type === "image_url");
+assert.ok(imagePart);
+assert.equal(imagePart.image_url.detail, undefined);
 
 console.log("ai provider policy tests passed");

@@ -776,8 +776,8 @@ function providerErrorMessage(body = {}, status = 0, provider = {}, settings = {
   if (status === 404 && requestUrl) {
     return `${message}${urlHint}`;
   }
-  if (tokenhubLike && /maas component|invalid.*request|malformed json/i.test(message)) {
-    return `TokenHub 拒绝了请求格式：${message}。若模型为 kimi-k3.1-pro，请确认供应商为 TokenHub（广州）且模型 ID 与控制台一致；119+ 版本会自动附带 reasoning_effort。${urlHint}`;
+  if (tokenhubLike && /maas component|invalid.*request|malformed json|请求不合法/i.test(message)) {
+    return `TokenHub 拒绝了请求格式：${message}。请确认供应商为 TokenHub（广州）、模型 ID 与控制台一致（识图常用 kimi-k3.1-pro 或 kimi-k2.6）；121+ 会按 TokenHub 文档发送 reasoning_effort / 视觉字段。${urlHint}`;
   }
   if (provider?.id === "moonshot" && (status === 401 || /invalid authentication/i.test(message))) {
     const customBase = String(settings?.aiBaseUrl || "").trim();
@@ -803,6 +803,29 @@ function aiEffectiveBase(provider, settings = {}) {
     customBaseUrl: settings.aiBaseUrl,
     moonshotRegion: settings.aiMoonshotRegion
   });
+}
+
+function resolveAiProviderForSettings(apiKey, settings = {}) {
+  const inferredId = AiProviderPolicy.inferProviderIdFromBaseUrl(settings.aiBaseUrl || "");
+  const preferred = String(settings.aiProvider || "").trim();
+  let providerId = preferred;
+  if (inferredId && /^tokenhub/.test(inferredId)) {
+    providerId = inferredId;
+  } else if (inferredId && preferred === "openai_custom") {
+    providerId = inferredId;
+  }
+  return AiProviderPolicy.resolveProvider({ apiKey, providerId });
+}
+
+function isTokenHubMaasFormatError(status, body = {}) {
+  const message = String(body?.error?.message_zh || body?.error?.message || body?.message || "");
+  return (status === 400 || status === 422)
+    && /maas component|invalid.*request|malformed json|请求不合法/i.test(message);
+}
+
+function isTokenHubLike(provider, settings = {}) {
+  const baseUrl = String(settings?.aiBaseUrl || "").toLowerCase();
+  return /^tokenhub/.test(provider?.id || "") || /tokenhub/.test(baseUrl);
 }
 
 async function fetchProviderJson(request, provider, { method = "POST", body, settings = loadSettings() } = {}) {
@@ -902,11 +925,8 @@ async function listAiModels(payload = {}) {
   const settings = loadSettings();
   const apiKey = AiProviderPolicy.normalizeKey(payload.apiKey) || decryptAiKey(settings);
   if (!apiKey) throw new Error("请先填写 API Key");
-  const provider = AiProviderPolicy.resolveProvider({
-    apiKey,
-    providerId: payload.providerId || settings.aiProvider || ""
-  });
   const effectiveSettings = aiSettingsForRequest(payload, settings);
+  const provider = resolveAiProviderForSettings(apiKey, effectiveSettings);
   const effectiveBase = aiEffectiveBase(provider, effectiveSettings);
   const request = AiProviderPolicy.buildModelsRequest(provider, apiKey, { baseUrl: effectiveBase });
   let models = [];
@@ -976,10 +996,7 @@ async function askAi(payload) {
   if (settings.aiEnabled === false) throw new Error("请先在设置中启用 AI 任务助手");
   const apiKey = decryptAiKey(settings);
   if (!apiKey) throw new Error("请先在设置中填写 API Key");
-  const provider = AiProviderPolicy.resolveProvider({
-    apiKey,
-    providerId: settings.aiProvider || ""
-  });
+  const provider = resolveAiProviderForSettings(apiKey, settings);
   const effectiveBase = aiEffectiveBase(provider, settings);
   const request = AiProviderPolicy.buildChatRequest({
     provider,
@@ -1011,22 +1028,32 @@ async function extractAiTask(payload = {}) {
     today: payload.today || ""
   });
   if (!parts.base64) throw new Error("请先提供一张截图");
-  const provider = AiProviderPolicy.resolveProvider({
-    apiKey,
-    providerId: settings.aiProvider || ""
-  });
+  const provider = resolveAiProviderForSettings(apiKey, settings);
   const effectiveBase = aiEffectiveBase(provider, settings);
-  const request = AiProviderPolicy.buildChatRequest({
+  const primaryModel = AiProviderPolicy.resolveModelId(settings.aiModel || provider.defaultModel, provider);
+  const buildExtractRequest = (modelId) => AiProviderPolicy.buildChatRequest({
     provider,
     apiKey,
     baseUrl: effectiveBase,
-    model: AiProviderPolicy.resolveModelId(settings.aiModel || provider.defaultModel, provider),
+    model: modelId,
     mode: "extract_task",
     systemPrompt: AiTaskDraftPolicy.EXTRACT_SYSTEM_PROMPT,
     userText: parts.text,
     images: [{ mimeType: parts.mimeType, base64: parts.base64 }]
   });
-  const { response, body } = await fetchProviderJson(request, provider, { settings });
+  let request = buildExtractRequest(primaryModel);
+  let { response, body } = await fetchProviderJson(request, provider, { settings });
+  const tokenhubLike = isTokenHubLike(provider, settings);
+  if (
+    !response.ok
+    && tokenhubLike
+    && isTokenHubMaasFormatError(response.status, body)
+    && /kimi[-_]k3/i.test(primaryModel)
+    && primaryModel.toLowerCase() !== "kimi-k2.6"
+  ) {
+    request = buildExtractRequest("kimi-k2.6");
+    ({ response, body } = await fetchProviderJson(request, provider, { settings }));
+  }
   if (!response.ok) {
     const message = providerErrorMessage(body, response.status, provider, settings, { requestUrl: request.url });
     if (response.status !== 404 && /image|vision|multimodal|does not support|不支持|resource_not_found|model/i.test(message)) {

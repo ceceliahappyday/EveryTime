@@ -2885,13 +2885,19 @@ function createMeetingFromAiDraft(draft = {}, { persist = true } = {}) {
   if (!title) throw new Error("截图中未能识别出会议名称");
   const dateKey = String(draft.dueDate || "").trim() || state.selectedDate;
   const workStart = Number(ScheduleHoursPolicy?.DEFAULT_WORK_START ?? 9);
-  const dueTime = String(draft.dueTime || "").trim();
-  let start = workStart;
-  if (dueTime) {
-    const hour = Number(dueTime.slice(0, 2));
-    if (Number.isFinite(hour)) start = Math.max(0, Math.min(21, hour));
+  const schedule = typeof AiTaskDraftPolicy?.resolveMeetingScheduleRange === "function"
+    ? AiTaskDraftPolicy.resolveMeetingScheduleRange(draft, { defaultDurationHours: 1, maxEndHour: 22 })
+    : null;
+  let start = schedule?.start ?? workStart;
+  let end = schedule?.end ?? Math.min(22, start + 1);
+  if (!schedule) {
+    const dueTime = String(draft.dueTime || "").trim();
+    if (dueTime) {
+      const hour = Number(dueTime.slice(0, 2));
+      if (Number.isFinite(hour)) start = Math.max(0, Math.min(21, hour));
+    }
+    end = Math.min(22, start + 1);
   }
-  const end = Math.min(22, start + 1);
   const entry = {
     id: crypto.randomUUID(),
     title,
@@ -3067,6 +3073,7 @@ function openAiBatchDraftDialog(drafts = [], source = "task-dialog") {
     title: String(draft.title || "").trim(),
     dueDate: draft.dueDate || "",
     dueTime: draft.dueTime || "",
+    endTime: draft.endTime || "",
     owner: draft.owner || "",
     businessBackground: draft.businessBackground || "",
     confidence: draft.confidence,
@@ -3122,6 +3129,7 @@ function collectAiBatchDraftsFromForm() {
       title,
       dueDate: base.dueDate || "",
       dueTime: base.dueTime || "",
+      endTime: base.endTime || "",
       owner: base.owner || "",
       businessBackground: base.businessBackground || "",
       confidence: base.confidence

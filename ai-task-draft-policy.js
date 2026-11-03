@@ -16,6 +16,8 @@
     "你是 EveryTime 的截图事项提取助手。先判断截图场景，再决定输出几条——不要按行/段落机械拆分。",
     "场景规则（优先）：",
     "1) 会议邀请/日程卡片/预约详情（含标题、主题、时间、地点、正文）：只输出 1 条 meeting；标题用会议名称，主题与正文要点写入 businessBackground。",
+    "   会议时间：必填 dueTime 与 endTime，须与邀请「时间/会议时间」整段一致（如 9:00-11:30）；优先读顶部时间行，不要只看日视图色块或议程第一段。",
+    "   businessBackground 须原文包含「时间」或「会议时间」那一行（含起止时刻）；若正文有多段议程时间，endTime 仍取整场结束时刻（如 11:30），不是 9:00-9:30。",
     "2) 单个任务的详细说明/需求描述/长文备注：只输出 1 条 task；提炼可执行短标题，细节写入 businessBackground。",
     "3) 聊天或清单里确实有多件彼此独立、可分别执行的事项：才输出多条，每条一个独立动作。",
     "4) 拿不准时默认只输出 1 条，把可见信息放进 businessBackground，切勿把同一事项的多行文字拆成多条。",
@@ -32,6 +34,7 @@
     '  title: string，必填，不超过 80 字；会议用会议名称，待办写成可执行名称；',
     "  dueDate: string，YYYY-MM-DD 或空字符串（会议为开会日期，待办为目标日期）；",
     "  dueTime: string，HH:MM 24 小时制或空字符串（会议为开始时间）；",
+    "  endTime: string，HH:MM 或空字符串（仅 meeting：结束时间；与 dueTime 成对填写）；",
     '  owner: string，待办默认「我」；会议可填参会人，多人用逗号分隔，未知则空字符串；',
     "  priority: general_daily | kpi | follow_up | important_urgent | paused（会议可固定 general_daily）；",
     "  businessBackground: string，不超过 800 字，用中文概括该条相关要点；",
@@ -57,7 +60,7 @@
   function buildExtractUserText({ note = "", today = "" } = {}) {
     const lines = [
       `今天日期：${String(today || "").trim() || "未知"}`,
-      "请先判断场景（会议邀请 / 单任务详情 / 多独立事项），优先输出 1 条；仅在确实有多件独立事项时再拆多条。每条标明 kind=task 或 meeting，并只返回 JSON：{\"items\":[...]}。"
+      "请先判断场景（会议邀请 / 单任务详情 / 多独立事项），优先输出 1 条；仅在确实有多件独立事项时再拆多条。会议请填 dueTime 与 endTime（以邀请正文显式时段为准，勿只看日历色块）。每条标明 kind=task 或 meeting，并只返回 JSON：{\"items\":[...]}。"
     ];
     const hint = String(note || "").trim().slice(0, 1000);
     if (hint) lines.push(`用户补充说明：${hint}`);
@@ -131,14 +134,156 @@
     return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
   }
 
+  function normalizeTimeText(value = "") {
+    return String(value || "")
+      .replace(/：/g, ":")
+      .replace(/[\u2013\u2014\u2212–—]/g, "-");
+  }
+
   function normalizeTime(value = "") {
-    const text = String(value || "").trim();
+    const text = normalizeTimeText(String(value || "").trim());
     if (!text) return "";
+    const rangeOnly = text.match(/(\d{1,2}:\d{2})\s*[-~至到]\s*(\d{1,2}:\d{2})/);
+    if (rangeOnly && text === rangeOnly[0]) {
+      return normalizeTime(rangeOnly[1]);
+    }
     const match = text.match(/^(\d{1,2}):(\d{1,2})/);
     if (!match) return "";
     const hour = Math.max(0, Math.min(23, Number(match[1])));
     const minute = Math.max(0, Math.min(59, Number(match[2])));
     return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  function findAllTimeRangesInText(...parts) {
+    const raw = normalizeTimeText(parts.map(part => String(part || "")).join("\n"));
+    if (!raw.trim()) return [];
+    const re = /(\d{1,2}:\d{2})\s*[-~至到]\s*(\d{1,2}:\d{2})/g;
+    const ranges = [];
+    let match;
+    while ((match = re.exec(raw)) !== null) {
+      const start = normalizeTime(match[1]);
+      const end = normalizeTime(match[2]);
+      const startH = timeStringToScheduleHours(start);
+      const endH = timeStringToScheduleHours(end);
+      if (startH != null && endH != null && endH > startH) {
+        ranges.push({ start, end, startH, endH, duration: endH - startH });
+      }
+    }
+    return ranges;
+  }
+
+  function pickBestMeetingRange(ranges = [], preferStartTime = "") {
+    if (!ranges.length) return null;
+    const preferH = timeStringToScheduleHours(preferStartTime);
+    const longRanges = ranges.filter(item => item.duration >= 1.25);
+    if (longRanges.length) {
+      longRanges.sort((a, b) => b.duration - a.duration);
+      return { start: longRanges[0].start, end: longRanges[0].end };
+    }
+    if (ranges.length >= 2) {
+      let minH = Infinity;
+      let maxH = -Infinity;
+      let minStart = "";
+      let maxEnd = "";
+      ranges.forEach(item => {
+        if (item.startH < minH) {
+          minH = item.startH;
+          minStart = item.start;
+        }
+        if (item.endH > maxH) {
+          maxH = item.endH;
+          maxEnd = item.end;
+        }
+      });
+      if (maxH - minH >= 1) {
+        return { start: minStart, end: maxEnd };
+      }
+    }
+    if (preferH != null) {
+      const sameStart = ranges.filter(item => Math.abs(item.startH - preferH) < 0.03);
+      if (sameStart.length) {
+        sameStart.sort((a, b) => b.duration - a.duration);
+        return { start: sameStart[0].start, end: sameStart[0].end };
+      }
+    }
+    ranges.sort((a, b) => b.duration - a.duration);
+    return { start: ranges[0].start, end: ranges[0].end };
+  }
+
+  function findTimeRangeInText(...parts) {
+    const ranges = findAllTimeRangesInText(...parts);
+    const last = parts[parts.length - 1];
+    const preferStartTime = typeof last === "string" ? "" : "";
+    return pickBestMeetingRange(ranges, preferStartTime);
+  }
+
+  function timeStringToScheduleHours(value = "") {
+    const text = normalizeTime(value);
+    if (!text) return null;
+    const [hour, minute] = text.split(":").map(Number);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+    return hour + minute / 60;
+  }
+
+  function resolveMeetingScheduleRange(draft = {}, { defaultDurationHours = 1, maxEndHour = 22 } = {}) {
+    const dueTime = normalizeTime(draft.dueTime);
+    const endTime = normalizeTime(draft.endTime || draft.end_time || draft.meetingEndTime);
+    const startFromDue = timeStringToScheduleHours(dueTime);
+    const endFromField = timeStringToScheduleHours(endTime);
+    if (startFromDue != null && endFromField != null && endFromField > startFromDue) {
+      return {
+        start: startFromDue,
+        end: Math.min(maxEndHour, endFromField),
+        dueTime,
+        endTime
+      };
+    }
+    const scanParts = [
+      draft.businessBackground,
+      draft.title,
+      draft.dueTime,
+      draft.endTime,
+      draft.extraScanText
+    ];
+    const ranges = findAllTimeRangesInText(...scanParts);
+    const range = pickBestMeetingRange(ranges, dueTime);
+    if (range) {
+      const rangeStart = timeStringToScheduleHours(range.start);
+      const rangeEnd = timeStringToScheduleHours(range.end);
+      if (rangeStart != null && rangeEnd != null && rangeEnd > rangeStart) {
+        return {
+          start: rangeStart,
+          end: Math.min(maxEndHour, rangeEnd),
+          dueTime: range.start,
+          endTime: range.end
+        };
+      }
+    }
+    let start = startFromDue;
+    if (start == null) start = 9;
+    let end = endFromField;
+    if (end == null || end <= start) {
+      end = Math.min(maxEndHour, start + defaultDurationHours);
+    } else {
+      end = Math.min(maxEndHour, end);
+    }
+    return {
+      start,
+      end,
+      dueTime: dueTime || "",
+      endTime: endTime || ""
+    };
+  }
+
+  function enrichMeetingDraftTimes(draft = {}, rawExtractText = "") {
+    if (draft.kind !== "meeting") return draft;
+    const range = resolveMeetingScheduleRange({
+      ...draft,
+      extraScanText: String(rawExtractText || "").slice(0, 4000)
+    });
+    draft.dueTime = range.dueTime || draft.dueTime;
+    draft.endTime = range.endTime || draft.endTime;
+    return draft;
   }
 
   function resolveDraftTitle(source = {}) {
@@ -180,16 +325,21 @@
     confidence = Math.max(0, Math.min(1, confidence));
     const ownerDefault = kind === "meeting" ? "" : "我";
     const ownerLimit = kind === "meeting" ? 80 : 30;
-    return {
+    const draft = {
       kind,
       title,
       dueDate: normalizeDate(source.dueDate),
       dueTime: normalizeTime(source.dueTime),
+      endTime: normalizeTime(source.endTime || source.end_time || source.meetingEndTime),
       owner: String(source.owner || ownerDefault).trim().slice(0, ownerLimit) || ownerDefault,
       priority,
       businessBackground: String(source.businessBackground || "").trim().slice(0, 800),
       confidence
     };
+    if (kind === "meeting") {
+      enrichMeetingDraftTimes(draft, "");
+    }
+    return draft;
   }
 
   function coerceDraftSources(value) {
@@ -248,7 +398,7 @@
     rawItems.forEach(item => {
       if (drafts.length >= MAX_DRAFTS) return;
       try {
-        drafts.push(parseOneDraft(item));
+        drafts.push(enrichMeetingDraftTimes(parseOneDraft(item), rawText));
       } catch {}
     });
     if (!drafts.length) {
@@ -275,6 +425,12 @@
     normalizeItemKind,
     parseOneDraft,
     parseDraftResponse,
-    parseDraftListResponse
+    parseDraftListResponse,
+    findTimeRangeInText,
+    findAllTimeRangesInText,
+    pickBestMeetingRange,
+    timeStringToScheduleHours,
+    resolveMeetingScheduleRange,
+    enrichMeetingDraftTimes
   };
 });

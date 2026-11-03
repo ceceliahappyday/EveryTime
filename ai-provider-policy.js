@@ -125,7 +125,7 @@
       baseUrl: "https://tokenhub.tencentmaas.com/v1",
       protocol: "openai-chat",
       defaultModel: "deepseek-v3",
-      fallbackModels: ["deepseek-v3", "deepseek-r1", "DeepSeek-V4.1-Flash-1017"]
+      fallbackModels: ["kimi-k3.1-pro", "kimi-k2.6", "deepseek-v3", "deepseek-r1", "DeepSeek-V4.1-Flash-1017"]
     },
     tokenhub_intl: {
       id: "tokenhub_intl",
@@ -223,7 +223,7 @@
 
   function isKimiK3FamilyModel(modelId = "") {
     const value = String(modelId || "").toLowerCase();
-    return /kimi-k3(?:\.|$|-)/.test(value) || /kimi-k2\.8-preview/.test(value);
+    return /kimi[-_]k3/i.test(value) || /kimi-k2\.8-preview/.test(value);
   }
 
   function isKimiLegacyThinkingModel(modelId = "") {
@@ -231,14 +231,15 @@
     return /kimi-k2\.[67]/.test(value) || value === "kimi-k2.6";
   }
 
-  function buildOpenAiVisionContentParts({ system = "", text = "", imageList = [] } = {}) {
+  function buildOpenAiVisionContentParts({ system = "", text = "", imageList = [], tokenHubStyle = false } = {}) {
     const prompt = [String(system || "").trim(), String(text || "").trim()].filter(Boolean).join("\n\n");
     const parts = [];
     if (prompt) parts.push({ type: "text", text: prompt });
     imageList.forEach(image => {
+      const url = `data:${image.mimeType};base64,${image.base64}`;
       parts.push({
         type: "image_url",
-        image_url: { url: `data:${image.mimeType};base64,${image.base64}`, detail: "auto" }
+        image_url: tokenHubStyle ? { url } : { url, detail: "auto" }
       });
     });
     return parts;
@@ -477,7 +478,7 @@
     const userContent = imageList.length
       ? (
         useTokenHubVision
-          ? buildOpenAiVisionContentParts({ system, text, imageList })
+          ? buildOpenAiVisionContentParts({ system, text, imageList, tokenHubStyle: true })
           : [
             { type: "text", text },
             ...imageList.map(image => ({
@@ -497,12 +498,15 @@
 
     const body = {
       model: chosenModel,
-      temperature: isExtract ? 0.1 : 0.2,
       max_tokens: isExtract ? 4096 : 2048,
       messages
     };
+    const tokenHubKimi = tokenHub && (isKimiK3FamilyModel(chosenModel) || isKimiLegacyThinkingModel(chosenModel) || imageList.length > 0);
+    if (!tokenHubKimi) {
+      body.temperature = isExtract ? 0.1 : 0.2;
+    }
     if (tokenHub && isKimiK3FamilyModel(chosenModel)) {
-      body.reasoning_effort = isExtract ? "low" : "high";
+      body.reasoning_effort = isExtract ? "high" : "high";
     } else if (tokenHub && isKimiLegacyThinkingModel(chosenModel)) {
       body.thinking = { type: "enabled" };
     }
