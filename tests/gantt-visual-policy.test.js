@@ -57,6 +57,8 @@ const requiredApp = [
   "gantt-period-nav",
   "jumpProjectGanttToToday",
   "selectGanttTaskRow",
+  "applyGanttMultiSelectEvent",
+  "clearGanttLabelResizeSession",
   "showListItemContextMenu",
   "taskContextActionsMenuHtml",
   "applyCategoryToSelection",

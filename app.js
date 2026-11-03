@@ -4116,6 +4116,13 @@ function saveGanttLabelWidth(width) {
   return next;
 }
 
+function clearGanttLabelResizeSession() {
+  document.body.classList.remove("gantt-label-resizing");
+  document.querySelectorAll(".project-gantt-resize-handle.is-dragging").forEach(node => {
+    node.classList.remove("is-dragging");
+  });
+}
+
 function bindGanttLabelResize(handle, splits = []) {
   if (!handle) return;
   const targets = (Array.isArray(splits) ? splits : [splits]).filter(Boolean);
@@ -4126,7 +4133,7 @@ function bindGanttLabelResize(handle, splits = []) {
     const startWidth = getGanttLabelWidth();
     handle.classList.add("is-dragging");
     document.body.classList.add("gantt-label-resizing");
-    handle.setPointerCapture(event.pointerId);
+    try { handle.setPointerCapture(event.pointerId); } catch {}
     const applyWidth = width => {
       const next = `${width}px`;
       targets.forEach(split => split.style.setProperty("--gantt-label-width", next));
@@ -4136,18 +4143,18 @@ function bindGanttLabelResize(handle, splits = []) {
       state.ganttLabelWidth = next;
       applyWidth(next);
     };
-    const onUp = upEvent => {
-      handle.classList.remove("is-dragging");
-      document.body.classList.remove("gantt-label-resizing");
-      try { handle.releasePointerCapture(upEvent.pointerId); } catch {}
-      handle.removeEventListener("pointermove", onMove);
-      handle.removeEventListener("pointerup", onUp);
-      handle.removeEventListener("pointercancel", onUp);
+    const finish = () => {
+      clearGanttLabelResizeSession();
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", finish);
+      document.removeEventListener("pointercancel", finish);
+      window.removeEventListener("blur", finish);
       saveGanttLabelWidth(state.ganttLabelWidth);
     };
-    handle.addEventListener("pointermove", onMove);
-    handle.addEventListener("pointerup", onUp);
-    handle.addEventListener("pointercancel", onUp);
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", finish);
+    document.addEventListener("pointercancel", finish);
+    window.addEventListener("blur", finish);
   });
 }
 
@@ -7548,6 +7555,7 @@ function applyGanttAxisTrackWidths({
 }
 
 function renderProjectSchedule() {
+  clearGanttLabelResizeSession();
   const ganttView = getGanttViewConfig();
   const allProjects = getProjectSummaries();
   // Gantt shows every status group by default; left-panel status tabs do not apply here.
@@ -7889,6 +7897,7 @@ function renderProjectSchedule() {
   requestAnimationFrame(() => {
     syncBucketDropWidth();
     restoreProjectGanttRowsScroll(state.projectRowsScrollTop);
+    paintGanttSelection();
   });
 }
 
@@ -8154,6 +8163,22 @@ function applyListMultiSelectEvent(event, kind, id) {
   event.preventDefault();
   event.stopPropagation();
   selectListItem(kind, id, {
+    additive: event.ctrlKey || event.metaKey,
+    range: event.shiftKey
+  });
+  return true;
+}
+
+const GANTT_ROW_SELECTION_IGNORE = ".task-tree-toggle, .gantt-add-child, .gantt-col-filter-btn, .project-gantt-resize-handle, button, input, select, textarea, a";
+
+/** Pointerdown multi-select for draggable gantt rows (mirrors task list cards). */
+function applyGanttMultiSelectEvent(event, taskId) {
+  if (!taskId || !isListMultiSelectEvent(event) || event.button != null && event.button !== 0) return false;
+  if (event.target?.closest?.(GANTT_ROW_SELECTION_IGNORE)) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  clearListSelection();
+  selectGanttTaskRow(taskId, {
     additive: event.ctrlKey || event.metaKey,
     range: event.shiftKey
   });
@@ -8479,12 +8504,28 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   }
   chartRow.querySelectorAll(".gantt-entry-label").forEach(node => fitGanttProgressLabel(node, node.textContent));
   const openTask = () => openTaskDialog(task);
+  let suppressGanttRowActivate = false;
+  const onGanttRowPointerDown = event => {
+    if (event.target?.closest?.(GANTT_ROW_SELECTION_IGNORE)) return;
+    if (!applyGanttMultiSelectEvent(event, task.id)) return;
+    suppressGanttRowActivate = true;
+  };
+  labelRow.addEventListener("pointerdown", onGanttRowPointerDown);
+  chartRow.addEventListener("pointerdown", onGanttRowPointerDown);
   const selectRow = event => {
     if (event.target?.closest?.(".task-tree-toggle, .gantt-add-child")) return;
-    selectGanttTaskRow(task.id, {
-      additive: event.ctrlKey || event.metaKey,
-      range: event.shiftKey
-    });
+    if (suppressGanttRowActivate) {
+      suppressGanttRowActivate = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (isListMultiSelectEvent(event)) {
+      applyGanttMultiSelectEvent(event, task.id);
+      return;
+    }
+    clearListSelection();
+    selectGanttTaskRow(task.id, { additive: false, range: false });
   };
   labelRow.querySelector(".task-tree-toggle")?.addEventListener("click", event => {
     event.stopPropagation();
@@ -8948,6 +8989,10 @@ function bindGanttLabelReparent(labelRow, task, chartRow = null) {
   labelRow.draggable = true;
   labelRow.addEventListener("dragstart", event => {
     if (event.target?.closest?.(".task-tree-toggle, .gantt-add-child")) {
+      event.preventDefault();
+      return;
+    }
+    if (isListMultiSelectEvent(event)) {
       event.preventDefault();
       return;
     }
