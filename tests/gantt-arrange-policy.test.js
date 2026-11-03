@@ -155,4 +155,42 @@ const tagSections = policy.buildSections({
 assert.ok(tagSections.some(s => s.label === "学习"), "tag arrange groups by category label");
 assert.ok(tagSections.some(s => s.label === "生活"));
 
+const nestSections = policy.buildSections({
+  ...buildArgs,
+  config: policy.normalizeConfig({
+    dimensions: [
+      { id: "taskTree", enabled: true },
+      { id: "taskStatus", enabled: false }
+    ]
+  })
+});
+const leftovers = policy.attachMeetingRowsUnderTasks(nestSections, [
+  {
+    kind: "meeting",
+    parentTaskId: "c1",
+    meeting: { title: "评审会", linkedTaskId: "c1" },
+    task: { id: "meeting:review", title: "评审会" },
+    depth: 0
+  },
+  {
+    kind: "meeting",
+    parentTaskId: "",
+    meeting: { title: "无关联会" },
+    task: { id: "meeting:free", title: "无关联会" },
+    depth: 0
+  }
+]);
+assert.equal(leftovers.length, 1, "unlinked meetings stay leftover");
+assert.equal(leftovers[0].task.title, "无关联会");
+const wovenIds = [];
+const walkMeet = node => {
+  (node.rows || []).forEach(row => wovenIds.push(row.kind === "meeting" ? `m:${row.task.title}` : row.task.id));
+  (node.children || []).forEach(walkMeet);
+};
+nestSections.forEach(walkMeet);
+assert.ok(wovenIds.includes("m:评审会"), "linked meeting nests under its task tree");
+const meetIdx = wovenIds.indexOf("m:评审会");
+const childIdx = wovenIds.indexOf("c1");
+assert.ok(childIdx >= 0 && meetIdx > childIdx, "meeting appears after its parent task row");
+
 console.log("gantt arrange policy tests passed");

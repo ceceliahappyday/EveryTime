@@ -637,6 +637,92 @@
     return unitSections;
   }
 
+  function meetingParentTaskId(row) {
+    return String(row?.parentTaskId || row?.meeting?.linkedTaskId || "").trim();
+  }
+
+  /** Insert linked meeting rows under their task; returns leftover unlinked meetings. */
+  function attachMeetingRowsUnderTasks(sections = [], meetingRows = []) {
+    const byParent = new Map();
+    const leftovers = [];
+    (meetingRows || []).forEach(row => {
+      const parentId = meetingParentTaskId(row);
+      if (!parentId) {
+        leftovers.push(row);
+        return;
+      }
+      if (!byParent.has(parentId)) byParent.set(parentId, []);
+      byParent.get(parentId).push(row);
+    });
+
+    const weaveRows = rows => {
+      const result = [];
+      const stack = [];
+      const flush = untilDepth => {
+        while (stack.length && stack[stack.length - 1].depth >= untilDepth) {
+          const frame = stack.pop();
+          const meets = byParent.get(frame.taskId);
+          if (!meets?.length) continue;
+          byParent.delete(frame.taskId);
+          if (frame.collapsed) continue;
+          meets.forEach(meet => {
+            result.push({
+              ...meet,
+              depth: frame.depth + 1,
+              rootId: frame.rootId || frame.taskId,
+              parentTaskId: frame.taskId
+            });
+          });
+        }
+      };
+      (rows || []).forEach(row => {
+        if (row?.kind === "meeting") {
+          result.push(row);
+          return;
+        }
+        const depth = Math.max(0, Number(row?.depth) || 0);
+        flush(depth);
+        result.push(row);
+        if (row?.task?.id) {
+          stack.push({
+            taskId: row.task.id,
+            depth,
+            rootId: row.rootId || row.task.id,
+            collapsed: Boolean(row.collapsed)
+          });
+        }
+      });
+      flush(-1);
+      return result;
+    };
+
+    const walk = section => {
+      if (!section) return;
+      section.rows = weaveRows(section.rows || []);
+      (section.children || []).forEach(walk);
+      const parentId = section.parentRow?.task?.id;
+      if (parentId && byParent.has(parentId)) {
+        const meets = byParent.get(parentId);
+        byParent.delete(parentId);
+        if (!section.parentRow.collapsed) {
+          const depth = Math.max(0, Number(section.parentRow.depth) || 0);
+          section.rows = [
+            ...(section.rows || []),
+            ...meets.map(meet => ({
+              ...meet,
+              depth: depth + 1,
+              rootId: section.parentRow.rootId || parentId,
+              parentTaskId: parentId
+            }))
+          ];
+        }
+      }
+    };
+    (sections || []).forEach(walk);
+    byParent.forEach(rows => leftovers.push(...rows));
+    return leftovers;
+  }
+
   return {
     STORAGE_KEY,
     DIMENSIONS,
@@ -659,6 +745,8 @@
     priorityLabel,
     buildProjectRows,
     buildTreeUnit,
-    buildSections
+    buildSections,
+    attachMeetingRowsUnderTasks,
+    meetingParentTaskId
   };
 });

@@ -183,4 +183,41 @@ assert.deepStrictEqual(
   "in-progress list should order by latest schedule invest, newest first"
 );
 
+const mergedFields = policy.mergeTaskFieldUpdates(
+  {
+    id: "keep",
+    title: "主",
+    category: "work",
+    owner: "甲",
+    priority: "kpi",
+    parentId: "p1",
+    dueDate: "2026-11-10",
+    dueTime: "12:00",
+    startedAt: "2026-11-08T10:00:00.000Z",
+    completedAt: "",
+    description: "主说明",
+    progress: 20
+  },
+  [
+    {
+      id: "a",
+      dueDate: "2026-11-20",
+      dueTime: "18:00",
+      startedAt: "2026-11-01T08:00:00.000Z",
+      completedAt: "2026-11-15T18:00:00.000Z",
+      description: "支说明",
+      progress: 40
+    }
+  ]
+);
+assert.equal(mergedFields.category, "work", "survivor category wins");
+assert.equal(mergedFields.owner, "甲", "survivor owner wins");
+assert.equal(mergedFields.startedAt, "2026-11-01T08:00:00.000Z", "start uses earlier timestamp");
+assert.equal(mergedFields.completedAt, "2026-11-15T18:00:00.000Z", "end uses later timestamp");
+assert.equal(mergedFields.dueDate, "2026-11-20", "due date uses later plan");
+assert.equal(mergedFields.dueTime, "18:00");
+assert.match(mergedFields.description, /主说明/);
+assert.match(mergedFields.description, /支说明/);
+assert.equal(mergedFields.progress, 40);
+
 console.log("todo list policy tests passed");

@@ -2465,10 +2465,14 @@ body.gantt-label-resizing * {
   cursor: grab;
 }
 .project-gantt-row-label.dragging { opacity: .55; cursor: grabbing; }
-.project-gantt-row-label.drop-reparent {
+.project-gantt-row-label.drop-reparent,
+.project-gantt-row-chart.drop-reparent {
   border-radius: 8px;
   outline: 2px solid var(--accent);
   background: rgba(101, 180, 177, .18);
+}
+.project-gantt-row-chart.drop-reparent {
+  outline-offset: -2px;
 }
 .project-gantt-row-chart { position: relative; }
 .visually-hidden-select { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
@@ -6951,14 +6955,30 @@ body.in-desktop.glass-mode .settings-work-hours-line {
 }
 
 .toast {
-  position: fixed; z-index: 20; left: 50%; bottom: 30px;
+  /* popover=manual keeps toasts above open <dialog> top layer */
+  position: fixed;
+  inset: unset;
+  z-index: 2147483646;
+  left: 50%;
+  bottom: 30px;
+  margin: 0;
   padding: 10px 15px;
-  color: #fff; background: #30332f; border-radius: 9px;
-  font-size: 11px; box-shadow: 0 8px 26px rgba(0,0,0,.2);
-  opacity: 0; transform: translate(-50%, 12px); pointer-events: none;
+  border: 0;
+  color: #fff;
+  background: #30332f;
+  border-radius: 9px;
+  font-size: 11px;
+  box-shadow: 0 8px 26px rgba(0,0,0,.2);
+  opacity: 0;
+  transform: translate(-50%, 12px);
+  pointer-events: none;
   transition: .2s ease;
 }
-.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.show,
+.toast:popover-open {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
 .attention-alarm-banner {
   position: fixed;
   z-index: 24;

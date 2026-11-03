@@ -9,6 +9,8 @@ const required = [
   "TodoListPolicy.sortByCreatedAtAsc",
   "TodoListPolicy.sortByDueDateAsc",
   "TodoListPolicy.sortByLatestInvestDesc",
+  "TodoListPolicy.mergeTaskFieldUpdates",
+  "removeMergedSourceTasks",
   'state.filter === "in_progress"',
   'state.filter === "all"',
   "taskListSearch",

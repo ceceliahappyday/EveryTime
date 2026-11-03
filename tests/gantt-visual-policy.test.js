@@ -8,7 +8,10 @@ const requiredApp = [
   "createCalendarGanttRow",
   "getCalendarMeetingSummaries",
   "buildMeetingArrangeRows",
-  "extraRows: meetingRows",
+  "attachMeetingRowsUnderTasks",
+  "parentTaskId",
+  "removeMergedSourceTasks",
+  "mergeTaskFieldUpdates",
   "scheduleOverviewItemsForDate",
   "renderDayOverviewList",
   "ProjectViewPolicy.entryInvestmentSegments",
@@ -25,7 +28,11 @@ const requiredApp = [
   "bindGanttLabelResize",
   "project-gantt-resize-handle",
   "bindGanttLabelReparent",
+  "bindGanttReparentDropTarget",
+  "isGanttReparentDrag",
+  "ensureGanttTreeDepthForChild",
   "reparentTaskOnto",
+  "成为其子任务",
   "dataset.depth",
   "gantt-add-child",
   "bindGanttRowContextMenu",
@@ -271,8 +278,15 @@ if (!app.includes("bindGanttBlankContextMenu") || !app.includes("isGanttTaskRowC
 if (app.includes('placeholder = meeting ? "例如：我')) {
   throw new Error("owner placeholders must not use 我 as the example person");
 }
-if (!app.includes("window.confirm(message)")) {
-  throw new Error("gantt/task delete must ask for secondary confirmation");
+if (!app.includes("appConfirm(") || !app.includes('title: "删除任务"') || !app.includes('title: "合并任务"')) {
+  throw new Error("gantt/task delete and merge must use in-app confirm (not native window.confirm under always-on-top)");
+}
+const html = fs.readFileSync("index.html", "utf8");
+if (!html.includes('id="appConfirmDialog"') || !/id="toast"[^>]*popover="manual"/.test(html)) {
+  throw new Error("merge/delete confirm dialog and top-layer toast are required");
+}
+if (!/\.toast\s*\{[^}]*z-index:\s*2147483646/s.test(styles)) {
+  throw new Error("toast must stay above open dialogs after merge");
 }
 if (!app.includes('openTaskDialog(null, { parentId: parentTask.id, lockParent: true })')) {
   throw new Error("gantt new-child must open dialog with locked parent");

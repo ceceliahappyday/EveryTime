@@ -857,7 +857,25 @@
     </form>
   </dialog>
 
-  <div class="toast" id="toast" role="status"></div>
+  <dialog class="modal small-modal" id="appConfirmDialog">
+    <form method="dialog" id="appConfirmForm">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">CONFIRM</span>
+          <h3 id="appConfirmTitle">确认</h3>
+        </div>
+        <button type="button" class="close-button" data-close-dialog="appConfirmDialog" aria-label="关闭">×</button>
+      </div>
+      <p class="entry-link-confirm-message" id="appConfirmMessage"></p>
+      <div class="modal-actions">
+        <span></span>
+        <button type="button" class="soft-button" id="appConfirmCancel">取消</button>
+        <button type="submit" class="primary-button" id="appConfirmOk">确认</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" popover="manual" aria-live="polite"></div>
   <button type="button" class="attention-alarm-banner" id="attentionAlarmBanner" hidden>
     <strong>关注提醒</strong>
     <span id="attentionAlarmBannerText">有任务已到目标完成日期，点击查看</span>

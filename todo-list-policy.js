@@ -366,6 +366,66 @@
     );
   }
 
+  function pickEarliestIso(values = []) {
+    return [...values]
+      .map(value => String(value || "").trim())
+      .filter(Boolean)
+      .sort()[0] || "";
+  }
+
+  function pickLatestIso(values = []) {
+    const list = [...values]
+      .map(value => String(value || "").trim())
+      .filter(Boolean)
+      .sort();
+    return list[list.length - 1] || "";
+  }
+
+  function taskDueStamp(task = {}) {
+    const date = String(task?.dueDate || "").trim();
+    if (!date) return "";
+    const time = String(task?.dueTime || "").trim() || "00:00";
+    return `${date}T${time}`;
+  }
+
+  /** Keep survivor category/owner/priority; roll text + earliest start / latest end / latest due. */
+  function mergeTaskFieldUpdates(survivor = {}, sources = []) {
+    const pool = [survivor, ...(sources || []).filter(Boolean)];
+    const pickText = key => {
+      const parts = [];
+      pool.forEach(task => {
+        const text = String(task?.[key] || "").trim();
+        if (!text || parts.includes(text)) return;
+        parts.push(text);
+      });
+      return parts.join("\n\n");
+    };
+    const earliestStart = pickEarliestIso(pool.flatMap(task => [task.startOverrideAt, task.startedAt]));
+    const latestEnd = pickLatestIso(pool.map(task => task.completedAt));
+    const dueSorted = pool
+      .filter(task => String(task?.dueDate || "").trim())
+      .sort((a, b) => taskDueStamp(a).localeCompare(taskDueStamp(b)));
+    const latestDue = dueSorted[dueSorted.length - 1] || null;
+    const progress = Math.max(0, ...pool.map(task => Number(task.progress) || 0));
+    return {
+      description: pickText("description"),
+      businessBackground: pickText("businessBackground"),
+      problemReason: pickText("problemReason"),
+      deliveryNote: pickText("deliveryNote"),
+      startedAt: earliestStart || survivor.startedAt || "",
+      startOverrideAt: earliestStart || survivor.startOverrideAt || "",
+      completedAt: latestEnd || survivor.completedAt || "",
+      dueDate: latestDue?.dueDate || survivor.dueDate || "",
+      dueTime: latestDue ? (latestDue.dueTime || "") : (survivor.dueTime || ""),
+      progress,
+      category: survivor.category,
+      color: survivor.color,
+      priority: survivor.priority,
+      owner: survivor.owner,
+      parentId: survivor.parentId || ""
+    };
+  }
+
   return {
     FILTER_STORAGE_KEY,
     DEFAULT_FILTER,
@@ -398,6 +458,10 @@
     classifyTodoStatusBucket,
     buildStatusSections,
     taskLatestInvestMs,
-    sortByLatestInvestDesc
+    sortByLatestInvestDesc,
+    pickEarliestIso,
+    pickLatestIso,
+    taskDueStamp,
+    mergeTaskFieldUpdates
   };
 });
