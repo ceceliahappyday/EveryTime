@@ -1768,6 +1768,9 @@ async function initDesktop() {
     syncAiBaseUrlPlaceholder();
     refreshAiProviderModels({ forceList: true });
   });
+  el.settingAiBaseUrl?.addEventListener("change", () => {
+    refreshAiProviderModels({ forceList: true });
+  });
   // Restore last 视图 preference so a wide shell never looks like “日程被清空”.
   const preferSchedule = loadScheduleRevealedPreference();
   state.scheduleRevealed = preferSchedule;
@@ -2330,11 +2333,13 @@ async function refreshAiProviderModels({ forceList = false, providerId = "", sel
   try {
     const detected = await window.desktopAPI.aiDetectProvider({
       apiKey,
-      providerId: providerId || el.settingAiProvider?.value || ""
+      providerId: providerId || el.settingAiProvider?.value || "",
+      aiBaseUrl: el.settingAiBaseUrl?.value?.trim() || ""
     });
+    const selectedProvider = detected.inferredProviderId || detected.providerId || providerId || el.settingAiProvider?.value || "openai";
     fillAiProviderOptions(
       providerOptionsForSettings(detected.providers || []),
-      detected.providerId || providerId || el.settingAiProvider?.value || "openai"
+      selectedProvider
     );
     syncAiBaseUrlPlaceholder();
     if (!detected.configured && !apiKey) {

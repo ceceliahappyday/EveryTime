@@ -124,5 +124,14 @@ assert.deepEqual(
   ["https://proxy.example/v1"]
 );
 assert.equal(policy.normalizeApiBaseUrl(""), "");
+assert.equal(
+  policy.inferProviderIdFromBaseUrl("https://tokenhub.tencentmaas.com/v1"),
+  "tokenhub_gz"
+);
+assert.equal(
+  policy.inferProviderIdFromBaseUrl("https://tokenhub-intl.tencentmaas.com/v1"),
+  "tokenhub_intl"
+);
+assert.equal(policy.getProvider("tokenhub_gz").name, "腾讯云 TokenHub（广州）");
 
 console.log("ai provider policy tests passed");

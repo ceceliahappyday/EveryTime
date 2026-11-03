@@ -812,6 +812,10 @@ async function fetchProviderJson(request, provider, { method = "POST", body, set
 
 function detectAiProvider(payload = {}) {
   const settings = loadSettings();
+  const effectiveSettings = aiSettingsForRequest(payload, settings);
+  const baseUrl = effectiveSettings.aiBaseUrl || "";
+  const inferredProviderId = AiProviderPolicy.inferProviderIdFromBaseUrl(baseUrl);
+  const inferredProvider = inferredProviderId ? AiProviderPolicy.getProvider(inferredProviderId) : null;
   const apiKey = AiProviderPolicy.normalizeKey(payload.apiKey) || decryptAiKey(settings);
   if (!apiKey) {
     return {
@@ -820,13 +824,29 @@ function detectAiProvider(payload = {}) {
       providerName: "",
       ambiguous: false,
       providers: [],
-      message: "请先填写 API Key"
+      inferredProviderId,
+      inferredProviderName: inferredProvider?.name || "",
+      message: inferredProvider
+        ? `根据接口地址识别为：${inferredProvider.name}（填写 Key 后可测试连接）`
+        : "请先填写 API Key"
     };
   }
+  const preferredId = payload.providerId || settings.aiProvider || "";
+  const providerId = inferredProviderId && (!preferredId || preferredId === "openai" || preferredId === "deepseek")
+    ? inferredProviderId
+    : preferredId;
   const resolved = AiProviderPolicy.resolveProvider({
     apiKey,
-    providerId: payload.providerId || settings.aiProvider || ""
+    providerId
   });
+  const urlHint = inferredProvider && resolved.id === inferredProviderId
+    ? `接口地址对应 ${inferredProvider.name}。`
+    : (inferredProvider && resolved.id !== inferredProviderId
+      ? `接口地址像 ${inferredProvider.name}，当前选中 ${resolved.name}，不对请改供应商。`
+      : "");
+  const keyHint = resolved.ambiguous
+    ? "Key 为 sk- 通用格式，无法仅从 Key 判断 TokenHub，请结合接口地址选供应商。"
+    : "";
   return {
     configured: true,
     providerId: resolved.id,
@@ -835,9 +855,11 @@ function detectAiProvider(payload = {}) {
     ambiguous: resolved.ambiguous,
     providers: AiProviderPolicy.providerOptionsForKey(apiKey),
     defaultModel: resolved.defaultModel,
-    message: resolved.ambiguous
-      ? `已识别为 OpenAI 兼容密钥，当前服务商：${resolved.name}（可切换）`
-      : `已识别服务商：${resolved.name}`
+    inferredProviderId,
+    inferredProviderName: inferredProvider?.name || "",
+    message: [urlHint, keyHint, resolved.ambiguous
+      ? `当前服务商：${resolved.name}（可切换）`
+      : `已识别服务商：${resolved.name}`].filter(Boolean).join(" ")
   };
 }
 

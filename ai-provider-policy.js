@@ -118,10 +118,43 @@
       protocol: "gemini",
       defaultModel: "gemini-2.5-flash",
       fallbackModels: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash"]
+    },
+    tokenhub_gz: {
+      id: "tokenhub_gz",
+      name: "腾讯云 TokenHub（广州）",
+      baseUrl: "https://tokenhub.tencentmaas.com/v1",
+      protocol: "openai-chat",
+      defaultModel: "deepseek-v3",
+      fallbackModels: ["deepseek-v3", "deepseek-r1", "DeepSeek-V4.1-Flash-1017"]
+    },
+    tokenhub_intl: {
+      id: "tokenhub_intl",
+      name: "腾讯云 TokenHub（新加坡）",
+      baseUrl: "https://tokenhub-intl.tencentmaas.com/v1",
+      protocol: "openai-chat",
+      defaultModel: "deepseek-v3",
+      fallbackModels: ["deepseek-v3", "deepseek-r1"]
+    },
+    openai_custom: {
+      id: "openai_custom",
+      name: "OpenAI 兼容（自定义接口）",
+      baseUrl: "https://api.openai.com/v1",
+      protocol: "openai-chat",
+      defaultModel: "gpt-4o",
+      fallbackModels: ["gpt-4o", "gpt-4.1-mini"]
     }
   };
 
-  const AMBIGUOUS_SK_PROVIDERS = ["openai", "deepseek", "moonshot", "siliconflow", "dashscope"];
+  const AMBIGUOUS_SK_PROVIDERS = [
+    "openai",
+    "openai_custom",
+    "deepseek",
+    "moonshot",
+    "siliconflow",
+    "dashscope",
+    "tokenhub_gz",
+    "tokenhub_intl"
+  ];
 
   function normalizeKey(apiKey = "") {
     return String(apiKey || "").trim();
@@ -173,6 +206,24 @@
     let normalized = value.replace(/\/+$/, "");
     if (!/^https?:\/\//i.test(normalized)) normalized = `https://${normalized}`;
     return normalized;
+  }
+
+  /** sk- 密钥无法区分 TokenHub / DeepSeek 等；根据 Base URL 推断供应商（与 Workbuddy 预置目录一致） */
+  function inferProviderIdFromBaseUrl(url = "") {
+    const raw = String(url || "").trim().toLowerCase();
+    if (!raw) return "";
+    const normalized = normalizeApiBaseUrl(raw).toLowerCase();
+    if (/tokenhub-intl/.test(normalized) && /tencent(?:cloud)?maas/.test(normalized)) return "tokenhub_intl";
+    if (/tokenhub/.test(normalized) && /tencent(?:cloud)?maas/.test(normalized)) return "tokenhub_gz";
+    if (/api\.moonshot\.(cn|ai)/.test(normalized)) return "moonshot";
+    if (/api\.deepseek\.com/.test(normalized)) return "deepseek";
+    if (/openrouter\.ai/.test(normalized)) return "openrouter";
+    if (/api\.openai\.com/.test(normalized)) return "openai";
+    if (/siliconflow\.cn/.test(normalized)) return "siliconflow";
+    if (/dashscope\.aliyuncs\.com/.test(normalized)) return "dashscope";
+    if (/generativelanguage\.googleapis\.com/.test(normalized)) return "gemini";
+    if (/anthropic\.com/.test(normalized)) return "anthropic";
+    return normalized ? "openai_custom" : "";
   }
 
   function providerBaseUrls(provider = {}, { moonshotRegion = "auto", customBaseUrl = "", moonshotBaseUrl = "" } = {}) {
@@ -424,6 +475,7 @@
     resolveModelId,
     normalizeMoonshotRegion,
     normalizeApiBaseUrl,
+    inferProviderIdFromBaseUrl,
     providerBaseUrls,
     swapRequestBaseUrl,
     resolveProvider,

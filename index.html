@@ -756,20 +756,20 @@
               </div>
             </div>
             <div class="settings-card settings-ai-model-card">
-              <label class="settings-row settings-row-inline">
+              <label class="settings-row settings-ai-field">
                 <span class="settings-row-copy">
                   <strong>供应商</strong>
-                  <small>OpenAI 兼容、Anthropic、Gemini 等；Key 前缀不明时可手动选择</small>
+                  <small>TokenHub / DeepSeek 等 sk- Key 无法自动区分，请结合接口地址选择（填 TokenHub 地址会推荐广州/新加坡）</small>
                 </span>
-                <select id="settingAiProvider"></select>
+                <select id="settingAiProvider" class="settings-ai-control"></select>
               </label>
-              <label class="settings-row settings-row-inline settings-ai-key-row">
+              <div class="settings-row settings-ai-field">
                 <span class="settings-row-copy">
                   <strong>API Key</strong>
                 </span>
                 <div class="settings-ai-key-controls">
                   <span class="secret-input-wrap">
-                    <input id="settingAiApiKey" type="password" autocomplete="off" placeholder="粘贴 API Key" />
+                    <input id="settingAiApiKey" class="settings-ai-control" type="password" autocomplete="off" placeholder="粘贴 API Key" />
                     <button type="button" class="secret-input-toggle" aria-label="显示 Key" aria-pressed="false" title="显示 Key">
                       <svg class="secret-input-icon secret-input-icon--hidden" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18M10.5 10.677a2.5 2.5 0 003 3M7.362 7.561C5.68 8.74 4.279 10.42 3 12c1.889 2.991 5.282 6 9 6 1.55 0 3.043-.523 4.395-1.35M12 6c3.718 0 7.111 3.009 9 6a9.77 9.77 0 01-4.042 4.197"/></svg>
                       <svg class="secret-input-icon secret-input-icon--visible" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" hidden><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg>
@@ -777,23 +777,23 @@
                   </span>
                   <button type="button" class="soft-button" id="aiDetectModelsButton">测试连接</button>
                 </div>
-              </label>
-              <label class="settings-row settings-row-inline">
+              </div>
+              <label class="settings-row settings-ai-field">
                 <span class="settings-row-copy">
                   <strong>API 接口地址</strong>
                   <small>可选；留空用供应商默认。代理、TokenHub、Moonshot 双区等请手填 Base URL（通常含 /v1）</small>
                 </span>
-                <input id="settingAiBaseUrl" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.openai.com/v1" />
+                <input id="settingAiBaseUrl" class="settings-ai-control" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.openai.com/v1" />
               </label>
-              <label class="settings-row settings-row-inline">
+              <label class="settings-row settings-ai-field">
                 <span class="settings-row-copy">
                   <strong>模型名称</strong>
                   <small>手填官方模型 ID；测试连接成功后会写入下方候选，不会覆盖你已填名称</small>
                 </span>
-                <input id="settingAiModel" type="text" autocomplete="off" spellcheck="false" placeholder="例如 gpt-4o、kimi-k3.1-pro" list="settingAiModelSuggestions" />
+                <input id="settingAiModel" class="settings-ai-control" type="text" autocomplete="off" spellcheck="false" placeholder="例如 gpt-4o、kimi-k3.1-pro" list="settingAiModelSuggestions" />
                 <datalist id="settingAiModelSuggestions"></datalist>
               </label>
-              <div class="settings-row settings-row-static">
+              <div class="settings-row settings-ai-field settings-row-static">
                 <span class="settings-row-copy">
                   <strong>连接状态</strong>
                   <small id="aiKeyStatus">API Key 未配置。截图解析需 vision 模型。</small>

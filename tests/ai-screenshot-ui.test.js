@@ -18,6 +18,7 @@ assert.match(preload, /aiExtractTask/, "preload must expose aiExtractTask");
 assert.match(html, /id="settingAiModel"[^>]*list="settingAiModelSuggestions"/, "AI model must be a manual text field with datalist suggestions");
 assert.match(html, /id="settingAiModelSuggestions"/, "AI model datalist must exist");
 assert.match(html, /自定义模型/, "AI settings must expose custom model section");
+assert.match(html, /settings-ai-model-card[\s\S]*settings-ai-field/, "AI model form must use stacked Workbuddy-style fields");
 assert.match(html, /id="settingAiBaseUrl"/, "custom API base URL field must exist");
 assert.match(html, /测试连接/, "AI settings must offer test connection action");
 assert.match(preload, /aiListProviders/, "preload must expose aiListProviders");
