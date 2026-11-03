@@ -708,6 +708,9 @@ function loadSettings() {
           workEndHour: merged.workEndHour
         }
     );
+    if (merged.aiBaseUrl) {
+      merged.aiBaseUrl = AiProviderPolicy.normalizeCustomBaseUrl(merged.aiBaseUrl);
+    }
     return {
       ...merged,
       morningStart: hours.morningStart,
@@ -759,12 +762,19 @@ function extractResponseText(payload) {
     .map(item => item.text || item.value || "").filter(Boolean).join("\n").trim();
 }
 
-function providerErrorMessage(body = {}, status = 0, provider = {}, settings = {}) {
-  const message = body?.error?.message || body?.message || `AI 请求失败（${status}）`;
+function providerErrorMessage(body = {}, status = 0, provider = {}, settings = {}, { requestUrl = "" } = {}) {
+  const message = body?.error?.message_zh || body?.error?.message || body?.message || `AI 请求失败（${status}）`;
   const baseUrl = String(settings?.aiBaseUrl || "").toLowerCase();
   const tokenhubLike = /^tokenhub/.test(provider?.id || "") || /tokenhub/.test(baseUrl);
+  const urlHint = requestUrl ? ` 实际请求：${requestUrl}` : "";
   if (tokenhubLike && status === 404) {
-    return "TokenHub 返回 404：请核对 API 接口地址与 Workbuddy 一致。OpenAI 兼容常用 https://tokenhub.tencentmaas.com/v1 ；若 WB 使用 plan 线路，请填 https://tokenhub.tencentcloudmaas.com/plan/v3（不要带 /chat/completions）。模型 ID 需与控制台一致。";
+    if (/\/chat\/completions\/chat\/completions/i.test(requestUrl)) {
+      return `TokenHub 接口地址被重复拼接，请在设置里只填 Base URL（如 https://tokenhub.tencentmaas.com/v1），保存后重试。${urlHint}`;
+    }
+    return `TokenHub 返回 404：${message}。请确认模型 ID 已在 TokenHub 控制台开通（与 Workbuddy 完全一致）；接口填 https://tokenhub.tencentmaas.com/v1 。${urlHint}`;
+  }
+  if (status === 404 && requestUrl) {
+    return `${message}${urlHint}`;
   }
   if (provider?.id === "moonshot" && (status === 401 || /invalid authentication/i.test(message))) {
     const customBase = String(settings?.aiBaseUrl || "").trim();
@@ -793,6 +803,16 @@ function aiEffectiveBase(provider, settings = {}) {
 }
 
 async function fetchProviderJson(request, provider, { method = "POST", body, settings = loadSettings() } = {}) {
+  const customBase = AiProviderPolicy.normalizeCustomBaseUrl(settings?.aiBaseUrl || "");
+  if (customBase) {
+    const response = await fetch(request.url, {
+      method,
+      headers: request.headers,
+      body: body !== undefined ? body : (method === "GET" ? undefined : JSON.stringify(request.body))
+    });
+    const parsed = await response.json().catch(() => ({}));
+    return { response, body: parsed };
+  }
   const bases = typeof AiProviderPolicy.providerBaseUrls === "function"
     ? AiProviderPolicy.providerBaseUrls(provider, {
       moonshotRegion: settings?.aiMoonshotRegion,
@@ -969,7 +989,7 @@ async function askAi(payload) {
   });
   const { response, body } = await fetchProviderJson(request, provider, { settings });
   if (!response.ok) {
-    throw new Error(providerErrorMessage(body, response.status, provider, settings));
+    throw new Error(providerErrorMessage(body, response.status, provider, settings, { requestUrl: request.url }));
   }
   return AiProviderPolicy.extractChatText(body, provider)
     || extractResponseText(body)
@@ -1005,7 +1025,7 @@ async function extractAiTask(payload = {}) {
   });
   const { response, body } = await fetchProviderJson(request, provider, { settings });
   if (!response.ok) {
-    const message = providerErrorMessage(body, response.status, provider, settings);
+    const message = providerErrorMessage(body, response.status, provider, settings, { requestUrl: request.url });
     if (response.status !== 404 && /image|vision|multimodal|does not support|不支持|resource_not_found|model/i.test(message)) {
       throw new Error("当前模型可能不支持识图。Kimi 请选 kimi-k3.1-pro；也可用 gpt-4o / Claude / Gemini 等视觉模型。");
     }

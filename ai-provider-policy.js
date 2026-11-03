@@ -208,6 +208,13 @@
     return normalized;
   }
 
+  function openAiChatCompletionsUrl(root = "") {
+    const base = String(root || "").replace(/\/+$/, "");
+    if (!base) return "";
+    if (/\/chat\/completions$/i.test(base)) return base;
+    return `${base}/chat/completions`;
+  }
+
   function normalizeCustomBaseUrl(url = "") {
     let normalized = normalizeApiBaseUrl(url);
     if (!normalized) return "";
@@ -447,7 +454,7 @@
       : text;
 
     return {
-      url: `${root}/chat/completions`,
+      url: openAiChatCompletionsUrl(root),
       headers: {
         "content-type": "application/json",
         Authorization: `Bearer ${key}`
@@ -501,6 +508,7 @@
     normalizeMoonshotRegion,
     normalizeApiBaseUrl,
     normalizeCustomBaseUrl,
+    openAiChatCompletionsUrl,
     resolveEffectiveBaseUrl,
     inferProviderIdFromBaseUrl,
     providerBaseUrls,

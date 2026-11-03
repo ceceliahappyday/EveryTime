@@ -147,5 +147,9 @@ assert.equal(
   }),
   "https://tokenhub.tencentmaas.com/v1"
 );
+assert.equal(
+  policy.openAiChatCompletionsUrl("https://tokenhub.tencentmaas.com/v1/chat/completions"),
+  "https://tokenhub.tencentmaas.com/v1/chat/completions"
+);
 
 console.log("ai provider policy tests passed");
