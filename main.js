@@ -776,6 +776,9 @@ function providerErrorMessage(body = {}, status = 0, provider = {}, settings = {
   if (status === 404 && requestUrl) {
     return `${message}${urlHint}`;
   }
+  if (tokenhubLike && /maas component|invalid.*request|malformed json/i.test(message)) {
+    return `TokenHub 拒绝了请求格式：${message}。若模型为 kimi-k3.1-pro，请确认供应商为 TokenHub（广州）且模型 ID 与控制台一致；119+ 版本会自动附带 reasoning_effort。${urlHint}`;
+  }
   if (provider?.id === "moonshot" && (status === 401 || /invalid authentication/i.test(message))) {
     const customBase = String(settings?.aiBaseUrl || "").trim();
     if (customBase) {

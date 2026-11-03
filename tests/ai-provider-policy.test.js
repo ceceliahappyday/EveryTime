@@ -151,5 +151,19 @@ assert.equal(
   policy.openAiChatCompletionsUrl("https://tokenhub.tencentmaas.com/v1/chat/completions"),
   "https://tokenhub.tencentmaas.com/v1/chat/completions"
 );
+const tokenhubVision = policy.buildChatRequest({
+  provider: policy.getProvider("tokenhub_gz"),
+  apiKey: "sk-test",
+  baseUrl: "https://tokenhub.tencentmaas.com/v1",
+  model: "kimi-k3.1-pro",
+  mode: "extract_task",
+  systemPrompt: "extract json",
+  userText: "today",
+  images: [{ mimeType: "image/png", base64: "AAAA" }]
+});
+assert.equal(tokenhubVision.body.reasoning_effort, "low");
+assert.equal(tokenhubVision.body.messages.length, 1);
+assert.equal(tokenhubVision.body.messages[0].role, "user");
+assert.ok(tokenhubVision.body.messages[0].content.some(part => part.type === "image_url"));
 
 console.log("ai provider policy tests passed");

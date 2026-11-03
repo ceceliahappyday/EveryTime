@@ -215,6 +215,35 @@
     return `${base}/chat/completions`;
   }
 
+  function isTokenHubEndpoint(baseUrl = "", provider = {}) {
+    const id = String(provider?.id || "");
+    const url = String(baseUrl || provider?.baseUrl || "").toLowerCase();
+    return /^tokenhub/.test(id) || (/tokenhub/.test(url) && /tencent(?:cloud)?maas/.test(url));
+  }
+
+  function isKimiK3FamilyModel(modelId = "") {
+    const value = String(modelId || "").toLowerCase();
+    return /kimi-k3(?:\.|$|-)/.test(value) || /kimi-k2\.8-preview/.test(value);
+  }
+
+  function isKimiLegacyThinkingModel(modelId = "") {
+    const value = String(modelId || "").toLowerCase();
+    return /kimi-k2\.[67]/.test(value) || value === "kimi-k2.6";
+  }
+
+  function buildOpenAiVisionContentParts({ system = "", text = "", imageList = [] } = {}) {
+    const prompt = [String(system || "").trim(), String(text || "").trim()].filter(Boolean).join("\n\n");
+    const parts = [];
+    if (prompt) parts.push({ type: "text", text: prompt });
+    imageList.forEach(image => {
+      parts.push({
+        type: "image_url",
+        image_url: { url: `data:${image.mimeType};base64,${image.base64}`, detail: "auto" }
+      });
+    });
+    return parts;
+  }
+
   function normalizeCustomBaseUrl(url = "") {
     let normalized = normalizeApiBaseUrl(url);
     if (!normalized) return "";
@@ -443,15 +472,40 @@
       };
     }
 
+    const tokenHub = isTokenHubEndpoint(root, provider);
+    const useTokenHubVision = tokenHub && imageList.length > 0;
     const userContent = imageList.length
-      ? [
-          { type: "text", text },
-          ...imageList.map(image => ({
-            type: "image_url",
-            image_url: { url: `data:${image.mimeType};base64,${image.base64}` }
-          }))
-        ]
+      ? (
+        useTokenHubVision
+          ? buildOpenAiVisionContentParts({ system, text, imageList })
+          : [
+            { type: "text", text },
+            ...imageList.map(image => ({
+              type: "image_url",
+              image_url: { url: `data:${image.mimeType};base64,${image.base64}`, detail: "auto" }
+            }))
+          ]
+      )
       : text;
+
+    const messages = useTokenHubVision
+      ? [{ role: "user", content: userContent }]
+      : [
+        { role: "system", content: system },
+        { role: "user", content: userContent }
+      ];
+
+    const body = {
+      model: chosenModel,
+      temperature: isExtract ? 0.1 : 0.2,
+      max_tokens: isExtract ? 4096 : 2048,
+      messages
+    };
+    if (tokenHub && isKimiK3FamilyModel(chosenModel)) {
+      body.reasoning_effort = isExtract ? "low" : "high";
+    } else if (tokenHub && isKimiLegacyThinkingModel(chosenModel)) {
+      body.thinking = { type: "enabled" };
+    }
 
     return {
       url: openAiChatCompletionsUrl(root),
@@ -459,14 +513,7 @@
         "content-type": "application/json",
         Authorization: `Bearer ${key}`
       },
-      body: {
-        model: chosenModel,
-        temperature: isExtract ? 0.1 : 0.2,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: userContent }
-        ]
-      }
+      body
     };
   }
 
@@ -484,6 +531,11 @@
         .trim();
     }
     const choice = payload.choices?.[0];
+    const message = choice?.message || {};
+    if (typeof message.content === "string" && message.content.trim()) return message.content.trim();
+    if (typeof message.reasoning_content === "string" && message.reasoning_content.trim()) {
+      return message.reasoning_content.trim();
+    }
     if (typeof choice?.message?.content === "string") return choice.message.content.trim();
     if (Array.isArray(choice?.message?.content)) {
       return choice.message.content.map(part => part?.text || part?.content || "").filter(Boolean).join("\n").trim();
