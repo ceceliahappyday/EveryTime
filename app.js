@@ -163,7 +163,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "settingsButton", "settingsDialog", "settingsForm", "settingsDialogScroll", "settingsCategoryList", "addCategoryButton", "settingsPaneTitle", "settingsNavList",
     "settingProfileName", "settingGlass", "settingPinned", "settingLocked", "settingStartAtLogin",
     "settingMorningStart", "settingMorningEnd", "settingAfternoonStart", "settingAfternoonEnd", "settingWorkHoursSummary",
-    "settingAiEnabled", "settingAiApiKey", "settingAiProvider", "settingAiMoonshotRegion", "settingAiMoonshotRegionRow", "settingAiModel", "aiDetectModelsButton", "aiKeyStatus",
+    "settingAiEnabled", "settingAiApiKey", "settingAiProvider", "settingAiBaseUrl", "settingAiModel", "settingAiStorageHint", "aiDetectModelsButton", "aiKeyStatus",
     "settingsAppVersion", "checkUpdateButton", "settingsDataPath", "settingsExportPath"
   ].forEach(id => el[id] = document.getElementById(id));
 
@@ -1753,7 +1753,9 @@ async function initDesktop() {
   el.settingsDialog?.addEventListener("close", () => {
     closeCategoryColorPalette();
     restoreSettingsHostSize();
+    resetSecretInputVisibility(el.settingsDialog);
   });
+  bindSecretInputToggles(document);
   document.addEventListener("pointerdown", event => {
     const palette = document.getElementById("categoryColorPalette");
     if (!palette) return;
@@ -1763,7 +1765,7 @@ async function initDesktop() {
   el.aiDetectModelsButton?.addEventListener("click", () => refreshAiProviderModels({ forceList: true }));
   el.settingAiApiKey?.addEventListener("change", () => refreshAiProviderModels({ forceList: true }));
   el.settingAiProvider?.addEventListener("change", () => {
-    syncAiMoonshotRegionRow();
+    syncAiBaseUrlPlaceholder();
     refreshAiProviderModels({ forceList: true });
   });
   // Restore last 视图 preference so a wide shell never looks like “日程被清空”.
@@ -1962,15 +1964,21 @@ async function openSettingsDialog() {
   el.settingAiApiKey.placeholder = settings?.aiConfigured
     ? "已配置（输入新 Key 可替换）"
     : "粘贴 OpenAI / OpenRouter / DeepSeek / Anthropic / Gemini 等 Key";
-  fillAiProviderOptions([{ id: settings?.aiProvider || "openai", name: settings?.aiProvider || "openai" }], settings?.aiProvider || "openai");
-  if (el.settingAiMoonshotRegion) {
-    el.settingAiMoonshotRegion.value = settings?.aiMoonshotRegion || "auto";
+  await ensureAiProviderCatalog();
+  fillAiProviderOptions(providerOptionsForSettings(), settings?.aiProvider || "openai");
+  if (el.settingAiBaseUrl) {
+    el.settingAiBaseUrl.value = settings?.aiBaseUrl || "";
   }
-  syncAiMoonshotRegionRow();
+  syncAiBaseUrlPlaceholder();
   fillAiModelSuggestions(settings?.aiModel ? [settings.aiModel] : [], { value: settings?.aiModel || "" });
+  if (el.settingAiStorageHint) {
+    el.settingAiStorageHint.textContent = paths?.dataFile
+      ? `模型配置与 Key 保存在本机：${paths.dataFile}`
+      : "模型配置保存在本机用户数据目录的设置文件中。";
+  }
   el.aiKeyStatus.textContent = settings?.aiConfigured
-    ? "API Key 已配置。可点击「识别并加载候选」拉取模型列表供选用。"
-    : "API Key 未配置。填写 Key 后可识别服务商并加载模型候选。";
+    ? "API Key 已配置。可点击「测试连接」验证并加载模型候选。"
+    : "API Key 未配置。填写 Key 后选择供应商并测试连接。";
   el.settingsAppVersion.textContent = el.appVersionBadge?.textContent || await window.desktopAPI.getVersion?.().then(version => `v${version}`).catch(() => "读取失败");
   el.settingsDataPath.textContent = paths?.dataFile || "当前用户数据目录";
   el.settingsExportPath.textContent = paths?.exportDir || "文档目录";
@@ -2226,9 +2234,68 @@ function refreshCategorySelects() {
   fillCategorySelect(el.entryCategory, { selected: entrySelected, includeMeeting: true });
 }
 
-function syncAiMoonshotRegionRow() {
-  const isMoonshot = (el.settingAiProvider?.value || "") === "moonshot";
-  if (el.settingAiMoonshotRegionRow) el.settingAiMoonshotRegionRow.hidden = !isMoonshot;
+function bindSecretInputToggles(root = document) {
+  root.querySelectorAll(".secret-input-wrap").forEach(wrap => {
+    if (wrap.dataset.secretBound === "1") return;
+    const input = wrap.querySelector("input");
+    const toggle = wrap.querySelector(".secret-input-toggle");
+    if (!input || !toggle) return;
+    wrap.dataset.secretBound = "1";
+    toggle.addEventListener("click", () => {
+      const reveal = input.type === "password";
+      input.type = reveal ? "text" : "password";
+      toggle.classList.toggle("is-revealed", reveal);
+      toggle.setAttribute("aria-pressed", reveal ? "true" : "false");
+      const label = reveal ? "隐藏 Key" : "显示 Key";
+      toggle.setAttribute("aria-label", label);
+      toggle.title = label;
+    });
+  });
+}
+
+function resetSecretInputVisibility(root = document) {
+  root.querySelectorAll(".secret-input-wrap").forEach(wrap => {
+    const input = wrap.querySelector("input");
+    const toggle = wrap.querySelector(".secret-input-toggle");
+    if (input) input.type = "password";
+    if (!toggle) return;
+    toggle.classList.remove("is-revealed");
+    toggle.setAttribute("aria-pressed", "false");
+    toggle.setAttribute("aria-label", "显示 Key");
+    toggle.title = "显示 Key";
+  });
+}
+
+const aiProviderCatalogState = { list: [] };
+
+async function ensureAiProviderCatalog() {
+  if (aiProviderCatalogState.list.length) return aiProviderCatalogState.list;
+  try {
+    const list = await window.desktopAPI?.aiListProviders?.();
+    if (Array.isArray(list) && list.length) aiProviderCatalogState.list = list;
+  } catch {
+    aiProviderCatalogState.list = [];
+  }
+  return aiProviderCatalogState.list;
+}
+
+function findAiProviderMeta(providerId = "") {
+  const id = String(providerId || "").trim();
+  return aiProviderCatalogState.list.find(item => item.id === id) || null;
+}
+
+function providerOptionsForSettings(detected = []) {
+  if (detected?.length > 1) return detected;
+  if (aiProviderCatalogState.list.length) {
+    return aiProviderCatalogState.list.map(({ id, name }) => ({ id, name }));
+  }
+  return detected?.length ? detected : [{ id: "openai", name: "OpenAI" }];
+}
+
+function syncAiBaseUrlPlaceholder() {
+  if (!el.settingAiBaseUrl || String(el.settingAiBaseUrl.value || "").trim()) return;
+  const meta = findAiProviderMeta(el.settingAiProvider?.value || "openai");
+  if (meta?.baseUrl) el.settingAiBaseUrl.placeholder = meta.baseUrl;
 }
 
 function fillAiProviderOptions(providers = [], selectedId = "") {
@@ -2257,23 +2324,32 @@ function fillAiModelSuggestions(models = [], { value = "" } = {}) {
 
 async function refreshAiProviderModels({ forceList = false, providerId = "", selectedModel = "" } = {}) {
   if (!window.desktopAPI?.aiDetectProvider || !window.desktopAPI?.aiListModels) return;
+  await ensureAiProviderCatalog();
   const apiKey = el.settingAiApiKey?.value?.trim() || "";
-  el.aiKeyStatus.textContent = forceList ? "正在识别服务商并加载模型…" : (el.aiKeyStatus.textContent || "正在识别服务商…");
+  el.aiKeyStatus.textContent = forceList ? "正在测试连接并加载模型…" : (el.aiKeyStatus.textContent || "正在测试连接…");
   try {
     const detected = await window.desktopAPI.aiDetectProvider({
       apiKey,
       providerId: providerId || el.settingAiProvider?.value || ""
     });
-    fillAiProviderOptions(detected.providers || [], detected.providerId || providerId || "openai");
+    fillAiProviderOptions(
+      providerOptionsForSettings(detected.providers || []),
+      detected.providerId || providerId || el.settingAiProvider?.value || "openai"
+    );
+    syncAiBaseUrlPlaceholder();
     if (!detected.configured && !apiKey) {
       el.aiKeyStatus.textContent = detected.message || "API Key 未配置";
       return;
     }
     const listed = await window.desktopAPI.aiListModels({
       apiKey,
-      providerId: el.settingAiProvider?.value || detected.providerId || ""
+      providerId: el.settingAiProvider?.value || detected.providerId || "",
+      aiBaseUrl: el.settingAiBaseUrl?.value?.trim() || ""
     });
-    fillAiProviderOptions(listed.providers || detected.providers || [], listed.providerId || detected.providerId || "");
+    fillAiProviderOptions(
+      providerOptionsForSettings(listed.providers || detected.providers || []),
+      listed.providerId || detected.providerId || el.settingAiProvider?.value || ""
+    );
     const currentModel = el.settingAiModel?.value?.trim() || "";
     fillAiModelSuggestions(listed.models || [], {
       value: currentModel || selectedModel || listed.selectedModel || ""
@@ -2300,7 +2376,7 @@ async function saveDesktopSettings() {
     afternoonEnd: Number(el.settingAfternoonEnd?.value ?? state.afternoonEnd),
     aiEnabled: el.settingAiEnabled.checked,
     aiProvider: el.settingAiProvider?.value || "openai",
-    aiMoonshotRegion: el.settingAiMoonshotRegion?.value || "auto",
+    aiBaseUrl: el.settingAiBaseUrl?.value?.trim() || "",
     aiModel: el.settingAiModel?.value?.trim() || "",
     ...(el.settingAiApiKey.value.trim() ? { aiApiKey: el.settingAiApiKey.value.trim() } : {})
   };

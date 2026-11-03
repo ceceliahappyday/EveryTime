@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("desktopAPI", {
   aiExtractTask: payload => ipcRenderer.invoke("ai:extract-task", payload),
   aiDetectProvider: payload => ipcRenderer.invoke("ai:detect-provider", payload),
   aiListModels: payload => ipcRenderer.invoke("ai:list-models", payload),
+  aiListProviders: () => ipcRenderer.invoke("ai:list-providers"),
   getVersion: () => ipcRenderer.invoke("app:get-version"),
   notify: payload => ipcRenderer.invoke("app:notify", payload),
   onNotifyClicked: callback => ipcRenderer.on("app:notify-clicked", (_event, payload) => callback(payload)),

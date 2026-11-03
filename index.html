@@ -748,41 +748,56 @@
                 </span>
                 <input type="checkbox" id="settingAiEnabled" />
               </label>
+            </div>
+            <div class="settings-section-head settings-ai-model-head">
+              <div>
+                <h4 class="settings-section-title">自定义模型</h4>
+                <p class="settings-panel-hint"><small id="settingAiStorageHint">模型配置保存在本机用户数据目录的设置文件中。</small></p>
+              </div>
+            </div>
+            <div class="settings-card settings-ai-model-card">
               <label class="settings-row settings-row-inline">
+                <span class="settings-row-copy">
+                  <strong>供应商</strong>
+                  <small>OpenAI 兼容、Anthropic、Gemini 等；Key 前缀不明时可手动选择</small>
+                </span>
+                <select id="settingAiProvider"></select>
+              </label>
+              <div class="settings-row settings-row-stack settings-ai-key-row">
                 <span class="settings-row-copy">
                   <strong>API Key</strong>
                 </span>
-                <input id="settingAiApiKey" type="password" autocomplete="off" placeholder="粘贴 API Key" />
-              </label>
-              <label class="settings-row settings-row-inline">
-                <span class="settings-row-copy"><strong>AI 服务商</strong></span>
-                <select id="settingAiProvider"></select>
-              </label>
-              <label class="settings-row settings-row-inline" id="settingAiMoonshotRegionRow" hidden>
-                <span class="settings-row-copy">
-                  <strong>Kimi 接口</strong>
-                  <small>moonshot.cn 的 Key 选国内；kimi.ai 的 Key 选国际</small>
-                </span>
-                <select id="settingAiMoonshotRegion">
-                  <option value="auto">自动尝试</option>
-                  <option value="cn">国内（api.moonshot.cn）</option>
-                  <option value="intl">国际（api.moonshot.ai）</option>
-                </select>
-              </label>
+                <div class="settings-ai-key-controls">
+                  <span class="secret-input-wrap">
+                    <input id="settingAiApiKey" type="password" autocomplete="off" placeholder="粘贴 API Key" />
+                    <button type="button" class="secret-input-toggle" aria-label="显示 Key" aria-pressed="false" title="显示 Key">
+                      <svg class="secret-input-icon secret-input-icon--hidden" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18M10.5 10.677a2.5 2.5 0 003 3M7.362 7.561C5.68 8.74 4.279 10.42 3 12c1.889 2.991 5.282 6 9 6 1.55 0 3.043-.523 4.395-1.35M12 6c3.718 0 7.111 3.009 9 6a9.77 9.77 0 01-4.042 4.197"/></svg>
+                      <svg class="secret-input-icon secret-input-icon--visible" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" hidden><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                    </button>
+                  </span>
+                  <button type="button" class="soft-button" id="aiDetectModelsButton">测试连接</button>
+                </div>
+              </div>
               <label class="settings-row settings-row-inline">
                 <span class="settings-row-copy">
-                  <strong>AI 模型</strong>
-                  <small>手填官方模型 ID；下方按钮只拉候选，不会改你已填的名称</small>
+                  <strong>API 接口地址</strong>
+                  <small>可选；留空用供应商默认。代理、TokenHub、Moonshot 双区等请手填 Base URL（通常含 /v1）</small>
                 </span>
-                <input id="settingAiModel" type="text" autocomplete="off" spellcheck="false" placeholder="例如 kimi-k3.1-pro 或 gpt-4o" list="settingAiModelSuggestions" />
+                <input id="settingAiBaseUrl" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.openai.com/v1" />
+              </label>
+              <label class="settings-row settings-row-inline">
+                <span class="settings-row-copy">
+                  <strong>模型名称</strong>
+                  <small>手填官方模型 ID；测试连接成功后会写入下方候选，不会覆盖你已填名称</small>
+                </span>
+                <input id="settingAiModel" type="text" autocomplete="off" spellcheck="false" placeholder="例如 gpt-4o、kimi-k3.1-pro" list="settingAiModelSuggestions" />
                 <datalist id="settingAiModelSuggestions"></datalist>
               </label>
-              <div class="settings-row settings-row-actions">
+              <div class="settings-row settings-row-static">
                 <span class="settings-row-copy">
-                  <strong>模型候选</strong>
+                  <strong>连接状态</strong>
                   <small id="aiKeyStatus">API Key 未配置。截图解析需 vision 模型。</small>
                 </span>
-                <button type="button" class="soft-button" id="aiDetectModelsButton">识别并加载候选</button>
               </div>
             </div>
           </section>

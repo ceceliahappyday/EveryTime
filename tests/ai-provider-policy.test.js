@@ -115,5 +115,14 @@ assert.deepEqual(policy.providerBaseUrls(moonshot, { moonshotRegion: "intl" }), 
 assert.deepEqual(policy.providerBaseUrls(moonshot, { moonshotRegion: "cn" }), [
   "https://api.moonshot.cn/v1"
 ]);
+assert.deepEqual(
+  policy.providerBaseUrls(moonshot, { customBaseUrl: "api.moonshot.ai/v1/" }),
+  ["https://api.moonshot.ai/v1"]
+);
+assert.deepEqual(
+  policy.providerBaseUrls(policy.getProvider("openai"), { customBaseUrl: "https://proxy.example/v1" }),
+  ["https://proxy.example/v1"]
+);
+assert.equal(policy.normalizeApiBaseUrl(""), "");
 
 console.log("ai provider policy tests passed");

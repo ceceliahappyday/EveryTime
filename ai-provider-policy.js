@@ -167,9 +167,19 @@
     return "auto";
   }
 
-  function providerBaseUrls(provider = {}, { moonshotRegion = "auto" } = {}) {
+  function normalizeApiBaseUrl(url = "") {
+    const value = String(url || "").trim();
+    if (!value) return "";
+    let normalized = value.replace(/\/+$/, "");
+    if (!/^https?:\/\//i.test(normalized)) normalized = `https://${normalized}`;
+    return normalized;
+  }
+
+  function providerBaseUrls(provider = {}, { moonshotRegion = "auto", customBaseUrl = "", moonshotBaseUrl = "" } = {}) {
     const cn = "https://api.moonshot.cn/v1";
     const intl = "https://api.moonshot.ai/v1";
+    const custom = normalizeApiBaseUrl(customBaseUrl || moonshotBaseUrl);
+    if (custom) return [custom];
     if (provider?.id === "moonshot") {
       const region = normalizeMoonshotRegion(moonshotRegion);
       if (region === "cn") return [cn];
@@ -413,6 +423,7 @@
     getProvider,
     resolveModelId,
     normalizeMoonshotRegion,
+    normalizeApiBaseUrl,
     providerBaseUrls,
     swapRequestBaseUrl,
     resolveProvider,

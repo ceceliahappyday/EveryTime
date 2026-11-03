@@ -17,7 +17,13 @@ assert.match(html, /ai-task-draft-policy\.js/, "renderer must load draft policy"
 assert.match(preload, /aiExtractTask/, "preload must expose aiExtractTask");
 assert.match(html, /id="settingAiModel"[^>]*list="settingAiModelSuggestions"/, "AI model must be a manual text field with datalist suggestions");
 assert.match(html, /id="settingAiModelSuggestions"/, "AI model datalist must exist");
-assert.match(html, /id="settingAiMoonshotRegion"/, "Moonshot endpoint selector must exist");
+assert.match(html, /自定义模型/, "AI settings must expose custom model section");
+assert.match(html, /id="settingAiBaseUrl"/, "custom API base URL field must exist");
+assert.match(html, /测试连接/, "AI settings must offer test connection action");
+assert.match(preload, /aiListProviders/, "preload must expose aiListProviders");
+assert.match(app, /ensureAiProviderCatalog/, "renderer must load provider catalog");
+assert.match(html, /class="secret-input-wrap"/, "API key field needs show/hide toggle wrapper");
+assert.match(app, /bindSecretInputToggles/, "secret input toggles must be wired");
 assert.match(app, /createTaskFromAiDraft/, "renderer must create tasks from AI drafts");
 assert.match(app, /createTasksFromAiDrafts/, "batch create helper must exist");
 assert.match(app, /openAiBatchDraftDialog/, "multi drafts open review dialog");

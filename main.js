@@ -392,6 +392,11 @@ if (singleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("ai:extract-task", async (_event, payload) => extractAiTask(payload || {}));
   ipcMain.handle("ai:detect-provider", (_event, payload) => detectAiProvider(payload || {}));
   ipcMain.handle("ai:list-models", async (_event, payload) => listAiModels(payload || {}));
+  ipcMain.handle("ai:list-providers", () => Object.values(AiProviderPolicy.PROVIDERS).map(item => ({
+    id: item.id,
+    name: item.name,
+    baseUrl: item.baseUrl
+  })));
   ipcMain.handle("clipboard:write-text", (_event, text) => {
     clipboard.writeText(String(text ?? ""));
     return true;
@@ -678,7 +683,8 @@ function loadSettings() {
     aiEnabled: false,
     aiModel: "gpt-4.1-mini",
     aiProvider: "openai",
-    aiMoonshotRegion: "auto"
+    aiMoonshotRegion: "auto",
+    aiBaseUrl: ""
   };
   if (!fs.existsSync(file)) return defaults;
   try {
@@ -756,20 +762,30 @@ function extractResponseText(payload) {
 function providerErrorMessage(body = {}, status = 0, provider = {}, settings = {}) {
   const message = body?.error?.message || body?.message || `AI 请求失败（${status}）`;
   if (provider?.id === "moonshot" && (status === 401 || /invalid authentication/i.test(message))) {
-    const region = settings?.aiMoonshotRegion || "auto";
-    const regionHint = region === "auto"
-      ? "在设置里把「Kimi 接口」改为「国内」或「国际」后再保存"
-      : (region === "cn"
-        ? "当前走国内接口；若 Key 来自 platform.kimi.ai，请改选「国际」"
-        : "当前走国际接口；若 Key 来自 platform.moonshot.cn，请改选「国内」");
-    return `Kimi/Moonshot 鉴权失败：请确认 API Key 有效、服务商为「Moonshot / Kimi」，并在保存设置后重试。${regionHint}。模型请手填 kimi-k3.1-pro 等支持识图的 ID。`;
+    const customBase = String(settings?.aiBaseUrl || "").trim();
+    if (customBase) {
+      return `Kimi/Moonshot 鉴权失败：请核对「API 接口地址」与 Key 来源一致（国内 Key 常用 https://api.moonshot.cn/v1，国际 Key 常用 https://api.moonshot.ai/v1），保存设置后重试。模型请手填 kimi-k3.1-pro 等支持识图的 ID。`;
+    }
+    return "Moonshot 鉴权失败：请确认 API Key 有效、供应商选对，并在「API 接口地址」填写与 Key 匹配的 Base URL（国内常用 https://api.moonshot.cn/v1，国际常用 https://api.moonshot.ai/v1），保存后点「测试连接」。识图请用手填 kimi-k3.1-pro 等视觉模型 ID。";
   }
   return message;
 }
 
+function aiSettingsForRequest(payload = {}, baseSettings = loadSettings()) {
+  const settings = { ...baseSettings };
+  if (payload.providerId) settings.aiProvider = String(payload.providerId).trim();
+  if (Object.prototype.hasOwnProperty.call(payload, "aiBaseUrl")) {
+    settings.aiBaseUrl = String(payload.aiBaseUrl || "").trim();
+  }
+  return settings;
+}
+
 async function fetchProviderJson(request, provider, { method = "POST", body, settings = loadSettings() } = {}) {
   const bases = typeof AiProviderPolicy.providerBaseUrls === "function"
-    ? AiProviderPolicy.providerBaseUrls(provider, { moonshotRegion: settings?.aiMoonshotRegion })
+    ? AiProviderPolicy.providerBaseUrls(provider, {
+      moonshotRegion: settings?.aiMoonshotRegion,
+      customBaseUrl: settings?.aiBaseUrl
+    })
     : [provider.baseUrl];
   const primaryBase = bases[0] || provider.baseUrl;
   let lastResponse = null;
@@ -834,10 +850,11 @@ async function listAiModels(payload = {}) {
     providerId: payload.providerId || settings.aiProvider || ""
   });
   const request = AiProviderPolicy.buildModelsRequest(provider, apiKey);
+  const effectiveSettings = aiSettingsForRequest(payload, settings);
   let models = [];
   let source = "fallback";
   try {
-    const { response, body } = await fetchProviderJson(request, provider, { method: "GET" });
+    const { response, body } = await fetchProviderJson(request, provider, { method: "GET", settings: effectiveSettings });
     if (response.ok) {
       const raw = request.parser === "gemini"
         ? AiProviderPolicy.parseGeminiModelList(body)

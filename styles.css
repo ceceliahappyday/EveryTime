@@ -6566,7 +6566,9 @@ body.in-desktop .window-controls {
   #settingsDialog .settings-row-inline > input,
   #settingsDialog .settings-row-inline > select,
   .settings-modal .settings-row-inline > input,
-  .settings-modal .settings-row-inline > select {
+  .settings-modal .settings-row-inline > select,
+  #settingsDialog .settings-row-inline > .secret-input-wrap,
+  .settings-modal .settings-row-inline > .secret-input-wrap {
     width: 100%;
     flex: 1 1 100%;
     min-width: 0;
@@ -6692,6 +6694,87 @@ body.in-desktop .window-controls {
   width: min(260px, 48%);
   flex: 0 0 auto;
   margin: 0;
+}
+#settingsDialog .settings-row-inline > .secret-input-wrap,
+.settings-modal .settings-row-inline > .secret-input-wrap {
+  width: min(260px, 48%);
+  flex: 0 0 auto;
+  margin: 0;
+}
+.secret-input-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+.secret-input-wrap > input {
+  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 40px;
+  margin: 0;
+}
+.secret-input-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.secret-input-toggle:hover {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.06);
+}
+.secret-input-toggle.is-revealed .secret-input-icon--hidden {
+  display: none;
+}
+.secret-input-toggle.is-revealed .secret-input-icon--visible {
+  display: block !important;
+}
+.secret-input-toggle:not(.is-revealed) .secret-input-icon--visible {
+  display: none !important;
+}
+body.in-desktop.glass-mode .secret-input-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e8f6f4;
+}
+.settings-ai-model-head {
+  margin-top: 4px;
+  align-items: flex-end;
+}
+.settings-ai-model-head .settings-panel-hint {
+  margin-top: 4px;
+  color: var(--muted);
+}
+.settings-ai-key-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.settings-ai-key-controls .secret-input-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+.settings-ai-key-controls .soft-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.settings-ai-key-row.settings-row-stack > .settings-ai-key-controls {
+  max-width: 100%;
 }
 .settings-row-actions {
   align-items: center;
