@@ -105,12 +105,51 @@ assert.strictEqual(
   "top-level plan nodes should not appear in progress review"
 );
 
-const byCreated = policy.sortByCreatedAtDesc([
+const byCreatedDesc = policy.sortByCreatedAtDesc([
   { id: "old", title: "旧", createdAtIso: "2026-09-01T08:00:00.000Z" },
   { id: "new", title: "新", createdAtIso: "2026-09-17T10:00:00.000Z" },
   { id: "mid", title: "中", createdAtIso: "2026-09-10T12:00:00.000Z" }
 ]);
-assert.deepStrictEqual(byCreated.map(task => task.id), ["new", "mid", "old"], "unplanned inbox should list newest created tasks first");
+assert.deepStrictEqual(byCreatedDesc.map(task => task.id), ["new", "mid", "old"], "created-desc helper keeps newest first");
+
+const byCreatedAsc = policy.sortByCreatedAtAsc([
+  { id: "old", title: "旧", createdAtIso: "2026-09-01T08:00:00.000Z" },
+  { id: "new", title: "新", createdAtIso: "2026-09-17T10:00:00.000Z" },
+  { id: "mid", title: "中", createdAtIso: "2026-09-10T12:00:00.000Z" }
+]);
+assert.deepStrictEqual(byCreatedAsc.map(task => task.id), ["old", "mid", "new"], "unplanned/closed should list earliest created tasks first");
+
+const byDue = policy.sortByDueDateAsc([
+  { id: "late", title: "晚", dueDate: "2026-11-20", dueTime: "18:00", createdAtIso: "2026-01-01T00:00:00.000Z" },
+  { id: "early", title: "早", dueDate: "2026-11-10", dueTime: "09:00", createdAtIso: "2026-01-02T00:00:00.000Z" },
+  { id: "none", title: "无", dueDate: "", createdAtIso: "2026-01-03T00:00:00.000Z" },
+  { id: "mid", title: "中", dueDate: "2026-11-15", dueTime: "12:00", createdAtIso: "2026-01-04T00:00:00.000Z" }
+]);
+assert.deepStrictEqual(byDue.map(task => task.id), ["early", "mid", "late", "none"], "planned tasks should order by due date ascending");
+
+const statusSections = policy.buildStatusSections({
+  tasks: [
+    { id: "done-1", title: "关", status: "done", createdAtIso: "2026-10-01T08:00:00.000Z" },
+    { id: "track-1", title: "跟", status: "in_progress", attentionOnly: true, dueDate: "2026-11-12" },
+    { id: "doing-1", title: "做", status: "in_progress" },
+    { id: "plan-1", title: "计", status: "planned", dueDate: "2026-11-18" },
+    { id: "inbox-1", title: "收", status: "planned", createdAtIso: "2026-10-05T08:00:00.000Z" }
+  ],
+  entriesByDate: {
+    "2026-11-01": [{ taskId: "doing-1", entryType: "task_work", start: 10, end: 11 }]
+  },
+  isOngoingTask: task => task.status === "in_progress",
+  isUnplannedTask: task => task.status === "planned" && !task.dueDate,
+  isAttentionOnly: task => Boolean(task.attentionOnly),
+  isEndedStatus: status => status === "done" || status === "closed"
+});
+assert.deepStrictEqual(
+  statusSections.map(section => section.key),
+  ["in_progress", "planned", "unplanned", "tracking", "ended"],
+  "all-tasks section order must be 进行中 → 计划中 → 未计划 → 待跟踪 → 已关闭"
+);
+assert.deepStrictEqual(statusSections.map(section => section.label), ["进行中", "计划中", "未计划", "待跟踪", "已关闭"]);
+assert.ok(!statusSections.find(section => section.key === "in_progress").tasks.some(task => task.id === "track-1"), "attention tasks belong only in 待跟踪 within 全部任务");
 
 const investEntries = {
   "2026-10-17": [

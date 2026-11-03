@@ -3366,44 +3366,49 @@ function renderUnifiedTodoList() {
       }]
       : [];
   } else if (state.filter === "memo") {
-    const memos = TodoListPolicy.sortByCreatedAtDesc(memoLeafTasks);
+    const memos = TodoListPolicy.sortByDueDateAsc(memoLeafTasks);
     sections = memos.length
       ? [{ key: "memo", label: "待跟踪", tasks: memos }]
       : [];
-  } else {
+  } else if (state.filter === "all") {
     const workVisible = visibleTasks.filter(task => !isSupersededClosedWorkTask(task, allTasks));
-    // 进行中：扁平按最近投入时间排，不用「今日/昨天」分组打乱先后。
-    const includeSections = state.filter === "all" || state.filter === "planned" || state.filter === "unplanned";
-    const orderedVisible = state.filter === "unplanned"
-      ? TodoListPolicy.sortByCreatedAtDesc(workVisible)
-      : state.filter === "in_progress"
-        ? TodoListPolicy.sortByLatestInvestDesc(workVisible, entriesByDate)
-        : orderedTasks(workVisible);
-    const groups = TodoListPolicy.buildTodoGroups({
-      tasks: orderedVisible,
-      selectedDate: state.selectedDate,
-      yesterdayKey,
+    sections = TodoListPolicy.buildStatusSections({
+      tasks: workVisible,
       entriesByDate,
       isOngoingTask,
       isUnplannedTask,
-      hasChildTasks: taskId => hasChildTasks(taskId),
-      includeSections
+      isAttentionOnly: belongsInMemoList,
+      isEndedStatus: status => TaskStatusPolicy.isEndedStatus(status)
     });
-
-    sections = TodoListPolicy.flattenGroups(groups).filter(section => section.label || section.tasks.length);
-    if (state.filter === "all") {
-      const remaining = sections.find(section => section.key === "remaining");
-      if (remaining?.tasks.length) remaining.label = "其他任务";
-    }
     if (linkedWorkItems.length) {
-      const yesterdayItems = linkedWorkItems.filter(item => item.isFromYesterday);
-      const earlierItems = linkedWorkItems.filter(item => !item.isFromYesterday);
-      const continueYesterday = sections.find(section => section.key === "continueYesterday");
-      const continueToday = sections.find(section => section.key === "continueToday");
-      if (continueYesterday) continueYesterday.tasks.push(...yesterdayItems);
-      else if (yesterdayItems.length) sections.unshift({ key: "continueYesterday", label: "继续昨天", tasks: yesterdayItems });
-      if (continueToday) continueToday.tasks.push(...earlierItems);
-      else if (earlierItems.length) sections.unshift({ key: "continueToday", label: "今日可继续", tasks: earlierItems });
+      const inProgress = sections.find(section => section.key === "in_progress");
+      if (inProgress) inProgress.tasks.push(...linkedWorkItems);
+      else sections.unshift({ key: "in_progress", label: "进行中", tasks: linkedWorkItems });
+    }
+  } else {
+    const workVisible = visibleTasks.filter(task => !isSupersededClosedWorkTask(task, allTasks));
+    const orderedVisible = state.filter === "unplanned" || state.filter === "ended"
+      ? TodoListPolicy.sortByCreatedAtAsc(workVisible)
+      : state.filter === "in_progress"
+        ? TodoListPolicy.sortByLatestInvestDesc(workVisible, entriesByDate)
+        : TodoListPolicy.sortByDueDateAsc(workVisible);
+    const filterLabels = {
+      unplanned: "未计划",
+      planned: "计划中",
+      in_progress: "进行中",
+      ended: "已关闭"
+    };
+    sections = orderedVisible.length
+      ? [{
+        key: state.filter,
+        label: filterLabels[state.filter] || "",
+        tasks: orderedVisible
+      }]
+      : [];
+    if (state.filter === "in_progress" && linkedWorkItems.length) {
+      const inProgress = sections.find(section => section.key === "in_progress");
+      if (inProgress) inProgress.tasks.push(...linkedWorkItems);
+      else sections.push({ key: "in_progress", label: "进行中", tasks: linkedWorkItems });
     }
   }
 

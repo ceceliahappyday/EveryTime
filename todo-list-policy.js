@@ -240,12 +240,94 @@
     return Number.isFinite(ms) ? ms : 0;
   }
 
+  function taskDueSortKey(task) {
+    const date = String(task?.dueDate || "").trim() || "9999-12-31";
+    const time = String(task?.dueTime || "").trim() || "99:99";
+    return `${date} ${time}`;
+  }
+
   function sortByCreatedAtDesc(tasks = []) {
     return [...tasks].sort((a, b) =>
       taskCreatedAtMs(b) - taskCreatedAtMs(a) ||
       String(b.id || "").localeCompare(String(a.id || "")) ||
       String(a.title || "").localeCompare(String(b.title || ""))
     );
+  }
+
+  /** Oldest created first — unplanned inbox and closed archive. */
+  function sortByCreatedAtAsc(tasks = []) {
+    return [...tasks].sort((a, b) =>
+      taskCreatedAtMs(a) - taskCreatedAtMs(b) ||
+      String(a.id || "").localeCompare(String(b.id || "")) ||
+      String(a.title || "").localeCompare(String(b.title || ""))
+    );
+  }
+
+  /** Earliest due date/time first; missing due dates sink to the end. */
+  function sortByDueDateAsc(tasks = []) {
+    return [...tasks].sort((a, b) =>
+      taskDueSortKey(a).localeCompare(taskDueSortKey(b)) ||
+      taskCreatedAtMs(a) - taskCreatedAtMs(b) ||
+      String(a.id || "").localeCompare(String(b.id || "")) ||
+      String(a.title || "").localeCompare(String(b.title || ""))
+    );
+  }
+
+  const ALL_STATUS_SECTION_ORDER = ["in_progress", "planned", "unplanned", "tracking", "ended"];
+  const ALL_STATUS_SECTION_LABELS = {
+    in_progress: "进行中",
+    planned: "计划中",
+    unplanned: "未计划",
+    tracking: "待跟踪",
+    ended: "已关闭"
+  };
+
+  function classifyTodoStatusBucket(task, {
+    isOngoingTask = () => false,
+    isUnplannedTask = () => false,
+    isAttentionOnly = () => false,
+    isEndedStatus = status => status === "done" || status === "closed"
+  } = {}) {
+    if (!task) return "";
+    if (isEndedStatus(task.status)) return "ended";
+    if (isAttentionOnly(task)) return "tracking";
+    if (isOngoingTask(task)) return "in_progress";
+    if (isUnplannedTask(task)) return "unplanned";
+    return "planned";
+  }
+
+  /** 全部任务：进行中 → 计划中 → 未计划 → 待跟踪 → 已关闭，各组内按规则排序。 */
+  function buildStatusSections({
+    tasks = [],
+    entriesByDate = {},
+    isOngoingTask = () => false,
+    isUnplannedTask = () => false,
+    isAttentionOnly = () => false,
+    isEndedStatus = status => status === "done" || status === "closed"
+  } = {}) {
+    const buckets = {
+      in_progress: [],
+      planned: [],
+      unplanned: [],
+      tracking: [],
+      ended: []
+    };
+    tasks.forEach(task => {
+      const key = classifyTodoStatusBucket(task, {
+        isOngoingTask,
+        isUnplannedTask,
+        isAttentionOnly,
+        isEndedStatus
+      });
+      if (buckets[key]) buckets[key].push(task);
+    });
+    return ALL_STATUS_SECTION_ORDER.map(key => {
+      let sorted;
+      if (key === "in_progress") sorted = sortByLatestInvestDesc(buckets[key], entriesByDate);
+      else if (key === "planned" || key === "tracking") sorted = sortByDueDateAsc(buckets[key]);
+      else sorted = sortByCreatedAtAsc(buckets[key]);
+      return { key, label: ALL_STATUS_SECTION_LABELS[key], tasks: sorted };
+    }).filter(section => section.tasks.length);
   }
 
   /** Latest schedule invest instant for a task (dateKey + end/start hour). */
@@ -307,7 +389,14 @@
     isProgressReviewCandidate,
     progressReviewCandidates,
     taskCreatedAtMs,
+    taskDueSortKey,
     sortByCreatedAtDesc,
+    sortByCreatedAtAsc,
+    sortByDueDateAsc,
+    ALL_STATUS_SECTION_ORDER,
+    ALL_STATUS_SECTION_LABELS,
+    classifyTodoStatusBucket,
+    buildStatusSections,
     taskLatestInvestMs,
     sortByLatestInvestDesc
   };
