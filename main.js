@@ -787,13 +787,13 @@ async function fetchProviderJson(request, provider, { method = "POST", body, set
       customBaseUrl: settings?.aiBaseUrl
     })
     : [provider.baseUrl];
-  const primaryBase = bases[0] || provider.baseUrl;
+  const templateBase = String(provider.baseUrl || "").replace(/\/+$/, "");
+  const primaryBase = bases[0] || templateBase;
   let lastResponse = null;
   let lastBody = {};
   for (let index = 0; index < bases.length; index += 1) {
-    const url = index === 0
-      ? request.url
-      : AiProviderPolicy.swapRequestBaseUrl(request.url, primaryBase, bases[index]);
+    const targetBase = bases[index] || primaryBase;
+    const url = AiProviderPolicy.swapRequestBaseUrl(request.url, templateBase, targetBase);
     const response = await fetch(url, {
       method,
       headers: request.headers,
@@ -861,8 +861,15 @@ async function listAiModels(payload = {}) {
         : AiProviderPolicy.parseOpenAiModelList(body);
       models = AiProviderPolicy.normalizeModelEntries(raw, provider);
       if (models.length) source = "remote";
+    } else {
+      const authLike = response.status === 401
+        || /invalid authentication|incorrect api key|unauthorized/i.test(body?.error?.message || body?.message || "");
+      if (authLike) {
+        throw new Error(providerErrorMessage(body, response.status, provider, effectiveSettings));
+      }
     }
-  } catch {
+  } catch (error) {
+    if (error?.message && /鉴权|authentication|api key|unauthorized/i.test(error.message)) throw error;
     models = [];
   }
   if (!models.length) {
@@ -904,7 +911,7 @@ async function askAi(payload) {
     rangeLabel: payload?.rangeLabel,
     context: payload?.context
   });
-  const { response, body } = await fetchProviderJson(request, provider);
+  const { response, body } = await fetchProviderJson(request, provider, { settings });
   if (!response.ok) {
     throw new Error(providerErrorMessage(body, response.status, provider, settings));
   }
@@ -938,7 +945,7 @@ async function extractAiTask(payload = {}) {
     userText: parts.text,
     images: [{ mimeType: parts.mimeType, base64: parts.base64 }]
   });
-  const { response, body } = await fetchProviderJson(request, provider);
+  const { response, body } = await fetchProviderJson(request, provider, { settings });
   if (!response.ok) {
     const message = providerErrorMessage(body, response.status, provider, settings);
     if (/image|vision|multimodal|does not support|不支持|resource_not_found|model/i.test(message)) {

@@ -6568,7 +6568,9 @@ body.in-desktop .window-controls {
   .settings-modal .settings-row-inline > input,
   .settings-modal .settings-row-inline > select,
   #settingsDialog .settings-row-inline > .secret-input-wrap,
-  .settings-modal .settings-row-inline > .secret-input-wrap {
+  .settings-modal .settings-row-inline > .secret-input-wrap,
+  #settingsDialog .settings-row-inline > .settings-ai-key-controls,
+  .settings-modal .settings-row-inline > .settings-ai-key-controls {
     width: 100%;
     flex: 1 1 100%;
     min-width: 0;
@@ -6701,6 +6703,13 @@ body.in-desktop .window-controls {
   flex: 0 0 auto;
   margin: 0;
 }
+#settingsDialog .settings-row-inline > .settings-ai-key-controls,
+.settings-modal .settings-row-inline > .settings-ai-key-controls {
+  width: min(320px, 52%);
+  flex: 0 0 auto;
+  margin: 0;
+  min-width: 0;
+}
 .secret-input-wrap {
   position: relative;
   display: inline-flex;
@@ -6761,7 +6770,6 @@ body.in-desktop.glass-mode .secret-input-toggle:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
   min-width: 0;
 }
 .settings-ai-key-controls .secret-input-wrap {
@@ -6772,9 +6780,14 @@ body.in-desktop.glass-mode .secret-input-toggle:hover {
 .settings-ai-key-controls .soft-button {
   flex: 0 0 auto;
   white-space: nowrap;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
 }
-.settings-ai-key-row.settings-row-stack > .settings-ai-key-controls {
-  max-width: 100%;
+.settings-ai-key-row .settings-row-copy {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .settings-row-actions {
   align-items: center;
