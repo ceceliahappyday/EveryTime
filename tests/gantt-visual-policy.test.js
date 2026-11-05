@@ -37,6 +37,8 @@ const requiredApp = [
   "bindGanttLabelResize",
   "project-gantt-resize-handle",
   "bindGanttLabelReparent",
+  "ganttVisibleTreeItems",
+  "isHiddenByCollapsedGanttAncestor",
   "bindGanttReparentDropTarget",
   "isGanttReparentDrag",
   "ensureGanttTreeDepthForChild",

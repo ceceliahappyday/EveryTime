@@ -254,7 +254,12 @@
     };
   }
 
-  function listVisibleChildren(project, { collapsedTasks, visibleTreeItems, treeDepth }) {
+  function isProjectRootCollapsed(parent, collapsedSections, collapsedTasks) {
+    if (!parent?.id) return false;
+    return collapsedSections.has(parent.id) || collapsedTasks.has(parent.id);
+  }
+
+  function listVisibleChildren(project, { collapsedTasks, collapsedSections, visibleTreeItems, treeDepth }) {
     const parent = project.parent;
     const descendants = (project.children || []).filter(task => task.id !== parent.id);
     const visible = typeof visibleTreeItems === "function"
@@ -362,8 +367,8 @@
     }
     if (!treeOn) {
       push(parent, { isParent: directChildren.length > 0 || descendants.length > 0, depth: 0 });
-      if (collapsedSections.has(parent.id)) return rows;
-      listVisibleChildren(project, { collapsedTasks, visibleTreeItems, treeDepth })
+      if (isProjectRootCollapsed(parent, collapsedSections, collapsedTasks)) return rows;
+      listVisibleChildren(project, { collapsedTasks, collapsedSections, visibleTreeItems, treeDepth })
         .forEach(({ task, depth }) => push(task, {
           isParent: getChildTasks(task.id).length > 0,
           depth
@@ -371,8 +376,8 @@
       return rows;
     }
     push(parent, { isParent: true, depth: 0 });
-    if (collapsedSections.has(parent.id)) return rows;
-    listVisibleChildren(project, { collapsedTasks, visibleTreeItems, treeDepth })
+    if (isProjectRootCollapsed(parent, collapsedSections, collapsedTasks)) return rows;
+    listVisibleChildren(project, { collapsedTasks, collapsedSections, visibleTreeItems, treeDepth })
       .forEach(({ task, depth }) => push(task, {
         isParent: getChildTasks(task.id).length > 0,
         depth
@@ -414,7 +419,8 @@
     }
 
     const directChildren = getChildTasks(parent.id);
-    if ((shouldRenderSingleRow?.(project) && !directChildren.length) || collapsedSections.has(parent.id)) {
+    if ((shouldRenderSingleRow?.(project) && !directChildren.length)
+      || isProjectRootCollapsed(parent, collapsedSections, collapsedTasks)) {
       return {
         key: `tree:${parent.id}`,
         status: `tree:${parent.id}`,
@@ -427,7 +433,7 @@
       };
     }
 
-    const childRows = listVisibleChildren(project, { collapsedTasks, visibleTreeItems, treeDepth })
+    const childRows = listVisibleChildren(project, { collapsedTasks, collapsedSections, visibleTreeItems, treeDepth })
       .map(({ task, depth: childDepth }) => makeRow(task, {
         ...rowOpts,
         isParent: getChildTasks(task.id).length > 0,

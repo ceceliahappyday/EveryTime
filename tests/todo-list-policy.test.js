@@ -220,4 +220,25 @@ assert.match(mergedFields.description, /主说明/);
 assert.match(mergedFields.description, /支说明/);
 assert.equal(mergedFields.progress, 40);
 
+const meetingSamples = [
+  { title: "远", dateKey: "2026-11-24", start: 14, phase: "planned" },
+  { title: "近", dateKey: "2026-11-05", start: 9, phase: "planned" },
+  { title: "同天晚", dateKey: "2026-11-05", start: 17, phase: "planned" }
+];
+assert.deepStrictEqual(
+  policy.sortMeetingsByScheduleAsc(meetingSamples).map(item => item.title),
+  ["近", "同天晚", "远"],
+  "meeting tabs must list earliest schedule first"
+);
+const meetingSections = policy.buildMeetingAllSections([
+  { title: "旧", dateKey: "2026-10-01", start: 9, phase: "ended" },
+  { title: "将来", dateKey: "2026-12-01", start: 10, phase: "planned" },
+  { title: "现在", dateKey: "2026-11-05", start: 11, phase: "in_progress" }
+]);
+assert.deepStrictEqual(
+  meetingSections.map(section => section.key),
+  ["meeting-planned", "meeting-in_progress", "meeting-ended"],
+  "all-meetings sections must be 计划中 → 进行中 → 已结束"
+);
+
 console.log("todo list policy tests passed");

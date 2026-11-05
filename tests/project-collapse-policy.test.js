@@ -31,6 +31,16 @@ assert.deepEqual(
   "collapsed nested task should hide only its own descendants"
 );
 
+assert.deepEqual(
+  visibleTreeItems({
+    tasks: [{ id: "leaf", title: "子", parentId: "mid" }],
+    collapsedIds: new Set(["mid"]),
+    resolveParent: id => (id === "mid" ? { id: "mid", parentId: "project" } : null)
+  }).map(task => task.id),
+  [],
+  "collapsed ancestor outside the local task list must still hide descendants"
+);
+
 console.log("project collapse policy tests passed");
 
 const projects = [

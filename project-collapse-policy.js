@@ -3,10 +3,14 @@
   if (typeof module === "object" && module.exports) module.exports = policy;
   root.ProjectCollapsePolicy = policy;
 })(typeof globalThis !== "undefined" ? globalThis : window, function () {
-  function visibleTreeItems({ tasks = [], collapsedIds = new Set() }) {
+  function taskParentId(task) {
+    return String(task?.parentId || task?.parentTaskId || task?.parentTask || task?.parent || "").trim();
+  }
+
+  function visibleTreeItems({ tasks = [], collapsedIds = new Set(), resolveParent = null } = {}) {
     const collapsed = collapsedIds instanceof Set ? collapsedIds : new Set(collapsedIds || []);
     const byId = new Map(tasks.map(task => [task.id, task]));
-    return tasks.filter(task => !hasCollapsedAncestor(task, byId, collapsed));
+    return tasks.filter(task => !hasCollapsedAncestor(task, byId, collapsed, resolveParent));
   }
 
   function filterProjectsForStatus(projects = [], status = "all") {
@@ -18,13 +22,15 @@
     return project?.parent?.id && project.children?.length === 1 && project.children[0]?.id === project.parent.id;
   }
 
-  function hasCollapsedAncestor(task, byId, collapsedIds) {
+  function hasCollapsedAncestor(task, byId, collapsedIds, resolveParent = null) {
     const visited = new Set();
-    let current = task;
-    while (current?.parentId && byId.has(current.parentId) && !visited.has(current.parentId)) {
-      if (collapsedIds.has(current.parentId)) return true;
-      visited.add(current.parentId);
-      current = byId.get(current.parentId);
+    let parentId = taskParentId(task);
+    while (parentId && !visited.has(parentId)) {
+      if (collapsedIds.has(parentId)) return true;
+      visited.add(parentId);
+      const parent = byId.get(parentId)
+        || (typeof resolveParent === "function" ? resolveParent(parentId) : null);
+      parentId = taskParentId(parent);
     }
     return false;
   }

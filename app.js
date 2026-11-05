@@ -3476,20 +3476,26 @@ function renderUnifiedTodoList() {
     const meetings = getMeetingListItems({ query }).filter(item =>
       state.meetingFilter === "all" || getMeetingPhase(item) === state.meetingFilter
     );
-    const totalInvested = meetings.reduce((sum, item) => sum + item.investedHours, 0);
-    const phaseLabel = {
-      all: "全部会议",
-      planned: "计划中的会议",
-      in_progress: "进行中的会议",
-      ended: "已结束的会议"
-    }[state.meetingFilter] || "会议";
-    sections = meetings.length
-      ? [{
-        key: "meeting",
-        label: `${phaseLabel}（合计 ${trimNumber(totalInvested)}h）`,
-        tasks: meetings
-      }]
-      : [];
+    if (state.meetingFilter === "all") {
+      sections = TodoListPolicy.buildMeetingAllSections(meetings, {
+        getPhase: item => item.phase || getMeetingPhase(item)
+      });
+    } else {
+      const sorted = TodoListPolicy.sortMeetingsByScheduleAsc(meetings);
+      const totalInvested = sorted.reduce((sum, item) => sum + item.investedHours, 0);
+      const phaseLabel = {
+        planned: "计划中的会议",
+        in_progress: "进行中的会议",
+        ended: "已结束的会议"
+      }[state.meetingFilter] || "会议";
+      sections = sorted.length
+        ? [{
+          key: "meeting",
+          label: `${phaseLabel}（合计 ${trimNumber(totalInvested)}h）`,
+          tasks: sorted
+        }]
+        : [];
+    }
   } else if (state.filter === "memo") {
     const memos = TodoListPolicy.sortByDueDateAsc(memoLeafTasks);
     sections = memos.length
@@ -3564,7 +3570,10 @@ function renderUnifiedTodoList() {
 
   sections.forEach(section => {
     const alarmExit = section.key === "attention-alarm";
-    const collapsible = !overlayMode && state.filter === "all" && Boolean(section.label);
+    const collapsible = !overlayMode && Boolean(section.label) && (
+      (meetingMode && state.meetingFilter === "all") ||
+      (!meetingMode && state.filter === "all")
+    );
     const collapsed = collapsible && state.todoCollapsedSections.has(section.key);
     if (section.label && section.tasks.length) {
       const heading = document.createElement(collapsible || alarmExit ? "button" : "div");
@@ -3656,11 +3665,7 @@ function getMeetingListItems({ query = "", recentDays = 90, futureDays = 30 } = 
       item.phase = getMeetingPhase(item);
       return item;
     })
-    .sort((a, b) =>
-      b.dateKey.localeCompare(a.dateKey) ||
-      Number(a.start) - Number(b.start) ||
-      a.title.localeCompare(b.title, "zh-CN")
-    );
+    .sort(TodoListPolicy.compareMeetingScheduleAsc);
 }
 
 function updateMeetingFilterCounts(meetingItems = []) {
@@ -4043,14 +4048,30 @@ function projectStatusLabel(status) {
   return { unplanned: "未计划", planned: "计划中", in_progress: "进行中", tracking: "待跟踪", ended: "已关闭" }[status] || "计划中";
 }
 
+function taskParentIdForTree(task) {
+  return String(task?.parentId || task?.parentTaskId || task?.parentTask || task?.parent || "").trim();
+}
+
 function getProjectSummaries(tasks = getAllTasks().map(({ task }) => task)) {
   const visible = RecurringPolicy.dedupeRecurringTasksForProject(
     uniqueTasks(tasks).filter(task => !isHiddenFutureRecurringInstance(task)),
     RecurringPolicy.currentMonthKey()
   );
   const visibleIds = new Set(visible.map(task => task.id));
+  const taskById = new Map(visible.map(task => [task.id, task]));
+  const visibleParentId = task => taskParentIdForTree(task);
+  const hasVisibleParent = task => {
+    let parentId = visibleParentId(task);
+    const visited = new Set();
+    while (parentId && !visited.has(parentId)) {
+      if (visibleIds.has(parentId)) return true;
+      visited.add(parentId);
+      parentId = visibleParentId(taskById.get(parentId));
+    }
+    return false;
+  };
   const roots = visible
-    .filter(task => !task.parentId || !visibleIds.has(task.parentId))
+    .filter(task => !hasVisibleParent(task))
     .sort((a, b) => `${a.dueDate || "9999-12-31"} ${a.dueTime || ""}`.localeCompare(`${b.dueDate || "9999-12-31"} ${b.dueTime || ""}`));
   return roots.map(root => {
     const descendants = getDescendantTasks(root.id).filter(task => visibleIds.has(task.id));
@@ -6582,7 +6603,7 @@ function buildGanttArrangeSections(projects, meetings = []) {
     config: getGanttArrangeConfig(),
     collapsedSections: state.projectCollapsedSections,
     collapsedTasks: state.projectCollapsedTasks,
-    visibleTreeItems: args => ProjectCollapsePolicy.visibleTreeItems(args),
+    visibleTreeItems: args => ganttVisibleTreeItems(args),
     shouldRenderSingleRow: project => ProjectCollapsePolicy.shouldRenderSingleRow(project),
     classifyProjectStatus: tasks => ProjectSummaryPolicy.classifyProjectStatus(tasks),
     getChildTasks,
@@ -7793,6 +7814,8 @@ function renderProjectSchedule() {
         );
         return;
       }
+      const projectRootId = row.rootId || row.task?.id || "";
+      if (isHiddenByCollapsedGanttAncestor(row.task, projectRootId)) return;
       const investedItems = row.isParent
         ? [row.task, ...(row.descendantTasks || [])].flatMap(task =>
           getTaskScheduleEntries(task.id)
@@ -9798,6 +9821,33 @@ function toggleProjectTask(taskId) {
   if (state.projectCollapsedTasks.has(taskId)) state.projectCollapsedTasks.delete(taskId);
   else state.projectCollapsedTasks.add(taskId);
   renderSchedule();
+}
+
+function resolveGanttTreeParent(taskId) {
+  return findTask(taskId)?.task || null;
+}
+
+function ganttVisibleTreeItems(args = {}) {
+  return ProjectCollapsePolicy.visibleTreeItems({
+    ...args,
+    resolveParent: resolveGanttTreeParent
+  });
+}
+
+/** Hide rows still emitted when a collapsed ancestor sits outside the local project.children map. */
+function isHiddenByCollapsedGanttAncestor(task, projectRootId = "") {
+  if (!task?.id) return false;
+  const rootId = String(projectRootId || "").trim();
+  const visited = new Set();
+  let parentId = taskParentIdForTree(task);
+  while (parentId && parentId !== rootId && !visited.has(parentId)) {
+    if (state.projectCollapsedTasks.has(parentId) || state.projectCollapsedSections.has(parentId)) {
+      return true;
+    }
+    visited.add(parentId);
+    parentId = taskParentIdForTree(findTask(parentId)?.task);
+  }
+  return false;
 }
 
 function getTaskDepth(task, rootId = "") {

@@ -11,6 +11,8 @@ assert.match(app, /entryType === "calendar" && !linkSelected/, "meetings may sav
 assert.match(html, /data-list-kind="meeting"/, "meeting should be a parallel list-kind switch beside todos");
 assert.doesNotMatch(html, /data-filter="meeting"/, "meeting should not remain a status tab");
 assert.match(app, /function getMeetingListItems/, "meetings must surface as list items with invested hours");
+assert.match(app, /TodoListPolicy\.compareMeetingScheduleAsc/, "meeting list must sort by schedule ascending");
+assert.match(app, /TodoListPolicy\.buildMeetingAllSections/, "all-meetings view must group by phase");
 assert.match(app, /function createMeetingCard/, "meeting cards should open the schedule entry, not a todo");
 assert.match(html, />会议日程</, "calendar entry type label should be 会议日程");
 assert.match(html, />任务处理</, "task_work entry type label should be 任务处理");

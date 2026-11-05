@@ -43,7 +43,8 @@ const buildArgs = {
   projects: [project],
   collapsedSections: new Set(),
   collapsedTasks: new Set(),
-  visibleTreeItems: ({ tasks }) => tasks.filter(task => task.id !== parent.id),
+  visibleTreeItems: ({ tasks, collapsedIds = new Set() }) =>
+    tasks.filter(task => task.id !== parent.id && !collapsedIds.has(task.parentId || "")),
   shouldRenderSingleRow: () => false,
   classifyProjectStatus: classify,
   getChildTasks: id => [childActive, childDone].filter(task => task.parentId === id)
@@ -76,6 +77,36 @@ assert.ok(
 assert.ok(
   !treeSections.some(s => s.label === "已结束" && s.rows?.some(r => r.task.id === "c2")),
   "closed child must not teleport to outer 已结束"
+);
+
+const collapsedRootUnit = policy.buildTreeUnit(project, {
+  ...buildArgs,
+  config: treeFirst,
+  collapsedSections: new Set(),
+  collapsedTasks: new Set([parent.id])
+});
+assert.equal(collapsedRootUnit.rows.length, 1, "project root collapsed via collapsedTasks must hide descendants");
+
+const nestedChild = { id: "c3", title: "孙", status: "planned", parentId: "c1", owner: "我", priority: "kpi", category: "work" };
+const nestedProject = {
+  parent,
+  children: [parent, childActive, nestedChild],
+  summaryTasks: [childActive, nestedChild]
+};
+const collapsePolicy = require("../project-collapse-policy");
+const collapsedMidUnit = policy.buildTreeUnit(nestedProject, {
+  ...buildArgs,
+  projects: [nestedProject],
+  config: treeFirst,
+  collapsedSections: new Set(),
+  collapsedTasks: new Set(["c1"]),
+  visibleTreeItems: args => collapsePolicy.visibleTreeItems(args),
+  getChildTasks: id => [childActive, nestedChild].filter(task => task.parentId === id)
+});
+assert.equal(
+  collapsedMidUnit.rows.map(row => row.task.id).join(","),
+  "p,c1",
+  "collapsing a mid-level parent must hide only its descendants"
 );
 
 // B: 状态 → 树 —— 外层按父块，一家不拆

@@ -273,6 +273,40 @@
     );
   }
 
+  /** Meeting list tabs: earliest schedule first (past/near top → future below). */
+  function compareMeetingScheduleAsc(a, b) {
+    return (
+      String(a?.dateKey || "").localeCompare(String(b?.dateKey || "")) ||
+      Number(a?.start) - Number(b?.start) ||
+      String(a?.title || "").localeCompare(String(b?.title || ""), "zh-CN")
+    );
+  }
+
+  function sortMeetingsByScheduleAsc(meetings = []) {
+    return [...meetings].sort(compareMeetingScheduleAsc);
+  }
+
+  const MEETING_ALL_SECTION_ORDER = ["planned", "in_progress", "ended"];
+  const MEETING_ALL_SECTION_LABELS = {
+    planned: "计划中",
+    in_progress: "进行中",
+    ended: "已结束"
+  };
+
+  /** 全部会议：计划中 → 进行中 → 已结束；组内按开始时间由早到晚。 */
+  function buildMeetingAllSections(meetings = [], { getPhase = item => item?.phase || "planned" } = {}) {
+    const buckets = { planned: [], in_progress: [], ended: [] };
+    meetings.forEach(item => {
+      const phase = getPhase(item);
+      if (buckets[phase]) buckets[phase].push(item);
+    });
+    return MEETING_ALL_SECTION_ORDER.map(key => ({
+      key: `meeting-${key}`,
+      label: MEETING_ALL_SECTION_LABELS[key],
+      tasks: sortMeetingsByScheduleAsc(buckets[key])
+    })).filter(section => section.tasks.length);
+  }
+
   const ALL_STATUS_SECTION_ORDER = ["in_progress", "planned", "unplanned", "tracking", "ended"];
   const ALL_STATUS_SECTION_LABELS = {
     in_progress: "进行中",
@@ -453,6 +487,11 @@
     sortByCreatedAtDesc,
     sortByCreatedAtAsc,
     sortByDueDateAsc,
+    compareMeetingScheduleAsc,
+    sortMeetingsByScheduleAsc,
+    MEETING_ALL_SECTION_ORDER,
+    MEETING_ALL_SECTION_LABELS,
+    buildMeetingAllSections,
     ALL_STATUS_SECTION_ORDER,
     ALL_STATUS_SECTION_LABELS,
     classifyTodoStatusBucket,
