@@ -6850,6 +6850,16 @@ function meetingGanttRowId(meeting, parentTaskId = "") {
   return `meeting:${TodoListPolicy.normalizeTitle(title)}:${parentId || "root"}`;
 }
 
+function findMeetingSummaryByGanttRowId(rowId) {
+  const id = String(rowId || "").trim();
+  if (!id.startsWith("meeting:")) return null;
+  return getCalendarMeetingSummaries().find(meeting => meetingGanttRowId(meeting) === id) || null;
+}
+
+function entryIdsForMeetingSummary(meeting) {
+  return (meeting?.entries || []).map(({ entry }) => String(entry?.id || "").trim()).filter(Boolean);
+}
+
 function buildMeetingArrangeRows(meetings = []) {
   return meetings.map(meeting => {
     const owners = [...new Set(
@@ -8837,7 +8847,16 @@ function collectBulkSelectionTargets(listKeys = [], ganttTaskIds = []) {
   }
   for (const taskId of ganttTaskIds) {
     const id = String(taskId || "");
-    if (!id || id.startsWith("meeting:") || seenTasks.has(id) || !findTask(id)?.task) continue;
+    if (!id) continue;
+    if (id.startsWith("meeting:")) {
+      entryIdsForMeetingSummary(findMeetingSummaryByGanttRowId(id)).forEach(entryId => {
+        if (!entryId || seenEntries.has(entryId) || !findEntry(entryId)?.entry) return;
+        seenEntries.add(entryId);
+        entryIds.push(entryId);
+      });
+      continue;
+    }
+    if (seenTasks.has(id) || !findTask(id)?.task) continue;
     seenTasks.add(id);
     taskIds.push(id);
   }
@@ -9248,6 +9267,27 @@ function showListItemContextMenu(event, focus = {}) {
       ${multi ? "" : `<button type="button" role="menuitem" data-list-action="edit">编辑</button>`}
       ${categoryMenuFlyoutHtml()}`;
   }
+  positionGanttContextMenu(menu, event);
+}
+
+function showGanttMeetingContextMenu(event, meeting, rowId) {
+  if (!meeting || !rowId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const ids = ensureGanttSelectionSet();
+  if (!ids.has(rowId)) selectGanttTaskRow(rowId);
+  const menu = ensureGanttContextMenu();
+  ganttContextMenuTaskId = "";
+  contextMenuListKeys = null;
+  listContextMenuOpen = () => {
+    const first = meeting.entries?.[0];
+    if (first) openEntryDialog(first.entry.start, first.entry, first.dateKey);
+  };
+  const selectedMeetings = [...ensureGanttSelectionSet()].filter(id => id.startsWith("meeting:"));
+  const multi = selectedMeetings.length > 1;
+  menu.innerHTML = `
+    ${multi ? "" : `<button type="button" role="menuitem" data-list-action="edit">编辑</button>`}
+    ${categoryMenuFlyoutHtml()}`;
   positionGanttContextMenu(menu, event);
 }
 
@@ -9694,7 +9734,7 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
   const meetingCategoryLabel = typeof TaskCategoryPolicy?.labelForCategory === "function"
     ? TaskCategoryPolicy.labelForCategory(category)
     : String(category || "");
-  labelRow.title = "单击高亮整行；拖动名称可挂到待办任务下（会议计入该任务投入）；拖到空白处可取消挂接；双击编辑；右侧色条仅展示";
+  labelRow.title = "单击高亮整行；拖动名称可挂到待办任务下（会议计入该任务投入）；拖到空白处可取消挂接；双击或右键编辑/改分类；右侧色条仅展示";
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin is-meeting">
       ${meetingLead}<strong title="${escapeHtml(meetingTitle)}">${escapeHtml(meetingTitle)}</strong>
     </div>${ganttLabelColumnCellsHtml({
@@ -9719,6 +9759,7 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
     if (first) openEntryDialog(first.entry.start, first.entry, first.dateKey);
   };
   labelRow.addEventListener("dblclick", openMeeting);
+  labelRow.addEventListener("contextmenu", event => showGanttMeetingContextMenu(event, meeting, rowId));
   return { labelRow, chartRow };
 }
 
