@@ -6782,6 +6782,26 @@ function resolveMeetingCategory(meeting = {}) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))[0][0];
 }
 
+/** Linked meetings already paint on their task row (meetingSegments); skip a second gantt row. */
+function meetingGanttRowSuppressed(meeting) {
+  const linkedId = String(
+    meeting?.linkedTaskId || resolveMeetingLinkedTaskId(meeting?.entries) || ""
+  ).trim();
+  if (!linkedId) return false;
+  return Boolean(findTask(linkedId)?.task);
+}
+
+function meetingGanttRowId(meeting, parentTaskId = "") {
+  const title = String(meeting?.title || "").trim();
+  const parentId = String(
+    parentTaskId
+    || meeting?.linkedTaskId
+    || resolveMeetingLinkedTaskId(meeting?.entries)
+    || ""
+  ).trim();
+  return `meeting:${TodoListPolicy.normalizeTitle(title)}:${parentId || "root"}`;
+}
+
 function buildMeetingArrangeRows(meetings = []) {
   return meetings.map(meeting => {
     const owners = [...new Set(
@@ -6796,12 +6816,13 @@ function buildMeetingArrangeRows(meetings = []) {
       ? TaskCategoryPolicy.colorForCategory(category)
       : "#AA7B39";
     const parentTaskId = String(meeting.linkedTaskId || resolveMeetingLinkedTaskId(meeting.entries) || "").trim();
+    const rowId = meetingGanttRowId(meeting, parentTaskId);
     return {
       kind: "meeting",
       meeting,
       parentTaskId,
       task: {
-        id: `meeting:${TodoListPolicy.normalizeTitle(meeting.title)}:${parentTaskId || "root"}`,
+        id: rowId,
         title: meeting.title,
         status,
         owner: owners[0] || "未指定",
@@ -7965,7 +7986,9 @@ function renderProjectSchedule() {
   const searchMatcher = buildGanttSearchMatcher(getAllTasks().map(({ task }) => task));
   const projects = filterProjectsByGanttView(statusProjects, ganttView, windowInfo, searchMatcher);
   const sourceMeetings = getCalendarMeetingSummaries();
-  let meetings = ganttView.showMeetings === false ? [] : sourceMeetings;
+  let meetings = ganttView.showMeetings === false
+    ? []
+    : sourceMeetings.filter(meeting => !meetingGanttRowSuppressed(meeting));
   if (ganttView.investedOnly && meetings.length) {
     meetings = meetings.filter(meeting => meetingHasInvestedInGanttWindow(meeting, windowInfo));
   }
@@ -8181,6 +8204,7 @@ function renderProjectSchedule() {
           labelGroup,
           chartGroup,
           createCalendarGanttRow(row.meeting, buckets, state.projectScale, {
+            rowId: row.task?.id,
             groupIndent: indentBase,
             treeDepth: Math.max(0, Number(row.depth) || 0),
             category: row.task?.category,
@@ -8633,6 +8657,35 @@ function paintGanttSelection() {
 function visibleGanttTaskIds() {
   const labels = el.timeline?.querySelectorAll?.(".project-gantt-row-label[data-task-id]") || [];
   return [...labels].map(node => node.dataset.taskId).filter(Boolean);
+}
+
+function bindGanttMeetingRowSelection(labelRow, chartRow, rowId) {
+  const id = String(rowId || "").trim();
+  if (!id || !labelRow || !chartRow) return;
+  let suppressGanttRowActivate = false;
+  const onGanttRowPointerDown = event => {
+    if (event.target?.closest?.(GANTT_ROW_SELECTION_IGNORE)) return;
+    if (!applyGanttMultiSelectEvent(event, id)) return;
+    suppressGanttRowActivate = true;
+  };
+  labelRow.addEventListener("pointerdown", onGanttRowPointerDown);
+  chartRow.addEventListener("pointerdown", onGanttRowPointerDown);
+  const selectRow = event => {
+    if (suppressGanttRowActivate) {
+      suppressGanttRowActivate = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (isListMultiSelectEvent(event)) {
+      applyGanttMultiSelectEvent(event, id);
+      return;
+    }
+    clearListSelection();
+    selectGanttTaskRow(id, { additive: false, range: false });
+  };
+  labelRow.addEventListener("click", selectRow);
+  chartRow.addEventListener("click", selectRow);
 }
 
 function selectGanttTaskRow(taskId, options = {}) {
@@ -9372,6 +9425,10 @@ function bindGanttMeetingLinkDrag(labelRow, meeting, chartRow = null) {
   if (!labelRow || !entryId) return;
   labelRow.draggable = true;
   labelRow.addEventListener("dragstart", event => {
+    if (isListMultiSelectEvent(event)) {
+      event.preventDefault();
+      return;
+    }
     event.dataTransfer.setData("text/entry-id", entryId);
     event.dataTransfer.setData("text/gantt-link-meeting", "1");
     event.dataTransfer.effectAllowed = "move";
@@ -9585,6 +9642,8 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
     ? TaskCategoryPolicy.colorForCategory(category)
     : "#AA7B39";
   const enabledLabelColumns = options.enabledLabelColumns || getEnabledGanttLabelColumns();
+  const rowId = String(options.rowId || meetingGanttRowId(meeting)).trim();
+  const selected = ensureGanttSelectionSet().has(rowId) || state.selectedGanttTaskId === rowId;
   const labelRow = document.createElement("div");
   const treeDepth = Math.max(0, Number(options.treeDepth) || 0);
   const groupIndent = Math.max(0, Number(options.groupIndent ?? options.indentBase) || 0);
@@ -9592,16 +9651,17 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
   const meetingLead = treeOutline && treeDepth > 0
     ? `<span class="gantt-tree-rail" aria-hidden="true"></span>`
     : "";
-  labelRow.className = `project-gantt-row-label meeting${treeOutline && treeDepth > 0 ? " is-tree-node" : ""}${enabledLabelColumns.length ? " has-columns" : ""}`;
+  labelRow.className = `project-gantt-row-label meeting${treeOutline && treeDepth > 0 ? " is-tree-node" : ""}${selected ? " is-selected" : ""}${enabledLabelColumns.length ? " has-columns" : ""}`;
   labelRow.style.setProperty("--task-depth", String(treeDepth));
   labelRow.style.setProperty("--gantt-group-indent", String(groupIndent));
   labelRow.style.setProperty("--gantt-extra-cols", String(enabledLabelColumns.length));
   labelRow.dataset.depth = String(treeDepth);
   labelRow.dataset.treeDepth = String(treeDepth);
+  labelRow.dataset.taskId = rowId;
   const meetingCategoryLabel = typeof TaskCategoryPolicy?.labelForCategory === "function"
     ? TaskCategoryPolicy.labelForCategory(category)
     : String(category || "");
-  labelRow.title = "拖动名称可挂到待办任务下（会议计入该任务投入）；拖到空白处可取消挂接；双击编辑；右侧色条拖到日期可改期";
+  labelRow.title = "单击高亮整行；拖动名称可挂到待办任务下（会议计入该任务投入）；拖到空白处可取消挂接；双击编辑；右侧色条拖到日期可改期";
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin is-meeting">
       ${meetingLead}<strong title="${escapeHtml(meetingTitle)}">${escapeHtml(meetingTitle)}</strong>
     </div>${ganttLabelColumnCellsHtml({
@@ -9611,13 +9671,15 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
     category: meetingCategoryLabel || "—"
   }, enabledLabelColumns)}`;
   const chartRow = document.createElement("div");
-  chartRow.className = "project-gantt-row-chart meeting";
+  chartRow.className = `project-gantt-row-chart meeting${selected ? " is-selected" : ""}`;
+  chartRow.dataset.taskId = rowId;
   applyCategoryColorStyle(chartRow, color);
   chartRow.innerHTML = `<div class="project-gantt-lane">
       ${parts.segments.map(segment => `<i class="gantt-meeting-bar" data-entry-id="${escapeHtml(segment.entryId || "")}" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label || "会议")}"></i>
       ${segment.label ? `<span class="gantt-progress-pct gantt-entry-label" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label)}">${escapeHtml(segment.label)}</span>` : ""}`).join("")}
     </div>`;
   bindGanttMeetingLinkDrag(labelRow, meeting, chartRow);
+  bindGanttMeetingRowSelection(labelRow, chartRow, rowId);
   chartRow.querySelectorAll(".gantt-meeting-bar").forEach(node => {
     bindGanttCalendarEntryDrag(node, node.dataset.entryId, chartRow);
   });
