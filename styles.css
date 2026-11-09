@@ -724,6 +724,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   white-space: nowrap;
   text-align: center;
   flex: 0 0 auto;
+  font-size: calc(13px * var(--chrome-scale));
+  font-weight: 700;
+  line-height: 1.2;
 }
 button[hidden],
 .soft-button[hidden],
@@ -785,13 +788,16 @@ button[hidden],
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 40px;
+  height: var(--chrome-control);
   box-sizing: border-box;
   padding: 0 16px;
   border: 1px solid transparent;
   border-radius: 10px;
   color: white;
   background: var(--accent);
+  font-size: calc(13px * var(--chrome-scale));
+  font-weight: 700;
+  line-height: 1.2;
   box-shadow: 0 6px 16px rgba(60,102,85,.18);
 }
 .primary-button:hover { background: #315849; }
@@ -2845,6 +2851,7 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   min-width: 100%;
 }
 .project-gantt-toolbar {
+  --gantt-toolbar-control: var(--chrome-control);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2875,7 +2882,8 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
 .gantt-toolbar-search input[type="search"] {
   width: 100%;
   min-width: 0;
-  height: 26px;
+  height: var(--gantt-toolbar-control);
+  box-sizing: border-box;
   padding: 0 10px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
@@ -2912,7 +2920,8 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
 .project-scale-switcher button {
   flex: 0 0 auto;
   min-width: 32px;
-  padding: 5px 8px;
+  min-height: calc(var(--gantt-toolbar-control) - 6px);
+  padding: 0 8px;
   border-radius: 8px;
   color: var(--muted);
   background: transparent;
@@ -3488,7 +3497,8 @@ body.in-desktop.glass-mode .project-gantt-row-label.is-filter-context .gantt-lab
 }
 .gantt-period-button {
   min-width: 28px;
-  height: 26px;
+  height: var(--gantt-toolbar-control);
+  box-sizing: border-box;
   padding: 0 8px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
@@ -3556,10 +3566,11 @@ body.in-desktop.glass-mode .gantt-owner-mark {
   font-size: 12px;
 }
 .gantt-filter-list.gantt-filter-inline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
   max-height: none;
+  margin: 0;
 }
 .gantt-filter-invested {
   margin: 6px 0;
@@ -3614,6 +3625,33 @@ body.in-desktop.glass-mode .gantt-settings-field select option {
 .gantt-filter-list li {
   margin: 0;
   padding: 4px 0;
+}
+.gantt-filter-list.gantt-filter-inline li {
+  padding: 0;
+}
+.gantt-arrange-panel .gantt-filter-list label,
+.gantt-arrange-panel .gantt-filter-inline label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--chrome-control);
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid rgba(60, 72, 88, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gantt-arrange-panel input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 16px;
+  accent-color: var(--accent);
 }
 .gantt-settings-field {
   display: grid;
@@ -4681,11 +4719,18 @@ body.in-desktop.glass-mode .datetime-input-wrap input[type="text"]::placeholder 
   margin-left: 10px;
 }
 .gantt-arrange-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--gantt-toolbar-control, var(--chrome-control));
   border: 1px solid rgba(60, 72, 88, 0.18);
   background: rgba(255, 255, 255, 0.72);
-  border-radius: 8px;
-  padding: 4px 10px;
-  font-size: 12px;
+  border-radius: 10px;
+  padding: 0 12px;
+  font-size: calc(12px * var(--chrome-scale));
+  font-weight: 700;
+  line-height: 1.2;
   cursor: pointer;
   color: #24323a;
 }
@@ -4693,12 +4738,22 @@ body.in-desktop.glass-mode .datetime-input-wrap input[type="text"]::placeholder 
   position: fixed;
   z-index: 6000;
   width: min(340px, 72vw);
-  padding: 12px;
+  padding: 12px 14px 14px;
   border-radius: 12px;
   border: 1px solid rgba(60, 72, 88, 0.18);
   background: #fffdf8;
   color: #24323a;
   box-shadow: 0 10px 28px rgba(40, 48, 60, 0.18);
+  display: grid;
+  gap: 10px;
+}
+.gantt-arrange-panel > strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+.gantt-arrange-panel > .form-hint {
+  margin: 0;
+  line-height: 1.45;
 }
 .gantt-arrange-panel[hidden] { display: none; }
 .gantt-arrange-list {
@@ -4775,7 +4830,15 @@ body.in-desktop.glass-mode .datetime-input-wrap input[type="text"]::placeholder 
 .gantt-arrange-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
+  margin: 0;
+}
+.gantt-arrange-actions .soft-button,
+.gantt-arrange-actions .primary-button {
+  min-width: 88px;
+  height: var(--chrome-control);
+  padding: 0 14px;
 }
 body.in-desktop.glass-mode .gantt-arrange-button {
   color: #f4fbff;
@@ -4820,6 +4883,12 @@ body.in-desktop.glass-mode .gantt-arrange-actions .primary-button {
   color: #041018;
   background: #8fe0d7;
   border-color: #8fe0d7;
+}
+body.in-desktop.glass-mode .gantt-arrange-panel .gantt-filter-list label,
+body.in-desktop.glass-mode .gantt-arrange-panel .gantt-filter-inline label {
+  color: #f4fbff;
+  background: rgba(0, 0, 0, 0.28);
+  border-color: rgba(172, 211, 233, 0.28);
 }
 .gantt-field-mark,
 .gantt-project-status-mark {
@@ -5433,10 +5502,11 @@ body.in-desktop.glass-mode #taskEditForm .entry-task-trigger {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 40px;
+  height: var(--chrome-control);
+  min-height: var(--chrome-control);
   box-sizing: border-box;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: 10px;
   color: var(--danger);
   background: #f8e9e8;
   text-align: center;

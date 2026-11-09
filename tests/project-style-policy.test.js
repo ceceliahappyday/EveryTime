@@ -411,6 +411,21 @@ assert.match(
 );
 assert.match(
   styles,
+  /\.primary-button\s*\{[^}]*height:\s*var\(--chrome-control\)/s,
+  "primary buttons should match shared chrome control height"
+);
+assert.match(
+  styles,
+  /\.gantt-filter-list\.gantt-filter-inline\s*\{[^}]*grid-template-columns/s,
+  "gantt inline filters should use a symmetric grid layout"
+);
+assert.match(
+  styles,
+  /\.gantt-arrange-actions[^}]*align-items:\s*center/s,
+  "gantt panel action buttons should align on one row"
+);
+assert.match(
+  styles,
   /body\.in-desktop \.header-view-switcher\s*\{[^}]*height:\s*var\(--chrome-control\)/s,
   "view switcher should match the shared topbar control height"
 );
