@@ -28,6 +28,8 @@ assert.ok(app.includes("syncAttentionOnlyChoice"));
 assert.ok(app.includes("followUpDraftHint"));
 assert.ok(app.includes("ScheduleDayPolicy"), "calendar day scope must use schedule-day-policy");
 assert.ok(app.includes("suggestTaskCloseCompletedAtInput"), "close dialog must not default completion to today");
+assert.ok(app.includes("taskTimelineValidationContext"), "close/save must validate completion timeline");
+assert.ok(app.includes("validateCompletionTimeline"), "datetime rules live in schedule-day-policy");
 assert.doesNotMatch(html, /id="taskCloseFollowUpButton"/, "close dialog merges tracking into successor flow");
 assert.ok(app.includes("follow-up-focus"));
 assert.ok(styles.includes("justify-content: center"));

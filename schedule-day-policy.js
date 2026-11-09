@@ -40,6 +40,79 @@
     return toDateKey(new Date(task.completedAt));
   }
 
+  function parseIso(iso) {
+    if (!iso) return null;
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function daysBetween(earlier, later) {
+    if (!earlier || !later) return 0;
+    return (later.getTime() - earlier.getTime()) / 86400000;
+  }
+
+  /** Validate completion / actual-end times before close or save. */
+  function validateCompletionTimeline({
+    completedAtIso = "",
+    rawInput = "",
+    startedAtIso = "",
+    dueAtIso = "",
+    lastInvestEndIso = "",
+    createdAtIso = "",
+    nowIso = new Date().toISOString()
+  } = {}) {
+    const raw = String(rawInput || "").trim();
+    if (raw && !completedAtIso) {
+      return { ok: false, message: "时间格式无法识别，请用类似 2026/11/05 17:00 的格式" };
+    }
+    if (!completedAtIso) {
+      return { ok: false, message: "请填写实际完成时间" };
+    }
+    const completed = parseIso(completedAtIso);
+    if (!completed) return { ok: false, message: "完成时间无效，请检查日期与时间" };
+    const now = parseIso(nowIso);
+    if (now && completed.getTime() > now.getTime() + 60000) {
+      return { ok: false, message: "完成时间不能晚于当前时间" };
+    }
+    const started = parseIso(startedAtIso);
+    if (started && completed < started) {
+      return { ok: false, message: "完成时间不能早于实际开始时间" };
+    }
+    const lastInvest = parseIso(lastInvestEndIso);
+    if (lastInvest && completed < lastInvest) {
+      return { ok: false, message: "完成时间不能早于最后一次日程投入时间" };
+    }
+    const created = parseIso(createdAtIso);
+    if (created && completed < created) {
+      return { ok: false, message: "完成时间不能早于任务创建时间" };
+    }
+    const due = parseIso(dueAtIso);
+    if (due) {
+      const afterDue = daysBetween(due, completed);
+      const beforeDue = daysBetween(completed, due);
+      if (afterDue > 60) {
+        return { ok: false, message: "完成时间比原定截止日晚超过 60 天，请核对是否填错日期" };
+      }
+      if (beforeDue > 365) {
+        return { ok: false, message: "完成时间比原定截止日早超过一年，请核对是否填错日期" };
+      }
+    }
+    return { ok: true, message: "" };
+  }
+
+  function validateStartEndOrder({ startIso = "", endIso = "", rawStart = "", rawEnd = "" } = {}) {
+    const rawS = String(rawStart || "").trim();
+    const rawE = String(rawEnd || "").trim();
+    if (rawS && !startIso) return { ok: false, message: "开始时间格式无法识别" };
+    if (rawE && !endIso) return { ok: false, message: "结束时间格式无法识别" };
+    const start = parseIso(startIso);
+    const end = parseIso(endIso);
+    if (start && end && end < start) {
+      return { ok: false, message: "结束时间不能早于开始时间" };
+    }
+    return { ok: true, message: "" };
+  }
+
   /** Prefer historical anchors; never assume「today」when closing backlog tasks. */
   function pickDefaultCompletionIso(task = {}, hints = {}) {
     if (task.completedAt) return task.completedAt;
@@ -57,6 +130,8 @@
     taskVisibleInDateScope,
     taskDuePlannedOnDate,
     completedDateKey,
-    pickDefaultCompletionIso
+    pickDefaultCompletionIso,
+    validateCompletionTimeline,
+    validateStartEndOrder
   };
 });

@@ -4764,6 +4764,34 @@ function suggestTaskCloseCompletedAtInput(task) {
   return iso ? toLocalDateTimeInput(iso) : "";
 }
 
+function taskTimelineValidationContext(task, { completedAtIso = "", rawInput = "" } = {}) {
+  if (!task) return { ok: false, message: "任务不存在" };
+  const startedAt = task.startOverrideAt || task.startedAt || getTaskScheduleInfo(task.id)?.firstStartIso || "";
+  return typeof ScheduleDayPolicy?.validateCompletionTimeline === "function"
+    ? ScheduleDayPolicy.validateCompletionTimeline({
+      completedAtIso,
+      rawInput,
+      startedAtIso: startedAt,
+      dueAtIso: dueDateTimeToIso(task),
+      lastInvestEndIso: lastTaskScheduleEndIso(task.id),
+      createdAtIso: task.createdAtIso || task.createdAt || "",
+      nowIso: new Date().toISOString()
+    })
+    : { ok: Boolean(completedAtIso), message: completedAtIso ? "" : "请填写实际完成时间" };
+}
+
+function reopenCloseConfirmWithTimeError(task, message, completionNote = "", resumeAfterClose = false) {
+  showToast(message, 3600);
+  pendingCloseTaskId = task?.id || "";
+  if (resumeAfterClose && task?.id) parentReviewResumeTaskId = task.id;
+  if (completionNote) setRichNoteEditorValue(el.taskCloseCompletionNote, completionNote);
+  if (el.taskCloseCompletedAt) {
+    el.taskCloseCompletedAt.classList.add("field-error");
+    el.taskCloseCompletedAt.focus();
+  }
+  el.taskCloseConfirmDialog?.showModal();
+}
+
 function tasksForDateScope(dateKey) {
   const seen = new Set();
   const tasks = [];
@@ -5069,8 +5097,21 @@ function bindFlexibleDateTimeInput(input, { kind = "end" } = {}) {
   input.dataset.flexibleDateTimeBound = "1";
   const resolveKind = () => (typeof kind === "function" ? kind() : kind);
   input.addEventListener("blur", () => {
-    if (!String(input.value || "").trim()) return;
+    const raw = String(input.value || "").trim();
+    if (!raw) {
+      input.classList.remove("field-error");
+      return;
+    }
+    const before = raw;
     normalizeDateTimeInputValue(input, { defaultKind: resolveKind(), fillTime: true });
+    const after = String(input.value || "").trim();
+    const parsed = parseFlexibleDateTime(after || before);
+    if (!parsed?.dateKey) {
+      input.classList.add("field-error");
+      showToast("时间格式无法识别，请用类似 2026/11/05 17:00", 3200);
+      return;
+    }
+    input.classList.remove("field-error");
   });
   input.addEventListener("keydown", event => {
     if (event.key !== "Enter") return;
@@ -5979,11 +6020,32 @@ function saveTask() {
     payload.status = getAutomaticTaskStatusForPayload(state.editingTaskId, payload);
   }
   const effectiveStartedAt = payload.startedAt || getTaskScheduleInfo(state.editingTaskId)?.firstStartIso || "";
-  if (payload.completedAt && effectiveStartedAt && new Date(payload.completedAt) < new Date(effectiveStartedAt)) {
-    return showTaskFieldError(el.taskActualEnd, "实际完成时间不能早于实际开始时间");
+  const actualEndRaw = String(el.taskActualEnd?.value || "").trim();
+  const actualStartRaw = String(el.taskActualStart?.value || "").trim();
+  const startOrder = typeof ScheduleDayPolicy?.validateStartEndOrder === "function"
+    ? ScheduleDayPolicy.validateStartEndOrder({
+      startIso: payload.startedAt,
+      endIso: payload.completedAt,
+      rawStart: actualStartRaw,
+      rawEnd: actualEndRaw
+    })
+    : { ok: true };
+  if (!startOrder.ok) return showTaskFieldError(el.taskActualEnd, startOrder.message);
+  if (actualEndRaw && !payload.completedAt) {
+    return showTaskFieldError(el.taskActualEnd, "实际完成时间格式无法识别，请检查日期与时间");
+  }
+  if (payload.completedAt || actualEndRaw || payload.status === "done" || payload.status === "closed") {
+    const editingTask = state.editingTaskId ? findTask(state.editingTaskId)?.task : null;
+    const timeline = taskTimelineValidationContext(editingTask, {
+      completedAtIso: payload.completedAt,
+      rawInput: actualEndRaw
+    });
+    if (!timeline.ok) return showTaskFieldError(el.taskActualEnd, timeline.message);
   }
   if (payload.status === "in_progress" && !payload.startedAt) payload.startedAt = getTaskScheduleInfo(state.editingTaskId)?.firstStartIso || new Date().toISOString();
-  if (["done", "closed"].includes(payload.status) && !payload.completedAt) payload.completedAt = new Date().toISOString();
+  if (["done", "closed"].includes(payload.status) && !payload.completedAt && !actualEndRaw) {
+    payload.completedAt = new Date().toISOString();
+  }
   if (["done", "closed"].includes(payload.status) && !payload.startedAt) payload.startedAt = effectiveStartedAt;
   if (payload.status === "done") {
     payload.progress = 100;
@@ -9396,6 +9458,7 @@ function requestTaskCompletion(task) {
     el.taskCloseConfirmMessage.textContent = `「${task.title}」请确认完成时间与完成情况。「关闭并新建后续」会继承原优先级与上级。`;
   }
   if (el.taskCloseCompletedAt) {
+    el.taskCloseCompletedAt.classList.remove("field-error");
     el.taskCloseCompletedAt.value = suggestTaskCloseCompletedAtInput(task);
   }
   setRichNoteEditorValue(el.taskCloseCompletionNote, task.deliveryNote || "");
@@ -9413,28 +9476,17 @@ function confirmCloseTaskChoice(mode = "only") {
     return;
   }
   const resumeAfterClose = parentReviewResumeTaskId && task && parentReviewResumeTaskId === task.id;
-  const completedAt = fromLocalDateTimeInput(el.taskCloseCompletedAt?.value || "");
-  if (!completedAt) {
-    showToast("请填写实际完成时间");
-    if (task?.id) pendingCloseTaskId = task.id;
-    if (resumeAfterClose) parentReviewResumeTaskId = task.id;
-    setRichNoteEditorValue(el.taskCloseCompletionNote, completionNote);
-    el.taskCloseConfirmDialog?.showModal();
+  const closeRaw = String(el.taskCloseCompletedAt?.value || "").trim();
+  const completedAt = fromLocalDateTimeInput(closeRaw);
+  const timeline = taskTimelineValidationContext(task, { completedAtIso: completedAt, rawInput: closeRaw });
+  if (!timeline.ok) {
+    reopenCloseConfirmWithTimeError(task, timeline.message, completionNote, resumeAfterClose);
     return;
   }
   pendingCloseTaskId = null;
   parentReviewResumeTaskId = null;
   el.taskCloseConfirmDialog?.close();
   if (!task) return;
-  const startedAt = task.startOverrideAt || task.startedAt || getTaskScheduleInfo(task.id)?.firstStartIso || "";
-  if (startedAt && new Date(completedAt) < new Date(startedAt)) {
-    showToast("完成时间不能早于实际开始时间");
-    pendingCloseTaskId = task.id;
-    if (resumeAfterClose) parentReviewResumeTaskId = task.id;
-    setRichNoteEditorValue(el.taskCloseCompletionNote, completionNote);
-    el.taskCloseConfirmDialog?.showModal();
-    return;
-  }
   toggleTaskCompletion(task, {
     createFollowUp: closeMode === "tracking",
     createSuccessor: closeMode === "successor",

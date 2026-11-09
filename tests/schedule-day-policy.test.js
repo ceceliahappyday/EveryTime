@@ -38,4 +38,17 @@ assert.equal(
   "close dialog should default to due date/time before today"
 );
 
+assert.equal(
+  policy.validateCompletionTimeline({
+    completedAtIso: "2026-12-01T10:00:00.000Z",
+    nowIso: "2026-11-09T10:00:00.000Z"
+  }).ok,
+  false,
+  "future completion must be rejected"
+);
+assert.match(
+  policy.validateCompletionTimeline({ rawInput: "abc", completedAtIso: "" }).message,
+  /格式无法识别/
+);
+
 console.log("schedule day policy tests passed");
