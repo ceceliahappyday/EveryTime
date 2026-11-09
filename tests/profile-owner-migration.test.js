@@ -7,7 +7,7 @@ const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 
 assert.match(
   app,
-  /await loadDesktopProfileName\(\);\s*migrateData\(\);/s,
+  /await loadDesktopProfileName\(\);[\s\S]*?migrateData\(\);/,
   "profile name must load before migrateData fills empty owners"
 );
 assert.match(

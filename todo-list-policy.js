@@ -240,6 +240,48 @@
     return Number.isFinite(ms) ? ms : 0;
   }
 
+  function parseFiniteIso(iso) {
+    const ms = Date.parse(String(iso || "").trim());
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : "";
+  }
+
+  /** Best-effort creation instant for legacy rows missing createdAtIso. */
+  function inferTaskCreatedAtIso(task, { storageDateKey = "" } = {}) {
+    const direct = parseFiniteIso(task?.createdAtIso);
+    if (direct) return direct;
+    const fromUpdated = parseFiniteIso(task?.updatedAt);
+    if (fromUpdated) return fromUpdated;
+    const storageKey = String(storageDateKey || "").trim();
+    const legacyTime = String(task?.createdAt || "").trim();
+    const timeMatch = legacyTime.match(/^(\d{1,2}):(\d{2})/);
+    if (storageKey && /^\d{4}-\d{2}-\d{2}$/.test(storageKey)) {
+      const hour = timeMatch ? Math.min(23, Number(timeMatch[1])) : 9;
+      const minute = timeMatch ? Math.min(59, Number(timeMatch[2])) : 0;
+      const local = new Date(
+        `${storageKey}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`
+      );
+      if (!Number.isNaN(local.getTime())) return local.toISOString();
+    }
+    const due = String(task?.dueDate || "").trim();
+    if (due && /^\d{4}-\d{2}-\d{2}$/.test(due)) {
+      return new Date(`${due}T09:00:00`).toISOString();
+    }
+    return "";
+  }
+
+  /** Immutable creation timestamp (ISO); empty when unknown. */
+  function resolveTaskCreatedAtIso(task, { storageDateKey = "" } = {}) {
+    return parseFiniteIso(task?.createdAtIso) || inferTaskCreatedAtIso(task, { storageDateKey });
+  }
+
+  /** Persist a one-time backfill; never overwrite an existing valid createdAtIso. */
+  function ensureTaskCreatedAtIso(task, { storageDateKey = "" } = {}) {
+    const iso = resolveTaskCreatedAtIso(task, { storageDateKey });
+    if (!iso) return "";
+    if (!parseFiniteIso(task?.createdAtIso)) task.createdAtIso = iso;
+    return task.createdAtIso || iso;
+  }
+
   function taskDueSortKey(task) {
     const date = String(task?.dueDate || "").trim() || "9999-12-31";
     const time = String(task?.dueTime || "").trim() || "99:99";
@@ -483,6 +525,10 @@
     isProgressReviewCandidate,
     progressReviewCandidates,
     taskCreatedAtMs,
+    parseFiniteIso,
+    inferTaskCreatedAtIso,
+    resolveTaskCreatedAtIso,
+    ensureTaskCreatedAtIso,
     taskDueSortKey,
     sortByCreatedAtDesc,
     sortByCreatedAtAsc,

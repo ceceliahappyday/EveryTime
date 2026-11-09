@@ -51,4 +51,12 @@ assert.match(
   /格式无法识别/
 );
 
+const lateVsDue = policy.validateCompletionTimeline({
+  completedAtIso: "2026-03-15T10:00:00.000Z",
+  dueAtIso: "2025-12-01T10:00:00.000Z",
+  nowIso: "2026-03-15T12:00:00.000Z"
+});
+assert.equal(lateVsDue.ok, true, "late completion beyond 60d is soft confirm, not hard block");
+assert.match(String(lateVsDue.confirm || ""), /超过 60 天/);
+
 console.log("schedule day policy tests passed");

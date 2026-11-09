@@ -74,5 +74,6 @@ assert.doesNotMatch(meetingCardFn, /责任人|参会人/, "meeting list cards mu
 const taskCardFn = sliceFn(app, "createTaskCard");
 assert.ok(taskCardFn.startsWith("function createTaskCard"), "createTaskCard must exist for card copy checks");
 assert.doesNotMatch(taskCardFn, /责任人/, "todo list cards must not render 责任人 text");
+assert.doesNotMatch(taskCardFn, /task-created-at/, "creation time belongs in task detail, not list cards");
 
 console.log("entry type policy tests passed");

@@ -477,7 +477,7 @@
               <option value="done">已完成 / 已关闭</option>
             </select>
           </label>
-          <label id="taskDueDateField">
+          <label id="taskDueDateField" title="请人工填写；到期与提前天数在设置 → 基础 中配置提醒">
             <span>目标完成时间</span>
             <div class="datetime-input-wrap">
               <input type="text" id="taskDueDateTime" inputmode="numeric" maxlength="20" placeholder="2026/10/10 09:10" autocomplete="off" spellcheck="false" aria-label="目标完成时间" title="可手写或点日历选择；失焦自动识别" />
@@ -500,8 +500,19 @@
             </div>
           </label>
         </div>
-        <div class="form-row" id="taskActualTimeRow">
-          <label>
+        <div class="form-row task-actual-time-row" id="taskActualTimeRow">
+          <label id="taskCreatedAtField" class="hidden">
+            <span>创建时间</span>
+            <div class="datetime-input-wrap datetime-input-wrap--readonly">
+              <input type="text" id="taskCreatedAtDisplay" readonly tabindex="-1" aria-readonly="true" aria-label="创建时间" title="任务创建时间，创建后不可修改" />
+              <button type="button" class="datetime-pick-button datetime-pick-button--locked" disabled tabindex="-1" aria-hidden="true" title="创建后不可修改">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M4.75 7V5.25A3.25 3.25 0 0 1 8 2a3.25 3.25 0 0 1 3.25 3.25V7h.5A1.25 1.25 0 0 1 13 8.25v5.5A1.25 1.25 0 0 1 11.75 15H4.25A1.25 1.25 0 0 1 3 13.75v-5.5A1.25 1.25 0 0 1 4.25 7h.5Zm1.5 0h3.5V5.25A1.75 1.75 0 0 0 8 3.5 1.75 1.75 0 0 0 6.25 5.25V7Z"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <label id="taskActualStartField" title="有日程投入时优先取首次投入时间；手工填写会覆盖自动值">
             <span>实际开始时间</span>
             <div class="datetime-input-wrap">
               <input type="text" id="taskActualStart" inputmode="numeric" maxlength="20" placeholder="2026/10/10 09:10" autocomplete="off" spellcheck="false" aria-label="实际开始时间" title="可手写或点日历选择；失焦自动识别" />
@@ -512,7 +523,7 @@
               </button>
             </div>
           </label>
-          <label>
+          <label id="taskActualEndField">
             <span>实际关闭时间</span>
             <div class="datetime-input-wrap">
               <input type="text" id="taskActualEnd" inputmode="numeric" maxlength="20" placeholder="2026/10/10 18:10" autocomplete="off" spellcheck="false" aria-label="实际关闭时间" title="可手写或点日历选择；失焦自动识别" />
@@ -737,6 +748,48 @@
                 <p class="settings-work-hours-summary" id="settingWorkHoursSummary">日计划可用 8 小时</p>
               </div>
             </div>
+            <h4 class="settings-section-title">目标完成提醒</h4>
+            <div class="settings-card">
+              <label class="settings-row">
+                <span class="settings-row-copy">
+                  <strong>启用目标完成提醒</strong>
+                  <small>到期当天、提前天数与逾期后按规则提示（与仅关注共用一套，不重复弹两次）</small>
+                </span>
+                <input type="checkbox" id="settingDueReminderEnabled" checked />
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-copy">
+                  <strong>包含「仅关注」任务</strong>
+                  <small>关闭后仅普通待办会提醒；仅关注仍可在清单显示红色标记</small>
+                </span>
+                <input type="checkbox" id="settingDueReminderAttention" checked />
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-copy">
+                  <strong>提前 1 天提醒</strong>
+                </span>
+                <input type="checkbox" id="settingDueReminderLead1" checked />
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-copy">
+                  <strong>提前 3 天提醒</strong>
+                </span>
+                <input type="checkbox" id="settingDueReminderLead3" />
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-copy">
+                  <strong>提前 7 天提醒</strong>
+                </span>
+                <input type="checkbox" id="settingDueReminderLead7" />
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-copy">
+                  <strong>逾期后每日提醒</strong>
+                  <small>目标完成日已过且任务未关闭时，每天提醒一次</small>
+                </span>
+                <input type="checkbox" id="settingDueReminderOverdueDaily" checked />
+              </label>
+            </div>
           </section>
 
           <section class="settings-panel" data-settings-panel="ai">
@@ -931,7 +984,10 @@
   <script src="week-entry-policy.js"></script>
   <script src="project-view-policy.js"></script>
   <script src="task-status-policy.js"></script>
+  <script src="task-actual-start-policy.js"></script>
+  <script src="task-reminder-policy.js"></script>
   <script src="schedule-day-policy.js"></script>
+  <script src="task-timeline-backfill-policy.js"></script>
   <script src="rich-note-policy.js"></script>
   <script src="ai-task-draft-policy.js"></script>
   <script src="ai-answer-policy.js"></script>

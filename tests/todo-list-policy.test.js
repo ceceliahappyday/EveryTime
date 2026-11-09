@@ -241,4 +241,18 @@ assert.deepStrictEqual(
   "all-meetings sections must be 计划中 → 进行中 → 已结束"
 );
 
+assert.equal(
+  policy.resolveTaskCreatedAtIso({ createdAtIso: "2026-11-05T08:30:00.000Z" }),
+  "2026-11-05T08:30:00.000Z"
+);
+const legacy = policy.resolveTaskCreatedAtIso(
+  { createdAt: "14:30", status: "done" },
+  { storageDateKey: "2024-06-01" }
+);
+assert.ok(legacy && legacy.includes("2024"), "legacy tasks should infer creation from bucket + time");
+const ensured = { createdAt: "10:15" };
+policy.ensureTaskCreatedAtIso(ensured, { storageDateKey: "2023-01-02" });
+assert.ok(ensured.createdAtIso, "migrate should persist backfilled createdAtIso");
+assert.equal(ensured.createdAtIso, policy.resolveTaskCreatedAtIso(ensured, { storageDateKey: "2023-01-02" }));
+
 console.log("todo list policy tests passed");

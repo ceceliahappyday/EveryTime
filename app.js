@@ -51,6 +51,7 @@ const state = {
   taskListSearch: "",
   showContinueYesterdayOnly: false,
   attentionAlarmTaskIds: [],
+  reminderSettings: null,
   taskView: "day",
   /** Desktop: right-hand schedule/gantt surface shown (false = todo-only focus shell). */
   scheduleRevealed: false,
@@ -138,7 +139,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "taskTitleInput", "taskDueDateTime", "taskMeetingEndField", "taskMeetingEndDateTime", "taskOwner", "taskCategory", "taskParentField", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
     "taskProgress", "taskProgressValue", "taskStatus", "taskMonthlyRecurring", "taskRecurringUntil",
     "taskFollowUpOption", "taskFollowUpTracking", "taskFollowUpTrackingLabel",
-    "recurringOptions", "taskActualStart", "taskActualEnd",
+    "recurringOptions", "taskActualStart", "taskActualEnd", "taskActualTimeRow", "taskCreatedAtDisplay", "taskCreatedAtField",
     "taskBusinessBackground", "taskProblemReason", "taskDeliveryNote", "businessBackgroundLabel",
     "problemReasonLabel", "taskDescription", "taskTitleField", "taskTitleCaption", "taskDueDateField", "taskDeliveryField",
     "taskSubtaskList", "taskSubtaskDraftInput", "taskSubtasksSection",
@@ -163,12 +164,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     "settingsButton", "settingsDialog", "settingsForm", "settingsDialogScroll", "settingsCategoryList", "addCategoryButton", "settingsPaneTitle", "settingsNavList",
     "settingProfileName", "settingGlass", "settingPinned", "settingLocked", "settingStartAtLogin",
     "settingMorningStart", "settingMorningEnd", "settingAfternoonStart", "settingAfternoonEnd", "settingWorkHoursSummary",
+    "settingDueReminderEnabled", "settingDueReminderAttention", "settingDueReminderLead1", "settingDueReminderLead3",
+    "settingDueReminderLead7", "settingDueReminderOverdueDaily",
     "settingAiEnabled", "settingAiApiKey", "settingAiProvider", "settingAiBaseUrl", "settingAiModel", "settingAiStorageHint", "aiDetectModelsButton", "aiKeyStatus",
     "settingsAppVersion", "checkUpdateButton", "settingsDataPath", "settingsExportPath"
   ].forEach(id => el[id] = document.getElementById(id));
 
   await initPersistentStorage();
   await loadDesktopProfileName();
+  if (!state.reminderSettings) applyReminderSettingsFromRaw({});
   migrateData();
   const startupOwnerMigrations = applyProfileName(state.profileName, { migrateOwners: true });
   ensureEntryTaskLinks();
@@ -224,10 +228,52 @@ async function loadDesktopProfileName() {
     const settings = await window.desktopAPI.getSettings();
     const name = String(settings?.profileName || "").trim().slice(0, 40);
     state.profileName = name;
+    applyReminderSettingsFromRaw(settings);
     return name;
   } catch {
     return "";
   }
+}
+
+function applyReminderSettingsFromRaw(raw = {}) {
+  state.reminderSettings = typeof TaskReminderPolicy?.normalizeSettings === "function"
+    ? TaskReminderPolicy.normalizeSettings(raw || {})
+    : null;
+}
+
+function getReminderSettings() {
+  if (state.reminderSettings) return state.reminderSettings;
+  return typeof TaskReminderPolicy?.normalizeSettings === "function"
+    ? TaskReminderPolicy.normalizeSettings({})
+    : {};
+}
+
+function fillDueReminderSettingsForm(settings = {}) {
+  const cfg = typeof TaskReminderPolicy?.normalizeSettings === "function"
+    ? TaskReminderPolicy.normalizeSettings(settings)
+    : getReminderSettings();
+  const lead = new Set(cfg.dueReminderLeadDays || [0]);
+  if (el.settingDueReminderEnabled) el.settingDueReminderEnabled.checked = cfg.dueRemindersEnabled !== false;
+  if (el.settingDueReminderAttention) el.settingDueReminderAttention.checked = cfg.dueReminderIncludeAttention !== false;
+  if (el.settingDueReminderLead1) el.settingDueReminderLead1.checked = lead.has(1);
+  if (el.settingDueReminderLead3) el.settingDueReminderLead3.checked = lead.has(3);
+  if (el.settingDueReminderLead7) el.settingDueReminderLead7.checked = lead.has(7);
+  if (el.settingDueReminderOverdueDaily) {
+    el.settingDueReminderOverdueDaily.checked = cfg.dueReminderOverdueDaily !== false;
+  }
+}
+
+function readDueReminderSettingsFromForm() {
+  return typeof TaskReminderPolicy?.settingsFromForm === "function"
+    ? TaskReminderPolicy.settingsFromForm({
+      enabled: el.settingDueReminderEnabled?.checked !== false,
+      includeAttention: el.settingDueReminderAttention?.checked !== false,
+      lead1: el.settingDueReminderLead1?.checked !== false,
+      lead3: Boolean(el.settingDueReminderLead3?.checked),
+      lead7: Boolean(el.settingDueReminderLead7?.checked),
+      overdueDaily: el.settingDueReminderOverdueDaily?.checked !== false
+    })
+    : getReminderSettings();
 }
 
 function migrateData() {
@@ -261,7 +307,11 @@ function migrateData() {
       if (!knownStatuses.has(task.status)) task.status = "planned";
       task.startedAt ||= "";
       task.completedAt ||= "";
-      task.createdAtIso ||= new Date(`${dateKey}T09:00:00`).toISOString();
+      if (typeof TodoListPolicy?.ensureTaskCreatedAtIso === "function") {
+        TodoListPolicy.ensureTaskCreatedAtIso(task, { storageDateKey: dateKey });
+      } else {
+        task.createdAtIso ||= new Date(`${dateKey}T09:00:00`).toISOString();
+      }
       task.updatedAt ||= task.createdAtIso;
       task.businessBackground ||= "";
       task.problemReason ||= "";
@@ -310,7 +360,34 @@ function migrateData() {
     ScheduleMeetingDemotePolicy.demoteMeetingEventTasks(state.data);
   }
   collapseAttentionSuccessorDuplicates();
+  backfillHistoricalTaskTimelines();
   saveData();
+}
+
+/** Re-scan all tasks on upgrade: fill missing created/started/completed times when inferrable. */
+function backfillHistoricalTaskTimelines() {
+  if (typeof TaskTimelineBackfillPolicy?.ensureTaskTimelineBackfill !== "function") return false;
+  const isEnded = typeof TaskStatusPolicy?.isEndedStatus === "function"
+    ? TaskStatusPolicy.isEndedStatus
+    : status => status === "done" || status === "closed";
+  let changed = false;
+  Object.entries(state.data || {}).forEach(([dateKey, day]) => {
+    (day.tasks || []).forEach(task => {
+      if (!task?.id) return;
+      const schedule = getTaskScheduleInfo(task.id);
+      if (TaskTimelineBackfillPolicy.ensureTaskTimelineBackfill(task, {
+        storageDateKey: dateKey,
+        firstInvestIso: schedule?.firstStartIso || "",
+        lastInvestEndIso: lastTaskScheduleEndIso(task.id),
+        dueDateTimeIso: dueDateTimeToIso,
+        isEndedStatus: isEnded,
+        ensureCreatedAt: typeof TodoListPolicy?.ensureTaskCreatedAtIso === "function"
+          ? t => TodoListPolicy.ensureTaskCreatedAtIso(t, { storageDateKey: dateKey })
+          : null
+      })) changed = true;
+    });
+  });
+  return changed;
 }
 
 function collapseAttentionSuccessorDuplicates() {
@@ -1961,6 +2038,7 @@ async function openSettingsDialog() {
   el.settingLocked.checked = !!settings?.locked;
   el.settingStartAtLogin.checked = !!settings?.startAtLogin;
   applyStoredWorkHours(settings || null);
+  fillDueReminderSettingsForm(settings || {});
   selectSettingsPane("account");
   el.settingAiEnabled.checked = !!settings?.aiEnabled;
   el.settingAiApiKey.value = "";
@@ -2383,9 +2461,11 @@ async function saveDesktopSettings() {
     aiProvider: el.settingAiProvider?.value || "openai",
     aiBaseUrl: el.settingAiBaseUrl?.value?.trim() || "",
     aiModel: el.settingAiModel?.value?.trim() || "",
-    ...(el.settingAiApiKey.value.trim() ? { aiApiKey: el.settingAiApiKey.value.trim() } : {})
+    ...(el.settingAiApiKey.value.trim() ? { aiApiKey: el.settingAiApiKey.value.trim() } : {}),
+    ...readDueReminderSettingsFromForm()
   };
   const saved = await window.desktopAPI.saveSettings(nextSettings);
+  applyReminderSettingsFromRaw(saved);
   const migrated = applyProfileName(saved?.profileName ?? profileName, { migrateOwners: true });
   applyWorkHours({
     morningStart: saved?.morningStart ?? nextSettings.morningStart,
@@ -3423,7 +3503,7 @@ function renderUnifiedTodoList() {
 
   let sections;
     if (hasListSearch) {
-    visibleTasks = visibleTasks.filter(task => !isSupersededClosedWorkTask(task, allTasks));
+    visibleTasks = visibleTasks.filter(task => includeClosedTaskInTodoList(task, allTasks));
     const taskHits = visibleTasks;
     const meetingHits = getMeetingListItems({ query });
     sections = [];
@@ -3446,7 +3526,7 @@ function renderUnifiedTodoList() {
     const byId = new Map(uniqueTasks(allTasks).filter(task => idSet.has(task.id) && isTodoListTask(task)).map(task => [task.id, task]));
     const alarmTasks = state.attentionAlarmTaskIds.map(id => byId.get(id)).filter(Boolean);
     sections = alarmTasks.length
-      ? [{ key: "attention-alarm", label: `关注提醒（${alarmTasks.length}）`, tasks: alarmTasks }]
+      ? [{ key: "attention-alarm", label: `目标完成提醒（${alarmTasks.length}）`, tasks: alarmTasks }]
       : [];
   } else if (state.showContinueYesterdayOnly) {
     const groups = TodoListPolicy.buildTodoGroups({
@@ -3502,7 +3582,7 @@ function renderUnifiedTodoList() {
       ? [{ key: "memo", label: "待跟踪", tasks: memos }]
       : [];
   } else if (state.filter === "all") {
-    const workVisible = visibleTasks.filter(task => !isSupersededClosedWorkTask(task, allTasks));
+    const workVisible = visibleTasks.filter(task => includeClosedTaskInTodoList(task, allTasks));
     sections = TodoListPolicy.buildStatusSections({
       tasks: workVisible,
       entriesByDate,
@@ -3517,7 +3597,7 @@ function renderUnifiedTodoList() {
       else sections.unshift({ key: "in_progress", label: "进行中", tasks: linkedWorkItems });
     }
   } else {
-    const workVisible = visibleTasks.filter(task => !isSupersededClosedWorkTask(task, allTasks));
+    const workVisible = visibleTasks.filter(task => includeClosedTaskInTodoList(task, allTasks));
     const orderedVisible = state.filter === "unplanned" || state.filter === "ended"
       ? TodoListPolicy.sortByCreatedAtAsc(workVisible)
       : state.filter === "in_progress"
@@ -4527,7 +4607,7 @@ function createTaskCard(task) {
       : null);
   // Badge already shows 跟踪 — don't repeat 「· 跟踪」 in the name.
   const displayTitle = TaskStatusPolicy.listDisplayTitle?.(task) || String(task.title || "").trim();
-  const alarmDue = !incomplete && TaskStatusPolicy.isAttentionAlarmDue?.(task, toDateKey(new Date()));
+  const alarmDue = !incomplete && TaskStatusPolicy.isAttentionAlarmDue?.(task, toDateKey(new Date()), getReminderSettings());
   const alarmTitle = alarmDue && task.dueDate && task.dueDate < toDateKey(new Date())
     ? "关注提醒：已过目标完成日期"
     : "关注提醒：今天是目标完成日";
@@ -4778,6 +4858,17 @@ function taskTimelineValidationContext(task, { completedAtIso = "", rawInput = "
       nowIso: new Date().toISOString()
     })
     : { ok: Boolean(completedAtIso), message: completedAtIso ? "" : "请填写实际完成时间" };
+}
+
+function promptCompletionTimelineConfirm(timeline, { title = "完成时间确认", confirmLabel = "仍要保存", onProceed }) {
+  const message = String(timeline?.confirm || "").trim();
+  if (!message) {
+    onProceed();
+    return;
+  }
+  void appConfirm({ title, message, confirmLabel }).then(ok => {
+    if (ok) onProceed();
+  });
 }
 
 function reopenCloseConfirmWithTimeError(task, message, completionNote = "", resumeAfterClose = false) {
@@ -5504,7 +5595,9 @@ function openTaskDialog(task = null, options = {}) {
     || task?.title
     || options.presetTitle
     || "";
-  setTaskDueDateTime(task?.dueDate || "", task?.dueTime || "");
+  if (task?.dueDate) setTaskDueDateTime(task.dueDate, task.dueTime || "");
+  else if (options.presetDueDate) setTaskDueDateTime(options.presetDueDate, options.presetDueTime || "");
+  else setTaskDueDateTime("", "");
   el.taskOwner.value = task?.owner || (options.createKind === "meeting" ? "" : getDefaultOwner());
   if (el.taskCategory) {
     const meetingCreate = options.createKind === "meeting";
@@ -5539,7 +5632,15 @@ function openTaskDialog(task = null, options = {}) {
   }
   restoreTaskStatusOptions(statusTask);
   if (!meetingCreate) syncAttentionMode("checkbox");
-  el.taskActualStart.value = toLocalDateTimeInput(statusTask?.startOverrideAt || statusTask?.startedAt);
+  const scheduleForStart = statusTask?.id ? getTaskScheduleInfo(statusTask.id) : null;
+  const displayActualStart = typeof TaskActualStartPolicy?.resolveActualStartIso === "function"
+    ? TaskActualStartPolicy.resolveActualStartIso(statusTask || {}, { firstInvestIso: scheduleForStart?.firstStartIso || "" })
+    : (statusTask?.startOverrideAt || statusTask?.startedAt || "");
+  el.taskActualStart.value = toLocalDateTimeInput(displayActualStart);
+  if (el.taskDueDateField?.querySelector("span")) {
+    el.taskDueDateField.querySelector("span").textContent = "目标完成时间";
+    el.taskDueDateField.title = "请人工填写；到期与提前天数在设置中配置提醒";
+  }
   el.taskActualEnd.value = toLocalDateTimeInput(statusTask?.completedAt);
   // UI merges background / reason / description; originals stay in data until user saves.
   setRichNoteEditorValue(el.taskBusinessBackground, mergeTaskContextText(task));
@@ -5579,6 +5680,7 @@ function openTaskDialog(task = null, options = {}) {
   updateRecurringOptions();
   renderTaskSubtasks(task);
   renderTaskDetailSummary(task);
+  syncTaskCreatedAtDisplay(statusTask);
   // Keep create/edit focused on input fields: summary cards + subtasks are redundant here.
   el.taskDetailSummary?.classList.add("hidden");
   el.taskSubtasksSection?.classList.add("hidden");
@@ -5625,9 +5727,11 @@ function renderTaskDetailSummary(task) {
   const duration = getTaskDuration(task.id);
   const schedule = getTaskScheduleInfo(task.id);
   const latestProgress = latestTaskProgressNote(task.id);
+  const createdAtText = formatTaskCreatedAtDisplay(task);
   const rows = [
     ["状态", statusLabel(task.status)],
     ["优先级", priorityLabel(task.priority)],
+    ...(createdAtText ? [["创建时间", `${createdAtText}（不可修改）`]] : []),
     ["责任人", task.owner || "未指定"],
     ["目标", formatDue(task)],
     ["任务层级", hierarchyPath || "顶层任务"],
@@ -5975,8 +6079,8 @@ function saveTask() {
     progress: Number(el.taskProgress.value),
     attentionOnly,
     status: el.taskStatus.value,
-    startedAt: fromLocalDateTimeInput(el.taskActualStart.value),
-    startOverrideAt: fromLocalDateTimeInput(el.taskActualStart.value),
+    startedAt: "",
+    startOverrideAt: "",
     completedAt: fromLocalDateTimeInput(el.taskActualEnd.value),
     businessBackground,
     // Consolidated into businessBackground on save so reopen won't duplicate.
@@ -6005,6 +6109,21 @@ function saveTask() {
   if (payload.recurrence && payload.recurrence.until < payload.dueDate.slice(0, 7)) {
     return showTaskFieldError(el.taskRecurringUntil, "结束月份不能早于首次截止月份");
   }
+  const actualStartRaw = String(el.taskActualStart?.value || "").trim();
+  const parsedActualStart = fromLocalDateTimeInput(actualStartRaw);
+  const editingTaskForStart = state.editingTaskId ? findTask(state.editingTaskId)?.task : null;
+  const scheduleInfoForStart = state.editingTaskId ? getTaskScheduleInfo(state.editingTaskId) : null;
+  if (parsedActualStart) {
+    payload.startedAt = parsedActualStart;
+    payload.startOverrideAt = parsedActualStart;
+  } else {
+    const autoStart = typeof TaskActualStartPolicy?.resolveActualStartIso === "function"
+      ? TaskActualStartPolicy.resolveActualStartIso(editingTaskForStart || {}, {
+        firstInvestIso: scheduleInfoForStart?.firstStartIso || ""
+      })
+      : "";
+    if (autoStart) payload.startedAt = autoStart;
+  }
   if (attentionOnly) {
     payload.attentionOnly = true;
     payload.completedAt = "";
@@ -6021,7 +6140,6 @@ function saveTask() {
   }
   const effectiveStartedAt = payload.startedAt || getTaskScheduleInfo(state.editingTaskId)?.firstStartIso || "";
   const actualEndRaw = String(el.taskActualEnd?.value || "").trim();
-  const actualStartRaw = String(el.taskActualStart?.value || "").trim();
   const startOrder = typeof ScheduleDayPolicy?.validateStartEndOrder === "function"
     ? ScheduleDayPolicy.validateStartEndOrder({
       startIso: payload.startedAt,
@@ -6041,8 +6159,18 @@ function saveTask() {
       rawInput: actualEndRaw
     });
     if (!timeline.ok) return showTaskFieldError(el.taskActualEnd, timeline.message);
+    return promptCompletionTimelineConfirm(timeline, {
+      confirmLabel: "仍要保存",
+      onProceed: () => commitTaskSaveAfterValidation(payload, { effectiveStartedAt, actualEndRaw, attentionOnly })
+    });
   }
-  if (payload.status === "in_progress" && !payload.startedAt) payload.startedAt = getTaskScheduleInfo(state.editingTaskId)?.firstStartIso || new Date().toISOString();
+  commitTaskSaveAfterValidation(payload, { effectiveStartedAt, actualEndRaw, attentionOnly });
+}
+
+function commitTaskSaveAfterValidation(payload, { effectiveStartedAt = "", actualEndRaw = "", attentionOnly = false } = {}) {
+  if (payload.status === "in_progress" && !payload.startedAt) {
+    payload.startedAt = getTaskScheduleInfo(state.editingTaskId)?.firstStartIso || new Date().toISOString();
+  }
   if (["done", "closed"].includes(payload.status) && !payload.completedAt && !actualEndRaw) {
     payload.completedAt = new Date().toISOString();
   }
@@ -6058,7 +6186,13 @@ function saveTask() {
     const found = findTask(state.editingTaskId);
     if (!found) return;
     if (!["done", "closed"].includes(payload.status)) payload.completedAt = "";
+    const lockedCreatedAtIso = found.task.createdAtIso || "";
+    const lockedCreatedAt = found.task.createdAt || "";
     Object.assign(found.task, payload);
+    if (lockedCreatedAtIso) {
+      found.task.createdAtIso = lockedCreatedAtIso;
+      if (lockedCreatedAt) found.task.createdAt = lockedCreatedAt;
+    }
     found.task.setupIncomplete = false;
     found.task.updatedAt = new Date().toISOString();
     syncLinkedEntriesCategory(found.task.id, payload.category, payload.color);
@@ -6177,6 +6311,38 @@ function saveProgressReview() {
 function formatDateTime(iso) {
   const date = new Date(iso);
   return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatTaskCreatedAtDisplay(task) {
+  const storageDateKey = task?.id ? findTask(task.id)?.dateKey || "" : "";
+  const iso = typeof TodoListPolicy?.resolveTaskCreatedAtIso === "function"
+    ? TodoListPolicy.resolveTaskCreatedAtIso(task, { storageDateKey })
+    : "";
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return formatDateTimeDisplay(
+    toDateKey(date),
+    `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+  );
+}
+
+function syncTaskCreatedAtDisplay(task) {
+  const show = Boolean(task?.id);
+  el.taskCreatedAtField?.classList.toggle("hidden", !show);
+  el.taskActualTimeRow?.classList.toggle("has-created-at", show);
+  if (!el.taskCreatedAtDisplay) return;
+  if (!show) {
+    el.taskCreatedAtDisplay.value = "";
+    return;
+  }
+  const text = formatTaskCreatedAtDisplay(task);
+  el.taskCreatedAtDisplay.value = text || "—";
+}
+
+function includeClosedTaskInTodoList(task, allTasks) {
+  if (!isSupersededClosedWorkTask(task, allTasks)) return true;
+  return TaskStatusPolicy.isEndedStatus(task?.status);
 }
 
 function deleteTaskById(taskId, { closeDialog = false } = {}) {
@@ -9483,20 +9649,22 @@ function confirmCloseTaskChoice(mode = "only") {
     reopenCloseConfirmWithTimeError(task, timeline.message, completionNote, resumeAfterClose);
     return;
   }
-  pendingCloseTaskId = null;
-  parentReviewResumeTaskId = null;
-  el.taskCloseConfirmDialog?.close();
-  if (!task) return;
-  toggleTaskCompletion(task, {
-    createFollowUp: closeMode === "tracking",
-    createSuccessor: closeMode === "successor",
-    completedAt,
-    completionNote
-  });
-  // 跟踪/后续会先打开编辑窗；仅关闭时继续批量补充上级
-  if (closeMode === "only" && (resumeAfterClose || pendingParentReviewQueue.length)) {
-    scheduleParentReviewAdvance();
-  }
+  const finishClose = () => {
+    pendingCloseTaskId = null;
+    parentReviewResumeTaskId = null;
+    el.taskCloseConfirmDialog?.close();
+    if (!task) return;
+    toggleTaskCompletion(task, {
+      createFollowUp: closeMode === "tracking",
+      createSuccessor: closeMode === "successor",
+      completedAt,
+      completionNote
+    });
+    if (closeMode === "only" && (resumeAfterClose || pendingParentReviewQueue.length)) {
+      scheduleParentReviewAdvance();
+    }
+  };
+  promptCompletionTimelineConfirm(timeline, { confirmLabel: "仍要关闭", onProceed: finishClose });
 }
 
 function createFollowUpTrackingTask(sourceTask, closedAt = "") {
@@ -12779,8 +12947,16 @@ function scrollToWorkday() {
   el.timelineWrap.scrollTop = Math.max(0, (anchor - hours[0] - 1) * getHourHeight());
 }
 function attentionAlarmTasks(todayKey = toDateKey(new Date())) {
-  return uniqueTasks(getAllTasks().map(({ task }) => task))
-    .filter(task => isTodoListTask(task) && TaskStatusPolicy.isAttentionAlarmDue?.(task, todayKey));
+  const tasks = uniqueTasks(getAllTasks().map(({ task }) => task)).filter(task => isTodoListTask(task));
+  const settings = getReminderSettings();
+  const deps = {
+    isEndedStatus: status => TaskStatusPolicy.isEndedStatus(status),
+    isAttentionOnlyFn: task => TaskStatusPolicy.isAttentionOnly(task)
+  };
+  if (typeof TaskReminderPolicy?.filterDueReminderTasks === "function") {
+    return TaskReminderPolicy.filterDueReminderTasks(tasks, todayKey, settings, deps);
+  }
+  return tasks.filter(task => TaskStatusPolicy.isAttentionAlarmDue?.(task, todayKey, settings));
 }
 
 function attentionAlarmViewedKey() {
@@ -12803,7 +12979,7 @@ function hideAttentionAlarmBanner() {
 function showAttentionAlarmBanner(tasks = []) {
   if (!el.attentionAlarmBanner || !el.attentionAlarmBannerText) return;
   const count = tasks.length;
-  el.attentionAlarmBannerText.textContent = `${count} 条任务已到目标完成日期，点击查看`;
+  el.attentionAlarmBannerText.textContent = `${count} 条待办临近或已到目标完成时间，点击查看`;
   el.attentionAlarmBanner.dataset.taskIds = tasks.map(task => task.id).filter(Boolean).join(",");
   el.attentionAlarmBanner.hidden = false;
   el.attentionAlarmBanner.classList.add("show");
@@ -12844,12 +13020,12 @@ function maybePromptAttentionAlarms() {
   showAttentionAlarmBanner(due);
   if (lastAttentionAlarmPromptKey === todayKey) return;
   lastAttentionAlarmPromptKey = todayKey;
-  const message = `${due.length} 条任务已到目标完成日期，点击查看`;
+  const message = `${due.length} 条待办临近或已到目标完成时间，点击查看`;
   if (typeof window.desktopAPI?.notify === "function") {
     Promise.resolve(window.desktopAPI.notify({
-      title: "关注提醒",
+      title: "目标完成提醒",
       body: message,
-      kind: "attention-alarm"
+      kind: "due-reminder"
     })).catch(() => {});
   }
 }

@@ -91,7 +91,12 @@
       const afterDue = daysBetween(due, completed);
       const beforeDue = daysBetween(completed, due);
       if (afterDue > 60) {
-        return { ok: false, message: "完成时间比原定截止日晚超过 60 天，请核对是否填错日期" };
+        const daysLate = Math.floor(afterDue);
+        return {
+          ok: true,
+          message: "",
+          confirm: `完成时间比原定截止日晚 ${daysLate} 天（超过 60 天），请核对是否填错日期。确定仍要保存？`
+        };
       }
       if (beforeDue > 365) {
         return { ok: false, message: "完成时间比原定截止日早超过一年，请核对是否填错日期" };

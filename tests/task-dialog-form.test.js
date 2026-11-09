@@ -88,9 +88,9 @@ assert.match(app, /maybePromptAttentionAlarms/, "startup should prompt due atten
 assert.match(html, /id="attentionAlarmBanner"/, "due attention reminders use a sticky clickable banner");
 assert.match(app, /openAttentionAlarmList/, "clicking the reminder must open those tasks in the todo list");
 assert.match(app, /attentionAlarmTaskIds/, "reminder click filters the todo list to the due attention tasks");
-assert.match(app, /\$\{count\} 条任务已到目标完成日期，点击查看/, "banner summarizes the task count instead of joining titles");
+assert.match(app, /\$\{count\} 条待办临近或已到目标完成时间，点击查看/, "banner summarizes the task count instead of joining titles");
 assert.doesNotMatch(app, /titles\.join\("、"\)/, "reminder popup must not concatenate task titles");
-assert.match(app, /kind: "attention-alarm"/, "desktop notification click must route back to the same task list");
+assert.match(app, /kind: "due-reminder"/, "desktop notification click must route back to the same task list");
 assert.match(app, /onNotifyClicked/, "renderer listens for notification clicks");
 assert.match(styles, /\.attention-alarm-banner\.show[\s\S]*pointer-events:\s*auto/, "reminder banner stays clickable until viewed");
 assert.match(app, /返回全部任务/, "attention reminder list must offer a way back to all tasks");
@@ -170,5 +170,12 @@ assert.match(app, /isMonthlyPrioritySelected/, "monthly priority option must dri
 assert.match(app, /defaultDueTime/, "due time helper should remain as workday-end alias");
 assert.match(app, /createDraftChildTasks/, "new child titles entered in the dialog must be saved");
 assert.match(app, /mergeTaskContextText/, "legacy background/reason text should merge for editing");
+assert.match(html, /id="taskCreatedAtDisplay"/, "task detail should show read-only creation time");
+assert.match(app, /syncTaskCreatedAtDisplay/, "opening task edit must populate creation time");
+assert.equal(
+  [...app.matchAll(/const actualStartRaw/g)].length,
+  1,
+  "save handler must declare actualStartRaw once or app.js will not load"
+);
 
 console.log("task dialog form tests passed");

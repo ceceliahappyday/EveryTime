@@ -42,8 +42,15 @@
     return String(task?.dueDate || "").slice(0, 10);
   }
 
-  /** 仅关注任务在目标完成日当天或逾期时需要闹钟提醒。 */
-  function isAttentionAlarmDue(task = {}, todayKey = "") {
+  /** 仅关注任务在目标完成日当天或逾期时需要闹钟提醒（与 TaskReminderPolicy 统一，避免重复）。 */
+  function isAttentionAlarmDue(task = {}, todayKey = "", settings = {}) {
+    const Reminder = typeof globalThis !== "undefined" ? globalThis.TaskReminderPolicy : null;
+    if (Reminder?.isAttentionBadgeDue) {
+      return Reminder.isAttentionBadgeDue(task, todayKey, settings, {
+        isEndedStatus,
+        isAttentionOnlyFn: isAttentionOnly
+      });
+    }
     if (!isAttentionOnly(task) || isEndedStatus(task.status) || !todayKey) return false;
     const due = attentionDueDate(task);
     return Boolean(due) && due <= todayKey;
