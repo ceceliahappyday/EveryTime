@@ -2495,11 +2495,16 @@ body.gantt-label-resizing * {
   max-height: 32px;
   padding: 0;
   margin: 0;
+  overflow: hidden;
   border-top: 1px solid rgba(148, 163, 184, 0.08);
 }
-.project-gantt-row-label.is-filter-context,
-.project-gantt-row-chart.is-filter-context {
-  opacity: 0.55;
+.project-gantt-row-label.is-filter-context .project-gantt-title strong,
+.project-gantt-row-label.is-filter-context .gantt-label-col {
+  color: color-mix(in srgb, var(--muted) 78%, var(--ink));
+  font-weight: 600;
+}
+.project-gantt-row-chart.is-filter-context .project-gantt-lane {
+  opacity: 0.42;
 }
 .project-gantt-root.is-task-tree {
   --gantt-indent-step: 16px;
@@ -2521,14 +2526,9 @@ body.gantt-label-resizing * {
 .project-gantt-root.is-task-tree .project-gantt-row-label .project-gantt-title.is-title-pin {
   padding-left: 0;
 }
-.project-gantt-root.is-task-tree .project-gantt-row-label.is-tree-node[data-tree-depth="0"] .project-gantt-title strong,
-.project-gantt-root.is-task-tree .project-gantt-row-label.is-tree-node[data-depth="0"] .project-gantt-title strong {
-  font-weight: 800;
-}
-.project-gantt-root.is-task-tree .project-gantt-row-label.is-tree-node.is-parent .project-gantt-title strong {
-  font-weight: 700;
-}
-.project-gantt-root.is-task-tree .project-gantt-row-label.is-tree-node:not(.is-parent):not(.meeting) .project-gantt-title strong {
+.project-gantt-root.is-task-tree .project-gantt-row-label.is-tree-node .project-gantt-title strong {
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 600;
 }
 .project-gantt-root.is-task-tree .project-gantt-row-label.meeting .project-gantt-title strong {
@@ -2583,6 +2583,11 @@ body.gantt-label-resizing * {
   color: var(--ink);
   background: color-mix(in srgb, var(--line-soft) 42%, transparent);
   border-color: transparent;
+}
+.project-gantt-root.is-task-tree .project-gantt-title .project-collapse-button.task-tree-toggle {
+  width: var(--gantt-tree-rail, 18px);
+  height: var(--gantt-tree-rail, 18px);
+  min-width: var(--gantt-tree-rail, 18px);
 }
 .project-gantt-row-label.dragging { opacity: .55; cursor: grabbing; }
 .project-gantt-row-label.drop-reparent,
@@ -3010,7 +3015,7 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   pointer-events: auto;
 }
 .project-gantt-row-label[data-depth="0"] .project-gantt-title.is-title-pin {
-  font-weight: 800;
+  font-weight: inherit;
 }
 .project-gantt-row-label[data-depth="1"] .project-gantt-title.is-title-pin,
 .project-gantt-row-label[data-depth="2"] .project-gantt-title.is-title-pin,
@@ -3037,7 +3042,8 @@ body.in-desktop.glass-mode .gantt-axis-nav:focus-visible {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
+  line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3274,6 +3280,10 @@ body.in-desktop.glass-mode .project-gantt-row-label.is-selected,
 body.in-desktop.glass-mode .project-gantt-row-chart.is-selected {
   background: rgba(143, 224, 215, 0.14);
   box-shadow: inset 0 0 0 1px rgba(143, 224, 215, 0.42);
+}
+body.in-desktop.glass-mode .project-gantt-row-label.is-filter-context .project-gantt-title strong,
+body.in-desktop.glass-mode .project-gantt-row-label.is-filter-context .gantt-label-col {
+  color: rgba(228, 236, 242, 0.58);
 }
 .project-gantt-lane u.gantt-end-marker,
 .project-gantt-lane u.gantt-start-tick {
@@ -5849,11 +5859,16 @@ body.in-desktop.glass-mode .schedule-heading h2,
 body.in-desktop.glass-mode .task-body strong,
 body.in-desktop.glass-mode .task-group-heading strong,
 body.in-desktop.glass-mode .schedule-stats strong,
-body.in-desktop.glass-mode .all-day-row p,
-body.in-desktop.glass-mode .project-gantt-title,
-body.in-desktop.glass-mode .project-gantt-row-label .project-gantt-title {
+body.in-desktop.glass-mode .all-day-row p {
   color: #f4fbff;
   text-shadow: 0 1px 3px rgba(0,0,0,.82);
+}
+body.in-desktop.glass-mode .project-gantt-title,
+body.in-desktop.glass-mode .project-gantt-row-label .project-gantt-title,
+body.in-desktop.glass-mode .project-gantt-title strong,
+body.in-desktop.glass-mode .project-gantt-group-heading strong {
+  color: #f4fbff;
+  text-shadow: none;
 }
 body.in-desktop.glass-mode .priority-badge.general_daily {
   color: #e4ece8;
@@ -6175,7 +6190,7 @@ body.in-desktop.glass-mode .project-gantt-lane { background: transparent; }
 body.in-desktop.glass-mode .project-gantt-title {
   color: #f4fbff;
   background: none;
-  text-shadow: 0 1px 3px rgba(0,0,0,.85);
+  text-shadow: none;
 }
 body.in-desktop.glass-mode .project-gantt-title.is-title-pin,
 body.in-desktop.glass-mode .project-gantt-title.is-parent-pin {

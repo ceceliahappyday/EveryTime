@@ -555,7 +555,7 @@ function bindEvents() {
     clearTimeout(taskListSearchTimer);
     taskListSearchTimer = setTimeout(() => {
       const selectionStart = el.taskListSearch.selectionStart;
-      if (state.taskView === "project") render();
+      if (state.taskView === "project") renderProjectSurface();
       else renderTasks();
       el.taskListSearch.focus({ preventScroll: true });
       if (selectionStart !== null) el.taskListSearch.setSelectionRange(selectionStart, selectionStart);
@@ -576,7 +576,7 @@ function bindEvents() {
       changed = true;
     }
     if (!changed) return;
-    if (state.taskView === "project") render();
+    if (state.taskView === "project") renderProjectSurface();
     else renderTasks();
   });
   el.attentionAlarmBanner?.addEventListener("click", () => openAttentionAlarmList());
@@ -3345,6 +3345,7 @@ async function extractAndCreateTaskFromImage({ file = null, attachment = null, n
 }
 
 function render() {
+  invalidateTaskScheduleEntriesIndex();
   invalidateRecurringCatalogCache();
   syncTaskStatuses();
   ensureRecurringTasksForVisibleRange();
@@ -4189,12 +4190,33 @@ function getDescendantTasks(parentId, visited = new Set()) {
   return getChildTasks(parentId).flatMap(child => [child, ...getDescendantTasks(child.id, visited)]);
 }
 
+let taskScheduleEntriesIndex = null;
+
+function invalidateTaskScheduleEntriesIndex() {
+  taskScheduleEntriesIndex = null;
+}
+
+function buildTaskScheduleEntriesIndex() {
+  const index = new Map();
+  Object.entries(state.data).forEach(([dateKey, day]) => {
+    (day.entries || []).forEach(entry => {
+      const id = String(entry?.taskId || "").trim();
+      if (!id) return;
+      if (!index.has(id)) index.set(id, []);
+      index.get(id).push({ dateKey, entry });
+    });
+  });
+  index.forEach(list => {
+    list.sort((a, b) => `${a.dateKey} ${a.entry.start}`.localeCompare(`${b.dateKey} ${b.entry.start}`));
+  });
+  return index;
+}
+
 function getTaskScheduleEntries(taskId) {
-  return Object.entries(state.data).flatMap(([dateKey, day]) =>
-    (day.entries || [])
-      .filter(entry => entry.taskId === taskId)
-      .map(entry => ({ dateKey, entry }))
-  ).sort((a, b) => `${a.dateKey} ${a.entry.start}`.localeCompare(`${b.dateKey} ${b.entry.start}`));
+  const id = String(taskId || "").trim();
+  if (!id) return [];
+  if (!taskScheduleEntriesIndex) taskScheduleEntriesIndex = buildTaskScheduleEntriesIndex();
+  return taskScheduleEntriesIndex.get(id) || [];
 }
 
 const GANTT_LABEL_WIDTH_DEFAULT = 240;
@@ -6454,6 +6476,21 @@ function clearProjectGanttChrome() {
   el.projectGanttChrome.classList.add("hidden");
 }
 
+function ensureProjectGanttToolbar(statusProjects = [], ganttView = getGanttViewConfig()) {
+  const existing = el.projectGanttChrome?.querySelector?.(".project-gantt-toolbar");
+  if (existing) {
+    existing.querySelectorAll(".project-scale-switcher button").forEach(button => {
+      button.classList.toggle("active", button.dataset.scale === state.projectScale);
+    });
+    const search = existing.querySelector("[data-gantt-search]");
+    const query = state.taskListSearch || "";
+    if (search && search.value !== query) search.value = query;
+    el.projectGanttChrome.classList.remove("hidden");
+    return existing;
+  }
+  return mountProjectGanttToolbar(statusProjects, ganttView);
+}
+
 function mountProjectGanttToolbar(statusProjects = [], ganttView = getGanttViewConfig()) {
   const toolbar = document.createElement("div");
   toolbar.className = "project-gantt-toolbar";
@@ -6576,7 +6613,7 @@ function bindGanttToolbarSearch(toolbar) {
   if (!input) return;
   const commitSearchRender = () => {
     const selectionStart = input.selectionStart;
-    render();
+    renderProjectSurface();
     const next = el.projectGanttChrome?.querySelector?.("[data-gantt-search]");
     next?.focus({ preventScroll: true });
     if (selectionStart !== null && next) next.setSelectionRange(selectionStart, selectionStart);
@@ -6596,7 +6633,14 @@ function bindGanttToolbarSearch(toolbar) {
   });
 }
 
+function renderProjectSurface() {
+  invalidateTaskScheduleEntriesIndex();
+  renderTasks();
+  renderSchedule();
+}
+
 function renderSchedule() {
+  if (state.taskView === "project") invalidateTaskScheduleEntriesIndex();
   el.timeline.className = "timeline";
   // Week view sets an inline column count; clear it so day/month/project regain CSS layout.
   el.timeline.style.gridTemplateColumns = "";
@@ -6805,9 +6849,42 @@ function buildGanttArrangeSections(projects, meetings = []) {
     if (!linkedMeetingRows.length || typeof GanttArrangePolicy?.attachMeetingRowsUnderTasks !== "function") {
       return { sections, leftovers: linkedMeetingRows };
     }
-    const leftovers = GanttArrangePolicy.attachMeetingRowsUnderTasks(sections, linkedMeetingRows);
+    const leftovers = GanttArrangePolicy.attachMeetingRowsUnderTasks(sections, linkedMeetingRows, {
+      collapsedSections: state.projectCollapsedSections,
+      collapsedTasks: state.projectCollapsedTasks
+    });
     return { sections, leftovers };
   };
+  const ganttRowCollapseFlag = (taskId, isParent) => {
+    if (!taskId) return false;
+    if (isParent) {
+      return state.projectCollapsedSections.has(taskId) || state.projectCollapsedTasks.has(taskId);
+    }
+    return state.projectCollapsedTasks.has(taskId);
+  };
+  const applyGanttCollapseToSections = (sections = []) => sections.map(section => {
+    const next = {
+      ...section,
+      rows: (section.rows || []).map(row => {
+        if (row.kind === "meeting") return row;
+        const taskId = row.task?.id;
+        const isParent = Boolean(row.isParent || (taskId && getChildTasks(taskId).length));
+        return {
+          ...row,
+          isParent,
+          collapsed: ganttRowCollapseFlag(taskId, isParent)
+        };
+      }),
+      children: applyGanttCollapseToSections(section.children || [])
+    };
+    if (section.parentRow?.task?.id) {
+      next.parentRow = {
+        ...section.parentRow,
+        collapsed: ganttRowCollapseFlag(section.parentRow.task.id, true)
+      };
+    }
+    return next;
+  });
   const appendFlatMeetings = (sections, meetingRows) => {
     if (!meetingRows.length) return sections;
     const byStatus = new Map(sections.map(section => [section.status || section.key, section]));
@@ -6887,7 +6964,8 @@ function buildGanttArrangeSections(projects, meetings = []) {
         }),
         children: []
       }));
-    const attached = attachLinkedMeetings(taskSections);
+    const collapsedTaskSections = applyGanttCollapseToSections(taskSections);
+    const attached = attachLinkedMeetings(collapsedTaskSections);
     const withMeetings = appendFlatMeetings(attached.sections, [...unlinkedMeetingRows, ...attached.leftovers]);
     return withMeetings.map(decorateSection).filter(section =>
       (section.rows || []).length || (section.children || []).length
@@ -6912,7 +6990,8 @@ function buildGanttArrangeSections(projects, meetings = []) {
     ),
     extraRows: unlinkedMeetingRows
   });
-  const attached = attachLinkedMeetings(sections);
+  const collapsedSections = applyGanttCollapseToSections(sections);
+  const attached = attachLinkedMeetings(collapsedSections);
   const withLeftovers = appendFlatMeetings(attached.sections, attached.leftovers);
   return withLeftovers.map(decorateSection);
 }
@@ -7896,7 +7975,7 @@ function renderProjectSchedule() {
   el.timeline.innerHTML = "";
   el.timeline.className = "project-gantt";
   // Keep toolbar/filter even when the filtered result is empty, so users can recover.
-  mountProjectGanttToolbar(statusProjects, ganttView);
+  ensureProjectGanttToolbar(statusProjects, ganttView);
   if (!projects.length && !meetings.length) {
     el.projectGanttScroll = null;
     el.projectGanttChartTrack = null;
@@ -8097,6 +8176,7 @@ function renderProjectSchedule() {
   const appendSectionRows = (rows, labelGroup, chartGroup, indentBase = 0) => {
     (rows || []).forEach(row => {
       if (row.kind === "meeting") {
+        if (isGanttMeetingRowHidden(row)) return;
         appendGanttRowPair(
           labelGroup,
           chartGroup,
@@ -10128,6 +10208,29 @@ function ganttVisibleTreeItems(args = {}) {
     ...args,
     resolveParent: resolveGanttTreeParent
   });
+}
+
+function isGanttTaskCollapsed(taskId, stopAtRootId = "") {
+  const rootId = String(stopAtRootId || "").trim();
+  const visited = new Set();
+  let id = String(taskId || "").trim();
+  while (id && !visited.has(id)) {
+    if (state.projectCollapsedTasks.has(id) || state.projectCollapsedSections.has(id)) {
+      return true;
+    }
+    visited.add(id);
+    if (rootId && id === rootId) break;
+    id = taskParentIdForTree(findTask(id)?.task);
+  }
+  return false;
+}
+
+function isGanttMeetingRowHidden(row) {
+  const anchorId = String(
+    row?.parentTaskId || row?.meeting?.linkedTaskId || row?.task?.parentId || ""
+  ).trim();
+  if (!anchorId) return false;
+  return isGanttTaskCollapsed(anchorId, row?.rootId || "");
 }
 
 /** Hide rows still emitted when a collapsed ancestor sits outside the local project.children map. */

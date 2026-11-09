@@ -643,7 +643,19 @@
   }
 
   /** Insert linked meeting rows under their task; returns leftover unlinked meetings. */
-  function attachMeetingRowsUnderTasks(sections = [], meetingRows = []) {
+  function attachMeetingRowsUnderTasks(sections = [], meetingRows = [], collapse = {}) {
+    const collapsedSections = collapse.collapsedSections instanceof Set
+      ? collapse.collapsedSections
+      : new Set(collapse.collapsedSections || []);
+    const collapsedTasks = collapse.collapsedTasks instanceof Set
+      ? collapse.collapsedTasks
+      : new Set(collapse.collapsedTasks || []);
+    const isCollapsedTask = (taskId, explicitCollapsed = false) => {
+      if (explicitCollapsed) return true;
+      const id = String(taskId || "").trim();
+      if (!id) return false;
+      return collapsedSections.has(id) || collapsedTasks.has(id);
+    };
     const byParent = new Map();
     const leftovers = [];
     (meetingRows || []).forEach(row => {
@@ -665,7 +677,10 @@
           const meets = byParent.get(frame.taskId);
           if (!meets?.length) continue;
           byParent.delete(frame.taskId);
-          if (frame.collapsed) continue;
+          if (frame.collapsed) {
+            byParent.delete(frame.taskId);
+            continue;
+          }
           meets.forEach(meet => {
             result.push({
               ...meet,
@@ -689,7 +704,7 @@
             taskId: row.task.id,
             depth,
             rootId: row.rootId || row.task.id,
-            collapsed: Boolean(row.collapsed)
+            collapsed: isCollapsedTask(row.task.id, Boolean(row.collapsed))
           });
         }
       });
@@ -705,7 +720,7 @@
       if (parentId && byParent.has(parentId)) {
         const meets = byParent.get(parentId);
         byParent.delete(parentId);
-        if (!section.parentRow.collapsed) {
+        if (!isCollapsedTask(section.parentRow.task?.id, section.parentRow.collapsed)) {
           const depth = Math.max(0, Number(section.parentRow.depth) || 0);
           section.rows = [
             ...(section.rows || []),
@@ -720,7 +735,10 @@
       }
     };
     (sections || []).forEach(walk);
-    byParent.forEach(rows => leftovers.push(...rows));
+    byParent.forEach((rows, parentId) => {
+      if (isCollapsedTask(parentId)) return;
+      leftovers.push(...rows);
+    });
     return leftovers;
   }
 

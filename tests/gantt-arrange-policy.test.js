@@ -214,4 +214,25 @@ const meetIdx = wovenIds.indexOf("m:评审会");
 const childIdx = wovenIds.indexOf("c1");
 assert.ok(childIdx >= 0 && meetIdx > childIdx, "meeting appears after its parent task row");
 
+const nestCollapsed = JSON.parse(JSON.stringify(nestSections));
+const collapseLeftovers = policy.attachMeetingRowsUnderTasks(nestCollapsed, [
+  {
+    kind: "meeting",
+    parentTaskId: "c1",
+    meeting: { title: "折叠下隐藏", linkedTaskId: "c1" },
+    task: { id: "meeting:hidden", title: "折叠下隐藏" },
+    depth: 0
+  }
+], { collapsedSections: new Set(), collapsedTasks: new Set(["c1"]) });
+assert.equal(collapseLeftovers.length, 0, "meetings under collapsed task must not leak as leftovers");
+const wovenAfterCollapse = [];
+const walkCollapsed = node => {
+  (node.rows || []).forEach(row => {
+    wovenAfterCollapse.push(row.kind === "meeting" ? `m:${row.task.title}` : row.task.id);
+  });
+  (node.children || []).forEach(walkCollapsed);
+};
+nestCollapsed.forEach(walkCollapsed);
+assert.ok(!wovenAfterCollapse.includes("m:折叠下隐藏"), "linked meetings must hide when parent task is collapsed");
+
 console.log("gantt arrange policy tests passed");
