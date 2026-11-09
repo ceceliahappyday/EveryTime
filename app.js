@@ -4727,19 +4727,67 @@ function datesInMonth(date) {
     .sort();
 }
 
-function tasksForDateScope(dateKey) {
-  const tasks = [];
-  tasks.push(...(state.data[dateKey]?.tasks || []));
-  getAllTasks().forEach(({ task }) => {
-    if (isHiddenFutureRecurringInstance(task)) return;
-    if (task.dueDate === dateKey) tasks.push(task);
-    if (isTaskStartedOnDate(task, dateKey)) tasks.push(task);
-    if (task.completedAt && toDateKey(new Date(task.completedAt)) === dateKey) tasks.push(task);
+function taskHasInvestOnDate(taskId, dateKey) {
+  if (!taskId || !dateKey) return false;
+  return (getDay(dateKey).entries || []).some(entry => entry.taskId === taskId);
+}
+
+function dueDateTimeToIso(task) {
+  if (!task?.dueDate) return "";
+  const time = String(task.dueTime || defaultWorkEndTime() || "18:00").trim();
+  const parts = parseFlexibleDateTime(`${task.dueDate} ${time}`);
+  if (!parts?.dateKey) return "";
+  const merged = `${parts.dateKey} ${parts.time || time}`;
+  return fromLocalDateTimeInput(merged);
+}
+
+function lastTaskScheduleEndIso(taskId) {
+  let best = "";
+  getTaskScheduleEntries(taskId).forEach(({ dateKey, entry }) => {
+    const end = Number(entry.end);
+    const start = Number(entry.start);
+    const hour = Number.isFinite(end) ? end : start;
+    if (!Number.isFinite(hour)) return;
+    const iso = scheduledDateTimeIso(dateKey, hour);
+    if (!best || iso > best) best = iso;
   });
-  (getDay(dateKey).entries || []).forEach(entry => {
-    if (!entry.taskId) return;
-    const linked = findTask(entry.taskId)?.task;
-    if (linked && !isHiddenFutureRecurringInstance(linked)) tasks.push(linked);
+  return best;
+}
+
+function suggestTaskCloseCompletedAtInput(task) {
+  const iso = typeof ScheduleDayPolicy?.pickDefaultCompletionIso === "function"
+    ? ScheduleDayPolicy.pickDefaultCompletionIso(task, {
+      lastInvestEndIso: lastTaskScheduleEndIso(task?.id),
+      dueDateTimeIso: dueDateTimeToIso
+    })
+    : "";
+  return iso ? toLocalDateTimeInput(iso) : "";
+}
+
+function tasksForDateScope(dateKey) {
+  const seen = new Set();
+  const tasks = [];
+  const push = task => {
+    if (!task || isHiddenFutureRecurringInstance(task)) return;
+    if (seen.has(task.id)) return;
+    seen.add(task.id);
+    tasks.push(task);
+  };
+  getAllTasks().forEach(({ task, dateKey: storageKey }) => {
+    const visible = typeof ScheduleDayPolicy?.taskVisibleInDateScope === "function"
+      ? ScheduleDayPolicy.taskVisibleInDateScope({
+        task,
+        dateKey,
+        storageKey,
+        hasInvestOnDate: taskHasInvestOnDate(task.id, dateKey),
+        startedOnDate: isTaskStartedOnDate(task, dateKey),
+        completedOnDate: ScheduleDayPolicy.completedDateKey(task, toDateKey) === dateKey,
+        dueOnDate: task.dueDate === dateKey,
+        isEndedStatus: status => TaskStatusPolicy.isEndedStatus(status),
+        isHiddenFuture: isHiddenFutureRecurringInstance
+      })
+      : false;
+    if (visible) push(task);
   });
   return RecurringPolicy.dedupeRecurringTasksForDisplay(uniqueTasks(tasks));
 }
@@ -9348,7 +9396,7 @@ function requestTaskCompletion(task) {
     el.taskCloseConfirmMessage.textContent = `「${task.title}」请确认完成时间与完成情况。「关闭并新建后续」会继承原优先级与上级。`;
   }
   if (el.taskCloseCompletedAt) {
-    el.taskCloseCompletedAt.value = toLocalDateTimeInput(new Date().toISOString());
+    el.taskCloseCompletedAt.value = suggestTaskCloseCompletedAtInput(task);
   }
   setRichNoteEditorValue(el.taskCloseCompletionNote, task.deliveryNote || "");
   el.taskCloseConfirmDialog?.showModal();
@@ -9357,7 +9405,6 @@ function requestTaskCompletion(task) {
 function confirmCloseTaskChoice(mode = "only") {
   const closeMode = mode === true ? "tracking" : mode === false ? "only" : String(mode || "only");
   const task = pendingCloseTaskId ? findTask(pendingCloseTaskId)?.task : null;
-  const completedAt = fromLocalDateTimeInput(el.taskCloseCompletedAt?.value || "") || new Date().toISOString();
   let completionNote = "";
   try {
     completionNote = getRichNoteEditorValue(el.taskCloseCompletionNote);
@@ -9366,6 +9413,15 @@ function confirmCloseTaskChoice(mode = "only") {
     return;
   }
   const resumeAfterClose = parentReviewResumeTaskId && task && parentReviewResumeTaskId === task.id;
+  const completedAt = fromLocalDateTimeInput(el.taskCloseCompletedAt?.value || "");
+  if (!completedAt) {
+    showToast("请填写实际完成时间");
+    if (task?.id) pendingCloseTaskId = task.id;
+    if (resumeAfterClose) parentReviewResumeTaskId = task.id;
+    setRichNoteEditorValue(el.taskCloseCompletionNote, completionNote);
+    el.taskCloseConfirmDialog?.showModal();
+    return;
+  }
   pendingCloseTaskId = null;
   parentReviewResumeTaskId = null;
   el.taskCloseConfirmDialog?.close();
@@ -10144,10 +10200,14 @@ function renderMonthSchedule() {
 }
 
 function dueTasksForDate(dateKey) {
-  // Keep ended tasks visible (strikethrough) on week/month/day calendars.
   return getAllTasks()
     .map(({ task }) => task)
-    .filter(task => task.dueDate === dateKey && !isHiddenFutureRecurringInstance(task));
+    .filter(task => typeof ScheduleDayPolicy?.taskDuePlannedOnDate === "function"
+      ? ScheduleDayPolicy.taskDuePlannedOnDate(task, dateKey, {
+        isEndedStatus: status => TaskStatusPolicy.isEndedStatus(status),
+        isHiddenFuture: isHiddenFutureRecurringInstance
+      })
+      : task.dueDate === dateKey && !isHiddenFutureRecurringInstance(task));
 }
 
 function completedTasksForDate(dateKey) {
