@@ -14,7 +14,12 @@
     return clamp(base * 0.94, 0.88, 1.18);
   }
 
-  const api = { clamp, uiScaleForWindow };
+  /** Header controls scale down on small windows; never grow past 1 on large displays. */
+  function chromeScaleForWindow(options = {}) {
+    return clamp(uiScaleForWindow(options), 0.88, 1);
+  }
+
+  const api = { clamp, uiScaleForWindow, chromeScaleForWindow };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.UiScalePolicy = api;
 })(typeof window !== "undefined" ? window : globalThis);

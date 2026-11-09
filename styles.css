@@ -12,6 +12,10 @@
   --shadow: 0 18px 55px rgba(47, 48, 42, 0.09);
   --hour-height: 82px;
   --ui-scale: 1;
+  --chrome-scale: 1;
+  --chrome-control: calc(32px * var(--chrome-scale));
+  --chrome-topbar: calc(72px * var(--chrome-scale));
+  --chrome-brand: calc(36px * var(--chrome-scale));
   --scroll-size: 8px;
   --scroll-thumb: rgba(90, 118, 108, .42);
   --scroll-thumb-strong: rgba(90, 118, 108, .68);
@@ -551,7 +555,8 @@ body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
 
 .topbar {
   flex: 0 0 auto;
-  height: 96px;
+  height: var(--chrome-topbar);
+  min-height: var(--chrome-topbar);
   display: grid;
   grid-template-columns: minmax(260px, .8fr) minmax(250px, auto) minmax(0, 1.6fr);
   column-gap: 16px;
@@ -565,23 +570,29 @@ body.desktop-locked .app-shell { opacity: .58; box-shadow: none; }
 .brand { gap: 13px; }
 .brand > div:last-child { min-width: 0; }
 .brand-mark {
-  width: 42px; height: 42px; display: grid; place-items: center;
-  border-radius: 13px; color: #fff; background: var(--accent);
-  font-family: Georgia, serif; font-size: 22px;
+  width: var(--chrome-brand); height: var(--chrome-brand); display: grid; place-items: center;
+  border-radius: calc(11px * var(--chrome-scale)); color: #fff; background: var(--accent);
+  font-family: Georgia, serif; font-size: calc(20px * var(--chrome-scale));
   box-shadow: 0 7px 20px rgba(60,102,85,.22);
 }
-.brand h1 { margin: 0; font: 700 20px Georgia, "Songti SC", serif; }
-.brand p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+.brand h1 { margin: 0; font: 700 calc(18px * var(--chrome-scale)) Georgia, "Songti SC", serif; }
+.brand p,
+.brand-meta {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: calc(11px * var(--chrome-scale));
+  line-height: 1.35;
+}
 .app-version {
   display: inline-flex;
   align-items: center;
-  margin-left: 6px;
-  padding: 2px 8px;
+  margin-left: 5px;
+  padding: 1px 7px;
   border: 1px solid rgba(60,102,85,.34);
   border-radius: 999px;
   color: #244b3c;
   background: rgba(220,232,224,.86);
-  font: 800 10px Inter, "Microsoft YaHei", system-ui, sans-serif;
+  font: 800 calc(9px * var(--chrome-scale)) Inter, "Microsoft YaHei", system-ui, sans-serif;
   letter-spacing: .01em;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 1px 5px rgba(37,41,37,.14);
   vertical-align: middle;
@@ -623,7 +634,7 @@ body.in-desktop .window-controls {
   width: max-content;
   min-width: max-content;
   max-width: none;
-  height: 40px;
+  height: var(--chrome-control);
   margin-left: 0;
   padding: 0 8px 0 10px;
   border-left: 1px solid var(--line-soft);
@@ -634,17 +645,17 @@ body.in-desktop .window-controls {
   z-index: 140;
 }
 .window-controls button {
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
+  width: calc(34px * var(--chrome-scale));
+  min-width: calc(34px * var(--chrome-scale));
+  height: calc(34px * var(--chrome-scale));
   box-sizing: border-box;
   display: inline-grid;
   place-items: center;
-  flex: 0 0 36px;
+  flex: 0 0 calc(34px * var(--chrome-scale));
   color: var(--muted);
   background: transparent;
   border-radius: 8px;
-  font-size: 16px;
+  font-size: calc(14px * var(--chrome-scale));
   line-height: 1;
 }
 .window-controls button:hover { color: var(--ink); background: rgba(120,130,124,.16); }
@@ -666,9 +677,9 @@ body.in-desktop.glass-mode #glassToggleButton[aria-pressed="true"] {
   left: 0;
   z-index: 12;
   flex: 0 0 auto;
-  height: 40px;
+  height: var(--chrome-control);
   box-sizing: border-box;
-  display: grid; grid-template-columns: repeat(4, 38px); gap: 3px; align-items: stretch;
+  display: grid; grid-template-columns: repeat(4, calc(30px * var(--chrome-scale))); gap: 3px; align-items: stretch;
   padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: #eeede8;
   box-shadow: 8px 0 18px rgba(248,247,243,.75);
 }
@@ -680,7 +691,7 @@ body.in-desktop.glass-mode #glassToggleButton[aria-pressed="true"] {
   color: var(--muted);
   background: transparent;
   border-radius: 7px;
-  font-size: 10px;
+  font-size: calc(10px * var(--chrome-scale));
 }
 .header-view-switcher button.active { color: #fff; background: var(--accent); font-weight: 700; }
 
@@ -697,13 +708,13 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   color: var(--ink);
 }
 .icon-button {
-  width: 40px;
-  height: 40px;
+  width: var(--chrome-control);
+  height: var(--chrome-control);
   box-sizing: border-box;
-  font-size: 17px;
+  font-size: calc(15px * var(--chrome-scale));
 }
 .soft-button {
-  height: 40px;
+  height: var(--chrome-control);
   box-sizing: border-box;
   padding: 0 14px;
   display: inline-flex;
@@ -724,13 +735,19 @@ button[hidden],
 }
 .soft-button .btn-icon,
 .primary-button .btn-icon { font-style: normal; line-height: 1; }
+.header-actions .menu-ico,
+.header-actions .menu-ico svg {
+  width: calc(14px * var(--chrome-scale));
+  height: calc(14px * var(--chrome-scale));
+}
+.header-actions .btn-icon { font-size: calc(14px * var(--chrome-scale)); }
 .soft-button .btn-label,
 .primary-button .btn-label { white-space: nowrap; }
 .icon-button:hover, .soft-button:hover { border-color: #b8b9b2; background: #f8f7f3; }
 
 .date-picker-button {
-  min-width: 122px;
-  height: 40px;
+  min-width: calc(118px * var(--chrome-scale));
+  height: var(--chrome-control);
   box-sizing: border-box;
   padding: 0 14px;
   display: inline-flex;
@@ -742,7 +759,7 @@ button[hidden],
 }
 .date-picker-button strong {
   color: inherit;
-  font-size: 13px;
+  font-size: calc(12px * var(--chrome-scale));
   line-height: 1.2;
   font-weight: 700;
   white-space: nowrap;
@@ -822,8 +839,8 @@ body:not(.week-mode):not(.month-mode):not(.project-mode) .topbar {
 }
 body:not(.week-mode):not(.month-mode):not(.project-mode) .week-strip {
   grid-area: strip;
-  height: 92px;
-  min-height: 92px;
+  height: calc(80px * var(--chrome-scale));
+  min-height: calc(80px * var(--chrome-scale));
   min-width: 0;
   overflow: hidden;
   padding: 10px 16px;
@@ -867,9 +884,9 @@ body:not(.week-mode):not(.month-mode):not(.project-mode) .day-button {
   text-align: center;
 }
 body:not(.week-mode):not(.month-mode):not(.project-mode) .day-number {
-  width: 34px;
-  height: 34px;
-  font-size: 16px;
+  width: calc(30px * var(--chrome-scale));
+  height: calc(30px * var(--chrome-scale));
+  font-size: calc(14px * var(--chrome-scale));
 }
 body:not(.week-mode):not(.month-mode):not(.project-mode) .day-name {
   display: grid;
@@ -5467,7 +5484,19 @@ body.in-desktop.glass-mode .topbar,
 body.in-desktop.glass-mode .week-strip {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, .10), transparent 55%),
-    linear-gradient(180deg, rgba(8, 22, 36, .72), rgba(6, 16, 28, .58));
+    linear-gradient(180deg, rgba(8, 22, 36, .88), rgba(6, 16, 28, .82));
+  isolation: isolate;
+}
+/* Topbar controls: drop heavy text-shadow — it reads as a ghost duplicate under glass. */
+body.in-desktop.glass-mode .topbar .icon-button,
+body.in-desktop.glass-mode .topbar .soft-button,
+body.in-desktop.glass-mode .topbar .date-picker-button,
+body.in-desktop.glass-mode .topbar .date-picker-button strong,
+body.in-desktop.glass-mode .topbar .header-view-switcher button,
+body.in-desktop.glass-mode .topbar .window-controls button,
+body.in-desktop.glass-mode .topbar .header-more-button,
+body.in-desktop.glass-mode .topbar .header-actions .btn-icon {
+  text-shadow: none;
 }
 body.in-desktop.glass-mode .workspace {
   /* Day view uses display:contents; keep transparent so panels are not double-tinted. */
@@ -7392,8 +7421,8 @@ body.in-desktop .topbar {
   /* brand | flexible date | fixed view | fixed actions | fixed window — never crush trailing chrome */
   grid-template-columns: auto minmax(0, 1fr) auto max-content max-content;
   align-items: center;
-  height: 72px;
-  min-height: 72px;
+  height: var(--chrome-topbar);
+  min-height: var(--chrome-topbar);
   column-gap: 10px;
   row-gap: 0;
   padding: 0 4px 0 14px;
@@ -7423,12 +7452,27 @@ body.in-desktop .topbar-main {
 body.in-desktop .header-view-switcher {
   position: static;
   box-shadow: none;
-  height: 40px;
+  height: var(--chrome-control);
+  min-height: var(--chrome-control);
+  max-height: var(--chrome-control);
+  grid-template-columns: repeat(4, calc(30px * var(--chrome-scale, 1)));
   flex: 0 0 auto;
   min-width: max-content;
+  align-self: center;
   z-index: 2;
   grid-column: 3;
   justify-self: start;
+}
+body.in-desktop .header-view-switcher button {
+  line-height: 1;
+  min-height: 0;
+}
+body.in-desktop .focus-view-chrome,
+body.in-desktop .header-actions,
+body.in-desktop .header-overflow,
+body.in-desktop .window-controls {
+  align-self: center;
+  align-items: center;
 }
 body.in-desktop .header-actions {
   position: relative;
@@ -7631,8 +7675,12 @@ body.in-desktop .date-controls .date-picker-button,
 body.in-desktop .header-actions .soft-button,
 body.in-desktop .header-actions .primary-button,
 body.in-desktop .window-controls button {
-  height: 40px;
+  height: var(--chrome-control);
   box-sizing: border-box;
+}
+body.in-desktop .icon-button {
+  width: var(--chrome-control);
+  min-width: var(--chrome-control);
 }
 body.in-desktop .header-actions .primary-button {
   min-width: 0;
@@ -7643,6 +7691,13 @@ body.in-desktop .header-actions .primary-button {
 body.in-desktop .header-actions .soft-button {
   padding-inline: 10px;
   font-size: 12px;
+  line-height: 1;
+}
+body.in-desktop .header-actions .soft-button,
+body.in-desktop .header-actions .primary-button,
+body.in-desktop .focus-view-chrome .soft-button {
+  min-height: var(--chrome-control);
+  max-height: var(--chrome-control);
 }
 body.in-desktop .shell-only-focus { display: none !important; }
 body.in-desktop .workspace {
@@ -7681,7 +7736,11 @@ body.in-desktop.shell-narrow .header-actions .soft-button,
 body.in-desktop.shell-narrow .header-actions .primary-button,
 body.in-desktop.shell-narrow .header-view-switcher,
 body.in-desktop.shell-narrow .window-controls button {
-  height: 34px;
+  height: var(--chrome-control);
+}
+body.in-desktop.shell-narrow .icon-button {
+  width: var(--chrome-control);
+  min-width: var(--chrome-control);
 }
 body.in-desktop.shell-narrow .date-picker-button {
   min-width: 0;
@@ -7697,20 +7756,20 @@ body.in-desktop.shell-narrow .date-picker-button strong {
 }
 body.in-desktop.shell-narrow .header-actions .soft-button,
 body.in-desktop.shell-narrow .header-actions .primary-button {
-  width: 34px;
-  min-width: 34px;
+  width: var(--chrome-control);
+  min-width: var(--chrome-control);
   padding: 0;
   justify-content: center;
   gap: 0;
 }
 body.in-desktop.shell-narrow .window-controls {
-  height: 34px;
+  height: var(--chrome-control);
   padding: 0 6px 0 8px;
 }
 body.in-desktop.shell-narrow .window-controls button {
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
+  width: var(--chrome-control);
+  min-width: var(--chrome-control);
+  height: var(--chrome-control);
 }
 body.in-desktop.shell-narrow .header-actions .btn-label { display: none; }
 body.in-desktop.shell-narrow .header-actions .btn-icon { font-size: 14px; }
@@ -7737,8 +7796,8 @@ body.in-desktop .week-days {
 
 /* ~960: denser chrome; hide week strip to protect the single topbar row. */
 body.in-desktop.shell-compact-topbar .topbar {
-  height: 56px;
-  min-height: 56px;
+  height: var(--chrome-topbar);
+  min-height: var(--chrome-topbar);
   padding: 0 8px;
   column-gap: 6px;
   grid-template-columns: minmax(0, 1fr) auto max-content max-content;
@@ -7755,34 +7814,39 @@ body.in-desktop.shell-compact-topbar .shell-hide-compact {
   display: none !important;
 }
 body.in-desktop.shell-compact-topbar .week-strip { display: none !important; }
+body.in-desktop.shell-compact-topbar {
+  --chrome-control: calc(30px * var(--chrome-scale));
+  --chrome-topbar: calc(52px * var(--chrome-scale));
+}
 body.in-desktop.shell-compact-topbar .date-controls .icon-button,
 body.in-desktop.shell-compact-topbar .date-controls .date-picker-button,
 body.in-desktop.shell-compact-topbar .header-actions .soft-button,
 body.in-desktop.shell-compact-topbar .header-actions .primary-button,
 body.in-desktop.shell-compact-topbar .header-view-switcher,
 body.in-desktop.shell-compact-topbar .window-controls button {
-  height: 30px;
+  height: var(--chrome-control);
 }
 body.in-desktop.shell-compact-topbar .date-picker-button {
   max-width: 120px;
   padding: 0 8px;
 }
 body.in-desktop.shell-compact-topbar .icon-button {
-  width: 30px;
+  width: var(--chrome-control);
+  min-width: var(--chrome-control);
 }
 body.in-desktop.shell-compact-topbar .header-actions .soft-button,
 body.in-desktop.shell-compact-topbar .header-actions .primary-button {
-  width: 30px;
-  min-width: 30px;
+  width: var(--chrome-control);
+  min-width: var(--chrome-control);
 }
 body.in-desktop.shell-compact-topbar .window-controls {
-  height: 30px;
+  height: var(--chrome-control);
   padding: 0 4px 0 6px;
 }
 body.in-desktop.shell-compact-topbar .window-controls button {
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
+  width: var(--chrome-control);
+  min-width: var(--chrome-control);
+  height: var(--chrome-control);
 }
 body.in-desktop.shell-compact-topbar .header-view-switcher {
   grid-template-columns: repeat(4, 26px);

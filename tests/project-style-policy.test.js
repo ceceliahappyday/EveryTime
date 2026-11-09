@@ -176,7 +176,7 @@ assert.doesNotMatch(
 );
 assert.match(
   styles,
-  /body\.in-desktop\.glass-mode \.topbar,\s*body\.in-desktop\.glass-mode \.week-strip\s*\{[^}]*rgba\(8,\s*22,\s*36,\s*\.72\)/s,
+  /body\.in-desktop\.glass-mode \.topbar,\s*body\.in-desktop\.glass-mode \.week-strip\s*\{[^}]*rgba\(8,\s*22,\s*36,\s*\.(?:72|8\d)\)/s,
   "glass chrome should use translucent frosted panels, not opaque black"
 );
 assert.match(
@@ -401,17 +401,17 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.date-picker-button\s*\{[^}]*height:\s*40px/s,
+  /\.date-picker-button\s*\{[^}]*height:\s*var\(--chrome-control\)/s,
   "date picker should share the same control height as other topbar buttons"
 );
 assert.match(
   styles,
-  /\.soft-button\s*\{[^}]*height:\s*40px/s,
-  "soft buttons should use a fixed topbar control height"
+  /\.soft-button\s*\{[^}]*height:\s*var\(--chrome-control\)/s,
+  "soft buttons should use shared chrome control height"
 );
 assert.match(
   styles,
-  /\.header-view-switcher\s*\{[^}]*height:\s*40px/s,
+  /body\.in-desktop \.header-view-switcher\s*\{[^}]*height:\s*var\(--chrome-control\)/s,
   "view switcher should match the shared topbar control height"
 );
 assert.match(

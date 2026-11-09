@@ -995,6 +995,12 @@ function applyUiScale() {
     compact: document.body.classList.contains("compact")
   }) ?? 1;
   document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
+  const chromeScale = UiScalePolicy?.chromeScaleForWindow?.({
+    width: measureLayoutWidth(),
+    height: window.innerHeight,
+    compact: document.body.classList.contains("compact")
+  }) ?? 1;
+  document.documentElement.style.setProperty("--chrome-scale", chromeScale.toFixed(3));
   scheduleShellLayoutSync();
 }
 
@@ -1663,6 +1669,12 @@ function bindUiScale() {
         compact: document.body.classList.contains("compact")
       }) ?? 1;
       document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
+      const chromeScale = UiScalePolicy?.chromeScaleForWindow?.({
+        width: measureLayoutWidth(),
+        height: window.innerHeight,
+        compact: document.body.classList.contains("compact")
+      }) ?? 1;
+      document.documentElement.style.setProperty("--chrome-scale", chromeScale.toFixed(3));
     }, 80);
   };
   window.addEventListener("resize", onViewportResize, { passive: true });

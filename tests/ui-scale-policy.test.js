@@ -8,5 +8,7 @@ assert.ok(
   policy.uiScaleForWindow({ width: 1180, height: 760, compact: true }) < 1,
   "compact mode should slightly reduce ui scale"
 );
+assert.strictEqual(policy.chromeScaleForWindow({ width: 1600, height: 1000 }), 1);
+assert.strictEqual(policy.chromeScaleForWindow({ width: 1180, height: 760 }), 1);
 
 console.log("ui scale policy tests passed");
