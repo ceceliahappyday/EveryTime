@@ -262,10 +262,6 @@
       );
       if (!Number.isNaN(local.getTime())) return local.toISOString();
     }
-    const due = String(task?.dueDate || "").trim();
-    if (due && /^\d{4}-\d{2}-\d{2}$/.test(due)) {
-      return new Date(`${due}T09:00:00`).toISOString();
-    }
     return "";
   }
 

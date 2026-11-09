@@ -61,6 +61,8 @@ const closeChildren = tasks.filter(task => task.parentId === "close");
 assert.equal(closeChildren.length, 2);
 assert.ok(closeChildren.some(task => task.title === "完成应收款分析报告"));
 assert.ok(closeChildren.some(task => task.title === "完成存货分析报告"));
+const retroLeaf = closeChildren.find(task => task.title === "完成应收款分析报告");
+assert.ok(retroLeaf?.createdAtIso?.startsWith("2026-09-08"), "split leaf createdAtIso should be record creation (repair run time)");
 
 const flowChildren = tasks.filter(task => task.parentId === "flow");
 assert.equal(flowChildren.length, 2);

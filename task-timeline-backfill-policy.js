@@ -41,9 +41,26 @@
       : "";
     let iso = parseFiniteIso(picked);
     if (!iso) iso = parseFiniteIso(task.updatedAt);
-    const created = parseFiniteIso(task.createdAtIso);
-    if (iso && created && iso < created) return "";
     return iso;
+  }
+
+  /** 已有实际关闭时间时，状态应与「已完成」一致。 */
+  function syncCompletionStatus(task = {}) {
+    if (!parseFiniteIso(task.completedAt)) return false;
+    if (task.attentionOnly) return false;
+    if (typeof TaskStatusPolicy?.isTrackingStatus === "function" && TaskStatusPolicy.isTrackingStatus(task)) {
+      return false;
+    }
+    let changed = false;
+    if (task.status !== "done" && task.status !== "closed") {
+      task.status = "done";
+      changed = true;
+    }
+    if (Number(task.progress) !== 100) {
+      task.progress = 100;
+      changed = true;
+    }
+    return changed;
   }
 
   /**
@@ -72,6 +89,8 @@
       changed = true;
     }
 
+    if (syncCompletionStatus(task)) changed = true;
+
     if (!parseFiniteIso(task.updatedAt)) {
       const anchor = parseFiniteIso(task.completedAt)
         || parseFiniteIso(task.startedAt)
@@ -89,6 +108,7 @@
     parseFiniteIso,
     inferPersistedStartedAt,
     inferPersistedCompletedAt,
+    syncCompletionStatus,
     ensureTaskTimelineBackfill
   };
 });

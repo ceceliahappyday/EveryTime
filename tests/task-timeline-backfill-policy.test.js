@@ -50,4 +50,18 @@ const tracking = { status: "tracking", completedAt: "", updatedAt: "2026-06-01T0
 policy.ensureTaskTimelineBackfill(tracking, {});
 assert.equal(tracking.completedAt, "", "tracking tasks must not get completedAt");
 
+const retro = {
+  createdAtIso: "2026-09-17T10:11:00.000Z",
+  dueDate: "2026-06-25",
+  startedAt: "2026-06-25T07:00:00.000Z",
+  status: "in_progress",
+  completedAt: "2026-10-10T10:10:00.000Z"
+};
+policy.ensureTaskTimelineBackfill(retro, {
+  firstInvestIso: "2026-06-25T07:00:00.000Z",
+  dueDateTimeIso: task => `${task.dueDate}T18:00:00.000Z`
+});
+assert.equal(retro.createdAtIso, "2026-09-17T10:11:00.000Z", "createdAtIso is record time and must not move");
+assert.equal(retro.status, "done", "completedAt should sync status to done");
+
 console.log("task timeline backfill policy tests passed");

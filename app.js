@@ -4991,6 +4991,14 @@ function renderMonthCalendar() {
 function restoreTaskStatusOptions(task) {
   let currentStatus = task?.status || el.taskStatus?.value || "planned";
   if (currentStatus === "closed") currentStatus = "done";
+  if (
+    task?.completedAt
+    && !task.attentionOnly
+    && !TaskStatusPolicy.isTrackingStatus?.(task)
+    && !TaskStatusPolicy.isEndedStatus(task?.status)
+  ) {
+    currentStatus = "done";
+  }
   // Automatic statuses must stay selectable when they are the current value;
   // disabling both lets the browser fall through to “已完成”.
   if (!task?.completedAt && currentStatus === "done" && !TaskStatusPolicy.isEndedStatus(task?.status)) {
@@ -5619,7 +5627,7 @@ function openTaskDialog(task = null, options = {}) {
   syncMonthlyRecurringFromPriority();
   el.taskProgress.value = task?.progress || 0;
   el.taskProgressValue.textContent = `${task?.progress || 0}%`;
-  if (task?.id) refreshTaskStatusForId(task.id);
+  if (task?.id && refreshTaskStatusForId(task.id)) saveData();
   const statusTask = task?.id ? (findTask(task.id)?.task || task) : task;
   const meetingCreate = options.createKind === "meeting" || el.taskCreateKind?.value === "meeting";
   // 仅关注 = 待跟踪的唯一入口（任务表单显示；会议隐藏）

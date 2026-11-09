@@ -58,11 +58,27 @@
     return data[dateKey];
   }
 
+  function createdAtIsoFromSchedule(dateKey, decimalHour, now = new Date()) {
+    const key = String(dateKey || "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+      const value = Number(decimalHour);
+      const hour = Number.isFinite(value) ? Math.floor(value) : 9;
+      const minute = Number.isFinite(value) ? Math.round((value % 1) * 60) : 0;
+      const local = new Date(
+        `${key}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`
+      );
+      if (!Number.isNaN(local.getTime())) return local.toISOString();
+      return new Date(`${key}T09:00:00`).toISOString();
+    }
+    return now.toISOString();
+  }
+
   function createLeafTask({
     createId,
     title,
     parentId,
     dateKey,
+    entryStart = null,
     owner = "我",
     now = new Date()
   }) {
@@ -217,19 +233,21 @@
           .map(item => item.dateKey)
           .filter(Boolean)
           .sort()[0] || Object.keys(next).sort()[0] || new Date().toISOString().slice(0, 10);
+        const firstEntry = group.entries[0];
         leaf = createLeafTask({
           createId,
           title: group.leafTitle,
           parentId: group.parentId,
           dateKey: firstDate,
+          entryStart: firstEntry?.entry?.start,
           owner: group.parent.owner || "我",
           now
         });
         leaf.status = statusFromLinkedEntries(group.entries, now);
         if (leaf.status === "in_progress") {
-          leaf.startedAt = group.entries[0]
-            ? new Date(`${group.entries[0].dateKey}T09:00:00`).toISOString()
-            : now.toISOString();
+          leaf.startedAt = firstEntry
+            ? createdAtIsoFromSchedule(firstEntry.dateKey, firstEntry.entry?.start, now)
+            : createdAtIsoFromSchedule(firstDate, null, now);
         }
         ensureDay(next, firstDate).tasks.push(leaf);
         createdChildren += 1;
@@ -278,6 +296,7 @@
           title: entryTitle,
           parentId: entry.taskId,
           dateKey,
+          entryStart: entry.start,
           owner: parentRow.task.owner || "我",
           now
         });
