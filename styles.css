@@ -143,8 +143,8 @@
 }
 
 .ai-modal { width: min(760px, calc(100vw - 32px)); }
-.task-trace-item[draggable="true"], .due-task-item[draggable="true"], .completed-task-item[draggable="true"], .schedule-entry[draggable="true"], .project-gantt-row-chart[draggable="true"], .project-gantt-row-label.meeting[draggable="true"], .project-gantt-lane i.gantt-meeting-bar[draggable="true"] { cursor: grab; }
-.task-trace-item.dragging, .due-task-item.dragging, .completed-task-item.dragging, .schedule-entry.dragging, .project-gantt-row-chart.dragging, .project-gantt-row-label.dragging, .project-gantt-lane i.gantt-meeting-bar.dragging { opacity: .55; }
+.task-trace-item[draggable="true"], .due-task-item[draggable="true"], .completed-task-item[draggable="true"], .schedule-entry[draggable="true"], .project-gantt-row-label.meeting[draggable="true"], .project-gantt-row-label[draggable="true"] { cursor: grab; }
+.task-trace-item.dragging, .due-task-item.dragging, .completed-task-item.dragging, .schedule-entry.dragging, .project-gantt-row-label.dragging { opacity: .55; }
 .ai-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .ai-range { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ai-status { min-height: 24px; color: var(--muted-text); font-size: 13px; margin-top: 10px; }
@@ -2511,6 +2511,15 @@ body.gantt-label-resizing * {
 }
 .project-gantt-row-chart.is-filter-context .project-gantt-lane {
   opacity: 0.42;
+}
+.project-gantt-row-chart.is-chart-readonly {
+  pointer-events: none;
+  user-select: none;
+  cursor: default;
+}
+.project-gantt-row-chart.is-chart-readonly * {
+  pointer-events: none;
+  cursor: default;
 }
 .project-gantt-root.is-task-tree {
   --gantt-indent-step: 16px;

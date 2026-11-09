@@ -423,6 +423,8 @@ function ensureEntryTaskLinks() {
 
 function saveData() {
   invalidateRecurringCatalogCache();
+  invalidateTaskScheduleEntriesIndex();
+  invalidateCalendarEntryCaches();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
   if (persistentWritesEnabled && window.desktopAPI?.savePlannerData) {
     window.desktopAPI.savePlannerData(state.data).catch(() => {});
@@ -1438,7 +1440,7 @@ function applyTaskView(view, { expand = false } = {}) {
     expandWindowForView(view);
   }
   syncShellLayoutClasses();
-  render();
+  render({ scope: "view" });
 }
 
 function bindFocusViewMenu() {
@@ -3344,11 +3346,17 @@ async function extractAndCreateTaskFromImage({ file = null, attachment = null, n
   }
 }
 
-function render() {
-  invalidateTaskScheduleEntriesIndex();
-  invalidateRecurringCatalogCache();
+let lastTaskStatusSyncAt = 0;
+let pendingScheduleRender = 0;
+
+function syncTaskStatusesThrottled(soft = false) {
+  const now = Date.now();
+  if (soft && now - lastTaskStatusSyncAt < 8000) return;
+  lastTaskStatusSyncAt = now;
   syncTaskStatuses();
-  ensureRecurringTasksForVisibleRange();
+}
+
+function renderViewChrome() {
   const date = fromDateKey(state.selectedDate);
   updateDateNavigationChrome();
   el.datePicker.value = state.selectedDate;
@@ -3364,12 +3372,39 @@ function render() {
     document.body.classList.contains("shell-focus"),
     document.body.classList.contains("shell-compact-topbar")
   );
-  el.viewSwitcher.querySelectorAll("button[data-view]").forEach(button => {
+  el.viewSwitcher?.querySelectorAll("button[data-view]").forEach(button => {
     button.classList.toggle("active", button.dataset.view === state.taskView);
   });
+}
+
+function queueRenderSchedule() {
+  if (pendingScheduleRender) cancelAnimationFrame(pendingScheduleRender);
+  el.timeline.className = "timeline project-gantt-pending";
+  el.timeline.innerHTML = `<div class="empty-state" aria-busy="true">正在加载项目甘特…</div>`;
+  pendingScheduleRender = requestAnimationFrame(() => {
+    pendingScheduleRender = requestAnimationFrame(() => {
+      pendingScheduleRender = 0;
+      renderSchedule();
+    });
+  });
+}
+
+function render(options = {}) {
+  const scope = options.scope === "view" ? "view" : "full";
+  if (scope === "full") invalidateRecurringCatalogCache();
+  syncTaskStatusesThrottled(scope === "view");
+  ensureRecurringTasksForVisibleRange();
+  renderViewChrome();
   renderWeek();
-  renderTasks();
-  renderSchedule();
+  if (scope !== "view") renderTasks();
+  if (scope === "view") queueRenderSchedule();
+  else {
+    if (pendingScheduleRender) {
+      cancelAnimationFrame(pendingScheduleRender);
+      pendingScheduleRender = 0;
+    }
+    renderSchedule();
+  }
   renderDayNote();
 }
 
@@ -6657,12 +6692,22 @@ function renderSchedule() {
   renderDayTimeline();
 }
 
+let allCalendarEntriesCache = null;
+let calendarMeetingSummariesCache = null;
+
+function invalidateCalendarEntryCaches() {
+  allCalendarEntriesCache = null;
+  calendarMeetingSummariesCache = null;
+}
+
 function getAllCalendarEntries() {
-  return Object.entries(state.data).flatMap(([dateKey, day]) =>
+  if (allCalendarEntriesCache) return allCalendarEntriesCache;
+  allCalendarEntriesCache = Object.entries(state.data).flatMap(([dateKey, day]) =>
     (day.entries || [])
       .filter(entry => entry.entryType === "calendar" || !entry.taskId)
       .map(entry => ({ dateKey, entry }))
   ).sort((a, b) => `${a.dateKey} ${a.entry.start}`.localeCompare(`${b.dateKey} ${b.entry.start}`));
+  return allCalendarEntriesCache;
 }
 
 function resolveMeetingLinkedTaskId(entries = []) {
@@ -6677,6 +6722,7 @@ function resolveMeetingLinkedTaskId(entries = []) {
 }
 
 function getCalendarMeetingSummaries() {
+  if (calendarMeetingSummariesCache) return calendarMeetingSummariesCache;
   const groups = new Map();
   getAllCalendarEntries().forEach(({ dateKey, entry }) => {
     const title = String(entry.title || "").trim();
@@ -6689,12 +6735,14 @@ function getCalendarMeetingSummaries() {
     if (!current.linkedTaskId && linkedTaskId) current.linkedTaskId = linkedTaskId;
     groups.set(key, current);
   });
-  return [...groups.values()]
+  const summaries = [...groups.values()]
     .map(meeting => ({
       ...meeting,
       linkedTaskId: meeting.linkedTaskId || resolveMeetingLinkedTaskId(meeting.entries)
     }))
     .sort((a, b) => a.title.localeCompare(b.title, "zh-CN") || String(a.linkedTaskId).localeCompare(String(b.linkedTaskId)));
+  calendarMeetingSummariesCache = summaries;
+  return calendarMeetingSummariesCache;
 }
 
 function appendGanttRowPair(labelContainer, chartContainer, pair) {
@@ -8669,7 +8717,6 @@ function bindGanttMeetingRowSelection(labelRow, chartRow, rowId) {
     suppressGanttRowActivate = true;
   };
   labelRow.addEventListener("pointerdown", onGanttRowPointerDown);
-  chartRow.addEventListener("pointerdown", onGanttRowPointerDown);
   const selectRow = event => {
     if (suppressGanttRowActivate) {
       suppressGanttRowActivate = false;
@@ -8685,7 +8732,6 @@ function bindGanttMeetingRowSelection(labelRow, chartRow, rowId) {
     selectGanttTaskRow(id, { additive: false, range: false });
   };
   labelRow.addEventListener("click", selectRow);
-  chartRow.addEventListener("click", selectRow);
 }
 
 function selectGanttTaskRow(taskId, options = {}) {
@@ -8911,28 +8957,20 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   labelRow.dataset.depth = String(treeDepth);
   labelRow.dataset.treeDepth = String(treeDepth);
   labelRow.dataset.taskId = task.id;
-  labelRow.title = "单击高亮整行；Ctrl+单击多选；悬停显示＋新建子任务；右键分类/更多操作；拖到其他名称可改挂接；双击编辑；右侧拖到日期可安排投入";
+  labelRow.title = "单击高亮整行；Ctrl+单击多选；悬停显示＋新建子任务；右键分类/更多操作；拖到其他名称可改挂接；双击编辑；右侧时间条仅展示";
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin">
         ${foldPrefix}
         <strong title="${escapeHtml(taskTitle)}">${escapeHtml(taskTitle)}</strong>
         <button type="button" class="gantt-add-child" title="在此任务下新建子任务" aria-label="在此任务下新建子任务">＋</button>
       </div>${ganttLabelColumnCellsHtml(ganttTaskLabelColumnValues(task), enabledLabelColumns)}`;
   const chartRow = document.createElement("div");
-  chartRow.className = `project-gantt-row-chart ${task.status}${isParentRow ? " is-parent" : ""}${selected ? " is-selected" : ""}${filterContextOnly ? " is-filter-context" : ""}`;
+  chartRow.className = `project-gantt-row-chart is-chart-readonly ${task.status}${isParentRow ? " is-parent" : ""}${selected ? " is-selected" : ""}${filterContextOnly ? " is-filter-context" : ""}`;
   chartRow.dataset.taskId = task.id;
   const taskCategoryColor = typeof TaskCategoryPolicy?.resolveTaskColor === "function"
     ? TaskCategoryPolicy.resolveTaskColor(task)
     : (task.color || "#4f8fd6");
   applyCategoryColorStyle(chartRow, taskCategoryColor);
-  // Chart drag = schedule invest. Label drag = reparent. Chart/label both accept reparent drops.
-  chartRow.draggable = TaskStatusPolicy.isSchedulableStatus(task.status);
-  chartRow.addEventListener("dragstart", event => {
-    event.dataTransfer.setData("text/task-id", task.id);
-    event.dataTransfer.effectAllowed = "copy";
-    chartRow.classList.add("dragging");
-  });
-  chartRow.addEventListener("dragend", () => chartRow.classList.remove("dragging"));
-  bindGanttLabelReparent(labelRow, task, chartRow);
+  bindGanttLabelReparent(labelRow, task);
   const meetingSegments = actual.meetingSegments || [];
   const hasEntryLabels = actual.segments.some(segment => segment.label)
     || meetingSegments.some(segment => segment.label);
@@ -8963,7 +9001,6 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
     suppressGanttRowActivate = true;
   };
   labelRow.addEventListener("pointerdown", onGanttRowPointerDown);
-  chartRow.addEventListener("pointerdown", onGanttRowPointerDown);
   const selectRow = event => {
     if (event.target?.closest?.(".task-tree-toggle, .gantt-add-child")) return;
     if (suppressGanttRowActivate) {
@@ -8991,11 +9028,8 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
     openNewChildTaskFromGantt(task);
   });
   labelRow.addEventListener("click", selectRow);
-  chartRow.addEventListener("click", selectRow);
   labelRow.addEventListener("dblclick", openTask);
-  chartRow.addEventListener("dblclick", openTask);
   bindGanttRowContextMenu(labelRow, task);
-  bindGanttRowContextMenu(chartRow, task);
   return { labelRow, chartRow };
 }
 
@@ -9420,7 +9454,7 @@ function bindGanttReparentDropTarget(node, task) {
   });
 }
 
-function bindGanttMeetingLinkDrag(labelRow, meeting, chartRow = null) {
+function bindGanttMeetingLinkDrag(labelRow, meeting) {
   const entryId = meeting?.entries?.[0]?.entry?.id || "";
   if (!labelRow || !entryId) return;
   labelRow.draggable = true;
@@ -9440,7 +9474,7 @@ function bindGanttMeetingLinkDrag(labelRow, meeting, chartRow = null) {
   });
 }
 
-function bindGanttLabelReparent(labelRow, task, chartRow = null) {
+function bindGanttLabelReparent(labelRow, task) {
   if (!labelRow || !task?.id) return;
   labelRow.draggable = true;
   labelRow.addEventListener("dragstart", event => {
@@ -9462,7 +9496,6 @@ function bindGanttLabelReparent(labelRow, task, chartRow = null) {
     clearGanttReparentDropMarks();
   });
   bindGanttReparentDropTarget(labelRow, task);
-  if (chartRow) bindGanttReparentDropTarget(chartRow, task);
 }
 
 function ensureGanttTreeDepthForChild(minDepth = 1) {
@@ -9661,7 +9694,7 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
   const meetingCategoryLabel = typeof TaskCategoryPolicy?.labelForCategory === "function"
     ? TaskCategoryPolicy.labelForCategory(category)
     : String(category || "");
-  labelRow.title = "单击高亮整行；拖动名称可挂到待办任务下（会议计入该任务投入）；拖到空白处可取消挂接；双击编辑；右侧色条拖到日期可改期";
+  labelRow.title = "单击高亮整行；拖动名称可挂到待办任务下（会议计入该任务投入）；拖到空白处可取消挂接；双击编辑；右侧色条仅展示";
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin is-meeting">
       ${meetingLead}<strong title="${escapeHtml(meetingTitle)}">${escapeHtml(meetingTitle)}</strong>
     </div>${ganttLabelColumnCellsHtml({
@@ -9671,28 +9704,21 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
     category: meetingCategoryLabel || "—"
   }, enabledLabelColumns)}`;
   const chartRow = document.createElement("div");
-  chartRow.className = `project-gantt-row-chart meeting${selected ? " is-selected" : ""}`;
+  chartRow.className = `project-gantt-row-chart is-chart-readonly meeting${selected ? " is-selected" : ""}`;
   chartRow.dataset.taskId = rowId;
   applyCategoryColorStyle(chartRow, color);
   chartRow.innerHTML = `<div class="project-gantt-lane">
       ${parts.segments.map(segment => `<i class="gantt-meeting-bar" data-entry-id="${escapeHtml(segment.entryId || "")}" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label || "会议")}"></i>
       ${segment.label ? `<span class="gantt-progress-pct gantt-entry-label" style="left:${segment.left}%;width:${segment.width}%" title="${escapeHtml(segment.full || segment.label)}">${escapeHtml(segment.label)}</span>` : ""}`).join("")}
     </div>`;
-  bindGanttMeetingLinkDrag(labelRow, meeting, chartRow);
+  bindGanttMeetingLinkDrag(labelRow, meeting);
   bindGanttMeetingRowSelection(labelRow, chartRow, rowId);
-  chartRow.querySelectorAll(".gantt-meeting-bar").forEach(node => {
-    bindGanttCalendarEntryDrag(node, node.dataset.entryId, chartRow);
-  });
-  if (parts.segments.length === 1 && parts.segments[0]?.entryId) {
-    bindGanttCalendarEntryDrag(chartRow, parts.segments[0].entryId, chartRow);
-  }
   chartRow.querySelectorAll(".gantt-entry-label").forEach(node => fitGanttProgressLabel(node, node.textContent));
   const openMeeting = () => {
     const first = meeting.entries[0];
     if (first) openEntryDialog(first.entry.start, first.entry, first.dateKey);
   };
   labelRow.addEventListener("dblclick", openMeeting);
-  chartRow.addEventListener("dblclick", openMeeting);
   return { labelRow, chartRow };
 }
 
@@ -10963,44 +10989,21 @@ function bindProjectDrop(target, buckets, paneWidth = 0, scale = "day") {
     if (isGanttReparentDrag(event.dataTransfer) || isGanttMeetingLinkDrag(event.dataTransfer)) {
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
-      return;
     }
-    event.preventDefault();
-    target.classList.add("drag-over");
   });
   target.addEventListener("dragleave", () => target.classList.remove("drag-over"));
   target.addEventListener("drop", event => {
     event.preventDefault();
     target.classList.remove("drag-over");
     if (handleGanttMeetingLinkDrop(event)) return;
-    // Left-name drag means reparent; do not treat it as schedule invest on the chart body.
     if (isGanttReparentDrag(event.dataTransfer)) {
       const sourceId = event.dataTransfer.getData("text/task-id");
       const parentId = ganttDropTargetTaskIdFromEvent(event);
       clearGanttReparentDropMarks();
       if (sourceId && parentId) reparentTaskOnto(sourceId, parentId);
-      else showToast("请拖到目标任务行上，才能挂成子任务", 2600);
-      return;
+      else showToast("请拖到左侧目标任务名称上，才能挂成子任务", 2600);
     }
-    const scroller = getProjectGanttScroller();
-    const rect = (el.projectGanttChartTrack || target.closest(".project-gantt-chart-pane") || scroller).getBoundingClientRect();
-    const scrollLeft = state.projectScrollLeft || 0;
-    const width = paneWidth || rect.width || 1;
-    const metrics = ProjectViewPolicy.axisMetrics?.(buckets, scale) || {
-      totalDays: Math.max(1, buckets.length),
-      offsets: buckets.map((_, index) => index)
-    };
-    const dayPos = ((event.clientX - rect.left + scrollLeft) / width) * metrics.totalDays;
-    const index = typeof ProjectViewPolicy.bucketIndexAtDayPos === "function"
-      ? ProjectViewPolicy.bucketIndexAtDayPos(dayPos, metrics)
-      : Math.max(0, Math.min(buckets.length - 1, Math.floor(dayPos)));
-    const dateKey = buckets[index]?.key || state.selectedDate;
-    const hour = 9;
-    const taskId = event.dataTransfer.getData("text/task-id");
-    const entryId = event.dataTransfer.getData("text/entry-id");
-    const found = findTask(taskId);
-    if (found) createEntryFromTask(found.task, hour, dateKey);
-    else if (entryId) copyEntryToDate(entryId, dateKey, hour);
+    // Gantt chart body is display-only; schedule/reparent edits happen on the left label column.
   });
 }
 

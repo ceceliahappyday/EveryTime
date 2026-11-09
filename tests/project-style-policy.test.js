@@ -431,6 +431,11 @@ assert.match(
 );
 assert.match(
   styles,
+  /\.project-gantt-row-chart\.is-chart-readonly\s*\{[^}]*pointer-events:\s*none/s,
+  "gantt chart lane must be display-only"
+);
+assert.match(
+  styles,
   /body\.in-desktop\.glass-mode \.date-picker-button(?:\s*,[^,{]*)*\{[^}]*color:\s*#f4fbff/s,
   "glass mode date picker text should stay light on dark frosted controls"
 );
