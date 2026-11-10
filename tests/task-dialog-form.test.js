@@ -88,6 +88,7 @@ assert.match(app, /maybePromptAttentionAlarms/, "startup should prompt due atten
 assert.match(html, /id="attentionAlarmBanner"/, "due attention reminders use a sticky clickable banner");
 assert.match(app, /openAttentionAlarmList/, "clicking the reminder must open those tasks in the todo list");
 assert.match(app, /attentionAlarmTaskIds/, "reminder click filters the todo list to the due attention tasks");
+assert.match(app, /pruneAttentionAlarmTaskIds/, "reminder overlay must drop tasks after due date is rescheduled");
 assert.match(app, /\$\{count\} 条待办临近或已到目标完成时间，点击查看/, "banner summarizes the task count instead of joining titles");
 assert.doesNotMatch(app, /titles\.join\("、"\)/, "reminder popup must not concatenate task titles");
 assert.match(app, /kind: "due-reminder"/, "desktop notification click must route back to the same task list");

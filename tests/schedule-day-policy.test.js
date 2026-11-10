@@ -59,4 +59,24 @@ const lateVsDue = policy.validateCompletionTimeline({
 assert.equal(lateVsDue.ok, true, "late completion beyond 60d is soft confirm, not hard block");
 assert.match(String(lateVsDue.confirm || ""), /超过 60 天/);
 
+const retroBackfill = policy.validateCompletionTimeline({
+  completedAtIso: "2026-06-26T08:00:00.000Z",
+  createdAtIso: "2026-11-09T10:00:00.000Z",
+  dueAtIso: "2026-06-26T09:00:00.000Z",
+  nowIso: "2026-11-09T12:00:00.000Z"
+});
+assert.equal(retroBackfill.ok, true, "retro entry may complete before record createdAt when due is earlier");
+assert.match(String(retroBackfill.confirm || ""), /后补记录/);
+
+assert.equal(
+  policy.validateCompletionTimeline({
+    completedAtIso: "2026-11-08T10:00:00.000Z",
+    createdAtIso: "2026-11-09T10:00:00.000Z",
+    dueAtIso: "2026-11-20T18:00:00.000Z",
+    nowIso: "2026-11-09T12:00:00.000Z"
+  }).ok,
+  false,
+  "same-day tasks still cannot complete before record time when due is still in the future"
+);
+
 console.log("schedule day policy tests passed");

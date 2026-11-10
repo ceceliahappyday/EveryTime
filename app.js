@@ -3465,6 +3465,7 @@ function renderUnifiedTodoList() {
   const query = (state.taskListSearch || el.taskListSearch?.value || "").trim();
   const ownerSearch = TaskOptionPolicy.parseOwnerSearchQuery?.(query) || { ownerTokens: [], textQuery: query };
   const hasListSearch = Boolean(ownerSearch.textQuery || ownerSearch.ownerTokens?.length);
+  if (state.attentionAlarmTaskIds?.length) pruneAttentionAlarmTaskIds();
   const hasAttentionAlarmList = Boolean(state.attentionAlarmTaskIds?.length);
   const overlayMode = hasListSearch || state.showContinueYesterdayOnly || hasAttentionAlarmList;
 
@@ -13212,6 +13213,13 @@ function showAttentionAlarmBanner(tasks = []) {
   el.attentionAlarmBanner.dataset.taskIds = tasks.map(task => task.id).filter(Boolean).join(",");
   el.attentionAlarmBanner.hidden = false;
   el.attentionAlarmBanner.classList.add("show");
+}
+
+/** Drop ids that no longer match due-reminder rules (e.g. user pushed 目标完成时间). */
+function pruneAttentionAlarmTaskIds(todayKey = toDateKey(new Date())) {
+  if (!state.attentionAlarmTaskIds?.length) return;
+  const dueIds = new Set(attentionAlarmTasks(todayKey).map(task => task.id));
+  state.attentionAlarmTaskIds = state.attentionAlarmTaskIds.filter(id => dueIds.has(id));
 }
 
 function openAttentionAlarmList(taskIds) {

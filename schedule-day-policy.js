@@ -84,12 +84,26 @@
     }
     const created = parseIso(createdAtIso);
     if (created && completed < created) {
-      return { ok: false, message: "完成时间不能早于任务创建时间" };
+      const due = parseIso(dueAtIso);
+      const retroRecord = (due && created > due)
+        || (started && created > started)
+        || (lastInvest && created > lastInvest);
+      if (!retroRecord) {
+        return { ok: false, message: "完成时间不能早于任务创建时间" };
+      }
+      const daysBeforeRecord = daysBetween(completed, created);
+      if (daysBeforeRecord > 0.01) {
+        return {
+          ok: true,
+          message: "",
+          confirm: "完成时间早于本条录入时间（后补记录），确定按历史完成时间保存？"
+        };
+      }
     }
-    const due = parseIso(dueAtIso);
-    if (due) {
-      const afterDue = daysBetween(due, completed);
-      const beforeDue = daysBetween(completed, due);
+    const dueForLateCheck = parseIso(dueAtIso);
+    if (dueForLateCheck) {
+      const afterDue = daysBetween(dueForLateCheck, completed);
+      const beforeDue = daysBetween(completed, dueForLateCheck);
       if (afterDue > 60) {
         const daysLate = Math.floor(afterDue);
         return {
