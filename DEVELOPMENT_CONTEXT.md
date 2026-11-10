@@ -18,6 +18,16 @@ DailyPlanner（中文名「今日日程」）是桌面浮窗式的任务、日�
 - 兼容历史父级字段 `parentTaskId`、`parentTask`、`parent`，迁移后统一为 `parentId`；任意层级的叶子任务都必须进入左侧清单。
 - 左侧叶子任务必须保持原层级/父级线索，详情和项目视图可以回溯完整父级路径。
 - 月度固定任务只保存规则和当前自然月实例，不提前生成未来月份，也不在同月重复显示。
+- `createdAtIso` 是录入时间。后补关闭：完成时间早于录入时，仅当录入晚于目标完成/实际开始/末次投入之一才允许，并软确认「后补记录」；否则硬拦。
+
+## 目标完成提醒（overlay 分级）
+
+- 规则在 `task-reminder-policy.js`：仅关注与普通待办共用一套。档位仅三档：`overdue` / `due_today` / `upcoming`；不再命中则不展示。
+- Overlay 打开时记下 `attentionAlarmDueBaseline`。仍命中规则但 due 已变：卡片显示**绿色恢复标**（本轮已调整），并按新 due 重算落入哪一档。
+- 视觉：逾期=深红三角白感叹号；今天=黄三角白感叹号；即将=黄色感叹号（无三角）。
+- 可编辑日期快捷：目标完成 / 实际开始 / 实际关闭 / 会议结束 / 关闭确认完成时间均支持 `>` 推后一周、`>>` 推后一个月（按钮与框内输入共用 `applyDateTimeNudge`）。
+- 改期记录：`due-reschedule-policy.js`。仅当新旧 due 都非空且不同时 `dueRescheduleCount+1`，并在 `deliveryNote`（详情里「进度说明」）末尾追加一行；首次填写/清空不算；不自动改进度百分比。
+- 任务详情（紧凑）：类别|级别；上级通栏；责任人员|目标完成时间；创建时间|任务状态（状态只读，由实际开始/关闭推算）；实际开始|实际关闭；背景 → 任务进度 → 进度说明。「结束日期时间」仅新建会议显示。顶栏「更新进度」只列进行中且已有投入的叶子任务。
 
 ## 日程投入规则
 
@@ -37,15 +47,28 @@ DailyPlanner（中文名「今日日程」）是桌面浮窗式的任务、日�
 - 周：显示周一至周日及任务名称和日程；可把任务或任务轨迹拖到任意一天。
 - 月：固定大小月历单元格、节假日、任务名称和日程；可把任务拖到任意日期。
 - 项目：左侧统一任务清单，右侧可折叠甘特图；按日/周/月显示，未投入任务只显示截止线，实际投入才显示进度条。
+- 甘特会议行可选中；已关联待办的会议不重复占行；甘特右侧图表只读；会议行右键改分类与任务清单一致（约 v2.0.140–142）。
 
 ## 数据与升级
 
 - 不删除既有 localStorage、planner-data.json、历史任务、日程和工时。
 - 数据升级只迁移和补字段，不重置 STORAGE_KEY。
-- 发布版本使用 `ceceliahappyday/EveryTime`，GitHub Releases 负责安装包和自动更新；用户数据不上传 GitHub。
-- 发布版本使用 `ceceliahappyday/EveryTime`，GitHub Releases 负责安装包和自动更新；用户数据不上传 GitHub。
-- 换电脑通过 JSON「导出 / 导入」恢复历史；导入覆盖本机数据前会先本地备份。Excel 导出仅供查看。
-- API Key 由用户在设置中填写，主进程处理并尽量使用 Windows safeStorage 加密；AI 默认可查询未完成任务、任务定位和指定期间总结。仅当用户主动投放/附加截图时，可通过 `ai:extract-task` 创建 1 条本地待办；图片只随当次请求发往用户自配厂商，不落盘、不进 Git。
+- 发布：`ceceliahappyday/EveryTime` + GitHub Releases / `latest.yml`；用户数据不上传。发版递增 `package.json` 并推送新 `vX.Y.Z`，禁止对同一 tag force-push。
+- 换电脑用 JSON「导出 / 导入」；导入前本地备份。Excel 导出仅供查看。
+- API Key 在设置中填写，主进程尽量用 Windows safeStorage；AI 默认可查未完成任务、定位与期间总结。仅用户主动附截图时 `ai:extract-task` 可建本地待办；图片不落盘、不进 Git。
+
+## Windows 开机自启
+
+- 注册表名固定 `DailyPlanner`（`startup-policy.js`）。读写都必须带该 name；不得用无 name 的 `getLoginItemSettings()` 当真值，否则勾选假阴性，下次保存会关掉自启。
+- 开启时保留 canonical Run 项，并写入 `StartupApproved`；Electron 失败时用 `reg` 兜底写 Run。关闭时清理 canonical + 已校验的历史别名（仅 HKCU）。
+- 别名含 `EveryTime`、`今日日程`、`today-daily-planner` 等；清理前须校验为本应用 exe。`startup-policy.js` 只给 main 用，勿进 `index.html`。
+
+## 其它实现约束
+
+- `import-policy.js`：JSON 备份可还原；Excel 不可导入。
+- 投入关联任务：无障碍 combobox + 隐藏 select；会议禁用关联。
+- 周视图按实际 `task_work` 分条展示；父任务不得顶替叶子投入卡片。
+- 项目甘特数据域含完整树与历史；today+30 仅初始可视窗口。
 
 ## 明确禁止
 
@@ -57,12 +80,4 @@ DailyPlanner（中文名「今日日程」）是桌面浮窗式的任务、日�
 - 不得提前批量生成未来月份固定任务。
 - 不得发布更新时清空用户记录、替换数据文件或修改 STORAGE_KEY。
 - 不得把 API Key 写入 renderer、HTML、日志、GitHub 或导出数据。
-- Windows startup policy (v2.0.41+): the canonical login item name is `DailyPlanner`; repeated registration is idempotent.
-- Known legacy aliases include `EveryTime`, `DailyPlanner`, `今日日程`, `today-daily-planner`, and `Today Daily Planner`.
-- Cleanup is user-scope only (`HKCU` Run / StartupApproved), and only removes an exact known alias after verifying a DailyPlanner / legacy EveryTime executable path. Never modify `HKLM`, require admin rights, or delete unrelated entries.
-- Startup registration uses the current executable path, disables verified EveryTime aliases when switched off, and the main process holds a single-instance lock.
-- `startup-policy.js` is a CommonJS main-process module and must not be loaded by `index.html`.
-- `import-policy.js` parses JSON backups (`today-planner-backup`, legacy `today-planner-export`, raw planner-data) for restore; Excel exports are view-only and not importable.
-- Entry task linking uses a lightweight accessible combobox backed by the hidden `entryTaskLink` select. It supports title/path/status/date search, multi-keyword matching, numeric hierarchy labels, parent breadcrumbs, leaf-first stable sorting, keyboard navigation, Escape/Tab close, and current-link restoration. Calendar entries disable the control; task work enables it. No third-party dependency or data migration is allowed.
-- Week view is an actual work-entry detail surface: each `task_work`/linked entry is shown separately by start time with leaf title, duration, note, and parent breadcrumb. Parent tasks must not replace a leaf entry or reappear as an actual-work card when a descendant has that day's entry; due-only items remain under an explicit plan/deadline label.
-- Project Gantt always builds a complete data domain from recursive task trees and all linked entries, retaining history and distant future dates; today+30 days is only initial visual context, never a data cutoff. The current day/week/month is anchored with a small historical context, and a dedicated top horizontal scrollbar stays synchronized with the timeline. Actual bars convert dates through the selected bucket scale.
+- 不得修改 `HKLM` 或要求管理员权限清理启动项；不得删除未校验为本应用的启动项。

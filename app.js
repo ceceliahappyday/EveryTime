@@ -51,6 +51,8 @@ const state = {
   taskListSearch: "",
   showContinueYesterdayOnly: false,
   attentionAlarmTaskIds: [],
+  /** id → dueDate snapshot when the reminder overlay was opened (detect 本轮已调整). */
+  attentionAlarmDueBaseline: {},
   reminderSettings: null,
   taskView: "day",
   /** Desktop: right-hand schedule/gantt surface shown (false = todo-only focus shell). */
@@ -136,10 +138,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     "taskDetailSummary", "followUpDraftHint", "taskDialogScroll", "taskDialogCloseButton", "taskDialogCancelButton",
     "taskCreateKindField", "taskCreateKind",
     "taskTabsWrap", "taskTabsMore", "taskTabsMoreButton", "taskTabsMoreMenu",
-    "taskTitleInput", "taskDueDateTime", "taskMeetingEndField", "taskMeetingEndDateTime", "taskOwner", "taskCategory", "taskParentField", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
-    "taskProgress", "taskProgressValue", "taskStatus", "taskMonthlyRecurring", "taskRecurringUntil",
+    "taskTitleInput", "taskDueDateTime", "taskDueRescheduleHint", "taskDueNudgeRow", "taskDueNudgeWeek", "taskDueNudgeMonth", "taskMeetingEndField", "taskMeetingEndDateTime", "taskOwner", "taskCategory", "taskParentField", "taskParent", "taskParentTrigger", "taskParentPopup", "taskParentSearch", "taskParentOptions", "taskParentCombobox", "taskPriority",
+    "taskProgress", "taskProgressValue", "taskProgressField", "taskStatus", "taskStatusDisplay", "taskStatusField", "taskMonthlyRecurring", "taskRecurringUntil",
     "taskFollowUpOption", "taskFollowUpTracking", "taskFollowUpTrackingLabel",
-    "recurringOptions", "taskActualStart", "taskActualEnd", "taskActualTimeRow", "taskCreatedAtDisplay", "taskCreatedAtField",
+    "recurringOptions", "taskActualStart", "taskActualEnd", "taskActualTimeRow", "taskCreatedStatusRow", "taskCreatedAtDisplay", "taskCreatedAtField",
     "taskBusinessBackground", "taskProblemReason", "taskDeliveryNote", "businessBackgroundLabel",
     "problemReasonLabel", "taskDescription", "taskTitleField", "taskTitleCaption", "taskDueDateField", "taskDeliveryField",
     "taskSubtaskList", "taskSubtaskDraftInput", "taskSubtasksSection",
@@ -316,6 +318,7 @@ function migrateData() {
       task.businessBackground ||= "";
       task.problemReason ||= "";
       task.deliveryNote ||= "";
+      task.dueRescheduleCount = Math.max(0, Number(task.dueRescheduleCount) || 0);
       task.recurrence ||= null;
       task.recurrenceGroupId ||= "";
       task.followUpFromTaskId ||= "";
@@ -551,7 +554,7 @@ function bindEvents() {
   el.taskListSearch?.addEventListener("input", () => {
     state.taskListSearch = el.taskListSearch.value;
     state.showContinueYesterdayOnly = false;
-    state.attentionAlarmTaskIds = [];
+    clearAttentionAlarmSession();
     el.continueYesterdayButton?.classList.remove("active");
     el.taskSearchWrap?.classList.toggle("has-query", Boolean((el.taskListSearch.value || "").trim()));
     clearTimeout(taskListSearchTimer);
@@ -574,7 +577,7 @@ function bindEvents() {
       changed = true;
     }
     if (state.attentionAlarmTaskIds?.length) {
-      state.attentionAlarmTaskIds = [];
+      clearAttentionAlarmSession();
       changed = true;
     }
     if (!changed) return;
@@ -585,7 +588,7 @@ function bindEvents() {
 
   el.continueYesterdayButton?.addEventListener("click", () => {
     state.listKind = "todo";
-    state.attentionAlarmTaskIds = [];
+    clearAttentionAlarmSession();
     state.showContinueYesterdayOnly = !state.showContinueYesterdayOnly;
     el.continueYesterdayButton.classList.toggle("active", state.showContinueYesterdayOnly);
     if (state.showContinueYesterdayOnly) {
@@ -780,6 +783,21 @@ function bindEvents() {
   bindFlexibleDateTimeInput(el.taskActualStart, { kind: "start" });
   bindFlexibleDateTimeInput(el.taskActualEnd, { kind: "end" });
   bindFlexibleDateTimeInput(el.taskCloseCompletedAt, { kind: "end" });
+  [
+    el.taskDueDateTime,
+    el.taskMeetingEndDateTime,
+    el.taskActualStart,
+    el.taskActualEnd,
+    el.taskCloseCompletedAt
+  ].forEach(input => bindDateTimeNudgeShortcuts(input));
+  document.querySelectorAll("[data-datetime-nudge][data-datetime-nudge-target]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const target = document.getElementById(button.dataset.datetimeNudgeTarget || "");
+      applyDateTimeNudge(target, button.dataset.datetimeNudge === "month" ? "month" : "week");
+    });
+  });
   bindRichNoteEditor(el.taskCloseCompletionNote);
   bindRichNoteEditor(el.taskBusinessBackground);
   bindWorkHourDateTimeDefault(el.taskActualStart, "start");
@@ -818,8 +836,11 @@ function bindEvents() {
     event.preventDefault();
     commitTaskSubtaskDraft();
   });
+  el.taskActualStart?.addEventListener("change", () => {
+    syncDerivedTaskStatusFromTimes();
+  });
   el.taskActualEnd.addEventListener("change", () => {
-    updateProgressAvailability();
+    syncDerivedTaskStatusFromTimes();
   });
 
   el.entryForm.addEventListener("submit", event => {
@@ -2497,7 +2518,13 @@ async function saveDesktopSettings() {
   if (migrated > 0) saveData();
   el.settingsDialog.close();
   render();
-  showToast(migrated > 0 ? `设置已保存，已更新 ${migrated} 处责任人` : "设置已保存");
+  let toast = migrated > 0 ? `设置已保存，已更新 ${migrated} 处责任人` : "设置已保存";
+  if (nextSettings.startAtLogin && !saved?.startAtLogin) {
+    toast = "设置已保存，但开机自启未写入系统注册表，请重试或在任务管理器的启动应用中确认";
+  } else if (nextSettings.startAtLogin && saved?.startAtLogin) {
+    toast = migrated > 0 ? toast : "设置已保存，已启用开机自启（DailyPlanner）";
+  }
+  showToast(toast);
 }
 
 function setAiRangeForWeek() {
@@ -2937,6 +2964,7 @@ function buildIncompleteTaskSkeleton(title = "", { fromAi = false } = {}) {
     businessBackground: "",
     problemReason: "",
     deliveryNote: "",
+    dueRescheduleCount: 0,
     recurrence: null,
     recurrenceGroupId: "",
     createdFromAiScreenshot: Boolean(fromAi),
@@ -3465,7 +3493,7 @@ function renderUnifiedTodoList() {
   const query = (state.taskListSearch || el.taskListSearch?.value || "").trim();
   const ownerSearch = TaskOptionPolicy.parseOwnerSearchQuery?.(query) || { ownerTokens: [], textQuery: query };
   const hasListSearch = Boolean(ownerSearch.textQuery || ownerSearch.ownerTokens?.length);
-  if (state.attentionAlarmTaskIds?.length) pruneAttentionAlarmTaskIds();
+  if (state.attentionAlarmTaskIds?.length) syncAttentionAlarmTaskIds();
   const hasAttentionAlarmList = Boolean(state.attentionAlarmTaskIds?.length);
   const overlayMode = hasListSearch || state.showContinueYesterdayOnly || hasAttentionAlarmList;
 
@@ -3574,9 +3602,15 @@ function renderUnifiedTodoList() {
     const idSet = new Set(state.attentionAlarmTaskIds);
     const byId = new Map(uniqueTasks(allTasks).filter(task => idSet.has(task.id) && isTodoListTask(task)).map(task => [task.id, task]));
     const alarmTasks = state.attentionAlarmTaskIds.map(id => byId.get(id)).filter(Boolean);
-    sections = alarmTasks.length
-      ? [{ key: "attention-alarm", label: `目标完成提醒（${alarmTasks.length}）`, tasks: alarmTasks }]
+    const todayKey = toDateKey(new Date());
+    const reminderDeps = getReminderPolicyDeps();
+    const grouped = typeof TaskReminderPolicy?.groupAttentionAlarmOverlay === "function"
+      ? TaskReminderPolicy.groupAttentionAlarmOverlay(alarmTasks, todayKey, getReminderSettings(), reminderDeps)
       : [];
+    sections = [
+      { key: "attention-alarm", label: `目标完成提醒（${alarmTasks.length}）`, tasks: [], tier: "exit" },
+      ...grouped
+    ];
   } else if (state.showContinueYesterdayOnly) {
     const groups = TodoListPolicy.buildTodoGroups({
       tasks: workLeafTasks,
@@ -3699,14 +3733,15 @@ function renderUnifiedTodoList() {
 
   sections.forEach(section => {
     const alarmExit = section.key === "attention-alarm";
+    const alarmTierHeading = String(section.key || "").startsWith("attention-alarm-");
     const collapsible = !overlayMode && Boolean(section.label) && (
       (meetingMode && state.meetingFilter === "all") ||
       (!meetingMode && state.filter === "all")
     );
     const collapsed = collapsible && state.todoCollapsedSections.has(section.key);
-    if (section.label && section.tasks.length) {
+    if (section.label && (section.tasks.length || alarmExit)) {
       const heading = document.createElement(collapsible || alarmExit ? "button" : "div");
-      heading.className = `task-group-heading${alarmExit ? " attention-alarm-exit" : ""}`;
+      heading.className = `task-group-heading${alarmExit ? " attention-alarm-exit" : ""}${alarmTierHeading ? ` attention-alarm-tier ${section.tier || ""}` : ""}`;
       if (collapsible) {
         heading.type = "button";
         heading.setAttribute("aria-expanded", String(!collapsed));
@@ -3732,7 +3767,7 @@ function renderUnifiedTodoList() {
     section.tasks.forEach(item => {
       if (item.kind === "meeting") el.taskList.appendChild(createMeetingCard(item));
       else if (item.entryId) el.taskList.appendChild(createLinkedWorkCard(item));
-      else el.taskList.appendChild(createTaskCard(item));
+      else el.taskList.appendChild(createTaskCard(item, { reminderTier: section.tier || "" }));
     });
   });
   paintListSelection();
@@ -4665,7 +4700,49 @@ function taskTimelineSpan(task, buckets, scale = "day") {
   };
 }
 
-function createTaskCard(task) {
+function getReminderPolicyDeps() {
+  return {
+    isEndedStatus: status => TaskStatusPolicy.isEndedStatus(status),
+    isAttentionOnlyFn: task => TaskStatusPolicy.isAttentionOnly(task)
+  };
+}
+
+function isSessionAdjustedReminder(task) {
+  if (!task?.id || !state.attentionAlarmDueBaseline) return false;
+  if (!Object.prototype.hasOwnProperty.call(state.attentionAlarmDueBaseline, task.id)) return false;
+  const baseline = String(state.attentionAlarmDueBaseline[task.id] || "").slice(0, 10);
+  const due = String(task.dueDate || "").slice(0, 10);
+  return baseline !== due;
+}
+
+function resolveReminderMark(task, { reminderTier = "", todayKey = toDateKey(new Date()) } = {}) {
+  const settings = getReminderSettings();
+  const deps = getReminderPolicyDeps();
+  const due = String(task.dueDate || "").slice(0, 10);
+  const daysUntil = due && typeof TaskReminderPolicy?.dayDiff === "function"
+    ? TaskReminderPolicy.dayDiff(todayKey, due)
+    : NaN;
+  let tier = reminderTier && reminderTier !== "exit" ? reminderTier : "";
+  if (!tier) {
+    if (!TaskStatusPolicy.isAttentionOnly?.(task)) return null;
+    if (typeof TaskReminderPolicy?.classifyDueReminder === "function") {
+      tier = TaskReminderPolicy.classifyDueReminder(task, todayKey, settings, deps) || "";
+    } else if (TaskStatusPolicy.isAttentionAlarmDue?.(task, todayKey, settings)) {
+      tier = due && due < todayKey ? "overdue" : "due_today";
+    }
+  }
+  if (!tier || tier === "adjusted") return null;
+  const sessionAdjusted = isSessionAdjustedReminder(task);
+  const baseTitle = typeof TaskReminderPolicy?.tierLabel === "function"
+    ? TaskReminderPolicy.tierLabel(tier, daysUntil)
+    : (tier === "overdue" ? "已逾期" : tier === "due_today" ? "今天到期" : "即将到期");
+  const title = sessionAdjusted
+    ? `本轮已调整（${baseTitle || "仍在提醒范围"}）`
+    : (baseTitle || "目标完成提醒");
+  return { tier, title, daysUntil, sessionAdjusted };
+}
+
+function createTaskCard(task, { reminderTier = "" } = {}) {
   const incomplete = isSetupIncompleteTask(task);
   const visualStatus = isUnplannedTask(task) ? "unplanned" : task.status;
   const priority = task.priority || "general_daily";
@@ -4677,12 +4754,13 @@ function createTaskCard(task) {
       : null);
   // Badge already shows 跟踪 — don't repeat 「· 跟踪」 in the name.
   const displayTitle = TaskStatusPolicy.listDisplayTitle?.(task) || String(task.title || "").trim();
-  const alarmDue = !incomplete && TaskStatusPolicy.isAttentionAlarmDue?.(task, toDateKey(new Date()), getReminderSettings());
-  const alarmTitle = alarmDue && task.dueDate && task.dueDate < toDateKey(new Date())
-    ? "关注提醒：已过目标完成日期"
-    : "关注提醒：今天是目标完成日";
+  const reminderMark = !incomplete ? resolveReminderMark(task, { reminderTier }) : null;
+  const alarmTitle = reminderMark?.title || "";
   const card = document.createElement("article");
-  card.className = `task-card ${visualStatus}${incomplete ? " setup-incomplete" : ""}${alarmDue ? " attention-alarm-due" : ""}`;
+  const reminderClass = reminderMark
+    ? ` attention-alarm-due reminder-${reminderMark.tier}${reminderMark.sessionAdjusted ? " reminder-adjusted" : ""}`
+    : "";
+  card.className = `task-card ${visualStatus}${incomplete ? " setup-incomplete" : ""}${reminderClass}`;
   if (state.highlightTaskId && state.highlightTaskId === task.id) card.classList.add("is-just-linked");
   card.dataset.taskId = task.id;
   // Incomplete tasks stay "draggable" only so dragstart can toast + open the form.
@@ -4692,12 +4770,14 @@ function createTaskCard(task) {
     || TaskStatusPolicy.isAttentionOnly?.(task)
   );
   if (incomplete) card.title = `${displayTitle}（待完善：请先补充信息，完善前不能投入日程）`;
-  else if (alarmDue) card.title = `${displayTitle}（${alarmTitle}）`;
+  else if (reminderMark) card.title = `${displayTitle}（${alarmTitle}）`;
   else if (TaskStatusPolicy.isAttentionOnly?.(task)) card.title = `${displayTitle}（已标记待跟踪，到期当天会红色感叹号提醒）`;
   else card.title = displayTitle;
   if (sideBadge) card.classList.add("has-priority");
-  const alarmMark = alarmDue
-    ? `<span class="task-attention-alarm" title="${escapeHtml(alarmTitle)}" aria-label="${escapeHtml(alarmTitle)}"><span class="task-attention-alarm-mark" aria-hidden="true">!</span></span>`
+  const alarmMark = reminderMark
+    ? (reminderMark.sessionAdjusted
+      ? `<span class="task-attention-alarm reminder-adjusted" title="${escapeHtml(alarmTitle)}" aria-label="${escapeHtml(alarmTitle)}"><span class="task-attention-restore" aria-hidden="true">↻</span></span>`
+      : `<span class="task-attention-alarm reminder-${escapeHtml(reminderMark.tier)}" title="${escapeHtml(alarmTitle)}" aria-label="${escapeHtml(alarmTitle)}"><span class="task-attention-alarm-mark" aria-hidden="true">!</span></span>`)
     : "";
   card.innerHTML = incomplete
     ? `<button class="task-setup-warning" type="button" title="待完善信息，点击补充" aria-label="待完善信息">
@@ -5058,6 +5138,33 @@ function renderMonthCalendar() {
   el.taskList.appendChild(calendar);
 }
 
+function taskStatusDisplayLabel(status) {
+  return {
+    planned: "计划中",
+    in_progress: "进行中",
+    tracking: "计划中",
+    done: "已关闭",
+    closed: "已关闭"
+  }[status] || "计划中";
+}
+
+function syncTaskStatusDisplay() {
+  if (!el.taskStatusDisplay) return;
+  el.taskStatusDisplay.value = taskStatusDisplayLabel(el.taskStatus?.value || "planned");
+}
+
+function setDerivedTaskStatus(status) {
+  if (!el.taskStatus) return;
+  const next = status === "closed" ? "done" : status;
+  el.taskStatus.innerHTML = `
+    <option value="planned">计划中</option>
+    <option value="in_progress">进行中</option>
+    <option value="tracking" hidden>待跟踪</option>
+    <option value="done">已完成 / 已关闭</option>`;
+  el.taskStatus.value = ["planned", "in_progress", "tracking", "done"].includes(next) ? next : "planned";
+  syncTaskStatusDisplay();
+}
+
 function restoreTaskStatusOptions(task) {
   let currentStatus = task?.status || el.taskStatus?.value || "planned";
   if (currentStatus === "closed") currentStatus = "done";
@@ -5069,33 +5176,26 @@ function restoreTaskStatusOptions(task) {
   ) {
     currentStatus = "done";
   }
-  // Automatic statuses must stay selectable when they are the current value;
-  // disabling both lets the browser fall through to “已完成”.
   if (!task?.completedAt && currentStatus === "done" && !TaskStatusPolicy.isEndedStatus(task?.status)) {
     currentStatus = "planned";
   }
   if (currentStatus === "tracking") {
     currentStatus = (task?.startedAt || task?.startOverrideAt) ? "in_progress" : "planned";
   }
-  // 待跟踪是进行中标记，不占用状态下拉。
-  const plannedDisabled = (currentStatus === "planned" || currentStatus === "tracking") ? "" : " disabled";
-  const progressDisabled = currentStatus === "in_progress" ? "" : " disabled";
-  el.taskStatus.innerHTML = `
-    <option value="planned"${plannedDisabled}>计划中</option>
-    <option value="in_progress"${progressDisabled}>进行中</option>
-    <option value="tracking" hidden>待跟踪</option>
-    <option value="done">已完成 / 已关闭</option>`;
+  // 状态由实际开始 / 关闭时间推算，详情里只读展示。
+  setDerivedTaskStatus(currentStatus);
+}
 
-  if (["planned", "in_progress", "tracking", "done"].includes(currentStatus)) {
-    el.taskStatus.value = currentStatus;
-  } else {
-    el.taskStatus.value = "planned";
+function syncDerivedTaskStatusFromTimes() {
+  const endRaw = String(el.taskActualEnd?.value || "").trim();
+  if (endRaw) {
+    setDerivedTaskStatus("done");
+    updateProgressAvailability();
+    return;
   }
-  if (el.taskStatus.value !== currentStatus && (currentStatus === "planned" || currentStatus === "in_progress")) {
-    const option = el.taskStatus.querySelector(`option[value="${currentStatus}"]`);
-    if (option) option.disabled = false;
-    el.taskStatus.value = currentStatus;
-  }
+  const startRaw = String(el.taskActualStart?.value || "").trim();
+  setDerivedTaskStatus(startRaw ? "in_progress" : "planned");
+  updateProgressAvailability();
 }
 
 function handlePanelScreenshotPaste(event) {
@@ -5145,9 +5245,21 @@ function syncTaskCreateKindUi() {
   el.taskMeetingEndField?.classList.toggle("hidden", !meeting);
   el.taskEditForm?.classList.toggle("create-kind-meeting", meeting);
   el.taskFollowUpOption?.classList.toggle("hidden", meeting);
-  if (!creating) {
+  const dueCaption = el.taskDueDateField?.querySelector(".task-due-label-row > span:first-child")
+    || el.taskDueDateField?.querySelector("span");
+  if (dueCaption) dueCaption.textContent = meeting ? "开始日期时间" : "目标完成时间";
+  if (!meeting) {
     el.taskMeetingEndField?.classList.add("hidden");
+    if (el.taskMeetingEndDateTime) el.taskMeetingEndDateTime.value = "";
+  }
+  if (!creating) {
+    // 编辑任务时清掉上一次「新建会议」残留的结束时间栏与文案
+    el.taskMeetingEndField?.classList.add("hidden");
+    el.taskEditForm?.classList.remove("create-kind-meeting");
     el.taskFollowUpOption?.classList.remove("hidden");
+    if (el.taskMeetingEndDateTime) el.taskMeetingEndDateTime.value = "";
+    if (dueCaption) dueCaption.textContent = "目标完成时间";
+    syncDueDateNudgeRow();
     return;
   }
   if (el.taskDialogEyebrow) el.taskDialogEyebrow.textContent = meeting ? "NEW MEETING" : "NEW TASK";
@@ -5156,9 +5268,11 @@ function syncTaskCreateKindUi() {
   if (el.taskTitleInput) {
     el.taskTitleInput.placeholder = meeting ? "会议主题是什么？" : "需要完成什么？";
   }
-  const dueLabel = el.taskDueDateField?.querySelector("span");
-  if (dueLabel) dueLabel.textContent = meeting ? "开始日期时间" : "目标完成时间";
-  if (meeting) ensureMeetingEndDefault();
+  if (meeting) {
+    updateDueRescheduleHint(null);
+    ensureMeetingEndDefault();
+  }
+  syncDueDateNudgeRow();
   const ownerLabel = el.taskOwner?.closest("label")?.querySelector("span");
   if (ownerLabel) ownerLabel.textContent = meeting ? "参会人" : "责任人员";
   if (el.taskOwner) {
@@ -5271,6 +5385,7 @@ function bindFlexibleDateTimeInput(input, { kind = "end" } = {}) {
       input.classList.remove("field-error");
       return;
     }
+    if (raw === ">" || raw === ">>") return;
     const before = raw;
     normalizeDateTimeInputValue(input, { defaultKind: resolveKind(), fillTime: true });
     const after = String(input.value || "").trim();
@@ -5288,6 +5403,85 @@ function bindFlexibleDateTimeInput(input, { kind = "end" } = {}) {
     normalizeDateTimeInputValue(input, { defaultKind: resolveKind(), fillTime: true });
     input.blur();
   });
+}
+
+function syncDueDateNudgeRow() {
+  // 可编辑日期框统一常驻 > / >>；会议开始/结束同样可用。
+  if (!el.taskDueNudgeRow) return;
+  el.taskDueNudgeRow.hidden = false;
+}
+
+function defaultTimeForDateTimeNudge(input) {
+  const id = input?.id || "";
+  if (id === "taskActualStart") return defaultWorkStartTime();
+  if (id === "taskDueDateTime" && isCreateMeetingKind()) return defaultWorkStartTime();
+  return defaultWorkEndTime();
+}
+
+/** Push an editable datetime by one week or one month from current value (or today). */
+function applyDateTimeNudge(input, unit = "week") {
+  if (!input || input.readOnly || input.disabled) return;
+  const parsed = parseFlexibleDateTime(input.value || "");
+  const seedDate = parsed.dateKey || state.selectedDate || toDateKey(new Date());
+  const seedTime = parsed.time || defaultTimeForDateTimeNudge(input);
+  const nextDate = unit === "month"
+    ? toDateKey(addMonths(fromDateKey(seedDate), 1))
+    : toDateKey(addDays(fromDateKey(seedDate), 7));
+  input.value = formatDateTimeDisplay(nextDate, seedTime);
+  input.dataset.dueNudgeBase = `${nextDate}|${seedTime}`;
+  input.classList.remove("field-error");
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  const label = input.getAttribute("aria-label") || "日期时间";
+  showToast(unit === "month" ? `${label}已推后一个月` : `${label}已推后一周`, 2200);
+}
+
+function applyDueDateNudge(unit = "week") {
+  applyDateTimeNudge(el.taskDueDateTime, unit);
+}
+
+/** Type `>` → +1 week, `>>` → +1 month (from current value or today). */
+function bindDateTimeNudgeShortcuts(input) {
+  if (!input || input.dataset.dueNudgeBound === "1") return;
+  input.dataset.dueNudgeBound = "1";
+  let nudgeTimer = null;
+  const snapshotBase = () => {
+    const parsed = parseFlexibleDateTime(input.value || "");
+    const dateKey = parsed.dateKey || state.selectedDate || toDateKey(new Date());
+    const time = parsed.time || defaultTimeForDateTimeNudge(input);
+    input.dataset.dueNudgeBase = `${dateKey}|${time}`;
+  };
+  input.addEventListener("focus", snapshotBase);
+  input.addEventListener("input", () => {
+    const raw = String(input.value || "").trim();
+    if (raw !== ">" && raw !== ">>") {
+      if (nudgeTimer) {
+        clearTimeout(nudgeTimer);
+        nudgeTimer = null;
+      }
+      return;
+    }
+    if (nudgeTimer) clearTimeout(nudgeTimer);
+    const apply = () => {
+      nudgeTimer = null;
+      const token = String(input.value || "").trim();
+      if (token !== ">" && token !== ">>") return;
+      applyDateTimeNudge(input, token === ">>" ? "month" : "week");
+    };
+    if (raw === ">>") apply();
+    else nudgeTimer = setTimeout(apply, 280);
+  });
+}
+
+function bindDueDateNudgeShortcuts(input) {
+  bindDateTimeNudgeShortcuts(input);
+}
+
+function addMonths(date, months) {
+  const copy = new Date(date);
+  const day = copy.getDate();
+  copy.setMonth(copy.getMonth() + Number(months || 0));
+  if (copy.getDate() !== day) copy.setDate(0);
+  return copy;
 }
 
 function resolveDateTimePickerKind(inputId = "") {
@@ -5381,7 +5575,7 @@ function applyTaskFilter(filter) {
   state.lastTodoFilter = filter;
   state.filter = filter;
   state.showContinueYesterdayOnly = false;
-  state.attentionAlarmTaskIds = [];
+  clearAttentionAlarmSession();
   TodoListPolicy.saveFilter(state.filter);
   el.taskTabs?.querySelectorAll("button[data-filter]").forEach(item => {
     item.classList.toggle("active", item.dataset.filter === filter);
@@ -5399,7 +5593,7 @@ function applyMeetingFilter(filter) {
   state.listKind = "meeting";
   state.meetingFilter = filter;
   state.showContinueYesterdayOnly = false;
-  state.attentionAlarmTaskIds = [];
+  clearAttentionAlarmSession();
   renderTasks();
 }
 
@@ -5407,7 +5601,7 @@ function applyListKind(kind) {
   if (kind === "meeting") {
     state.listKind = "meeting";
     state.showContinueYesterdayOnly = false;
-    state.attentionAlarmTaskIds = [];
+    clearAttentionAlarmSession();
     if (!state.meetingFilter) state.meetingFilter = "all";
     renderTasks();
     return;
@@ -5715,15 +5909,15 @@ function openTaskDialog(task = null, options = {}) {
     ? TaskActualStartPolicy.resolveActualStartIso(statusTask || {}, { firstInvestIso: scheduleForStart?.firstStartIso || "" })
     : (statusTask?.startOverrideAt || statusTask?.startedAt || "");
   el.taskActualStart.value = toLocalDateTimeInput(displayActualStart);
-  if (el.taskDueDateField?.querySelector("span")) {
-    el.taskDueDateField.querySelector("span").textContent = "目标完成时间";
-    el.taskDueDateField.title = "请人工填写；到期与提前天数在设置中配置提醒";
+  if (el.taskDueDateField) {
+    el.taskDueDateField.title = "请人工填写；到期与提前天数在设置中配置提醒。快捷：> 推后一周，>> 推后一个月";
   }
   el.taskActualEnd.value = toLocalDateTimeInput(statusTask?.completedAt);
+  if (!meetingCreate) syncDerivedTaskStatusFromTimes();
   // UI merges background / reason / description; originals stay in data until user saves.
   setRichNoteEditorValue(el.taskBusinessBackground, mergeTaskContextText(task));
   el.taskProblemReason.value = task?.problemReason || "";
-  el.taskDeliveryNote.value = task?.deliveryNote || "";
+  el.taskDeliveryNote.value = plainTextFromDeliveryNote(task?.deliveryNote || "");
   el.taskDescription.value = task?.description || "";
   el.taskRecurringUntil.value = task?.recurrence?.until || defaultRecurringUntil(task?.dueDate || state.selectedDate);
   fillParentOptions(task);
@@ -5747,8 +5941,8 @@ function openTaskDialog(task = null, options = {}) {
       ? "背景与说明（来自已关闭任务）"
       : "背景与说明";
   }
-  const dueLabel = el.taskDueDateField?.querySelector("span");
-  if (dueLabel) dueLabel.textContent = "目标完成时间";
+  updateDueRescheduleHint(task);
+  syncDueDateNudgeRow();
   el.taskDeliveryField?.classList.remove("follow-up-focus");
   if (el.taskTitleCaption) {
     el.taskTitleCaption.textContent = (followUpDraft || successorDraft) ? "待办名称（可修改）" : "待办名称";
@@ -5765,6 +5959,11 @@ function openTaskDialog(task = null, options = {}) {
   if (task || followUpDraft || successorDraft || parentReview || setupIncomplete || lockParent) {
     el.taskCreateKindField?.classList.add("hidden");
     el.taskEditForm?.classList.remove("create-kind-meeting");
+    el.taskMeetingEndField?.classList.add("hidden");
+    if (el.taskMeetingEndDateTime) el.taskMeetingEndDateTime.value = "";
+    const dueCaption = el.taskDueDateField?.querySelector(".task-due-label-row > span:first-child")
+      || el.taskDueDateField?.querySelector("span");
+    if (dueCaption) dueCaption.textContent = "目标完成时间";
   } else {
     syncTaskCreateKindUi();
   }
@@ -6163,8 +6362,10 @@ function saveTask() {
     businessBackground,
     // Consolidated into businessBackground on save so reopen won't duplicate.
     problemReason: "",
-    // Keep historical deliveryNote; deliverables are edited as child tasks in UI.
-    deliveryNote: editing?.task?.deliveryNote || el.taskDeliveryNote?.value.trim() || "",
+    // 进度说明可编辑；改期日志也会追加到此。交付拆解仍用下级任务。
+    deliveryNote: el.taskDeliveryNote
+      ? String(el.taskDeliveryNote.value || "").trim()
+      : (editing?.task?.deliveryNote || ""),
     recurrence: monthlySelected ? {
       frequency: "monthly",
       dayOfMonth: dueParts.dueDate ? Number(dueParts.dueDate.slice(-2)) : null,
@@ -6180,6 +6381,22 @@ function saveTask() {
   }
   if (payload.dueTime && !payload.dueDate) return showTaskFieldError(el.taskDueDateTime, "填写目标时间时，请同时选择目标日期");
   if (payload.dueDate && !payload.dueTime) payload.dueTime = defaultWorkEndTime();
+  if (editing?.task && typeof DueReschedulePolicy?.applyOnSave === "function") {
+    const reschedule = DueReschedulePolicy.applyOnSave({
+      previousDueDate: editing.task.dueDate || "",
+      previousDueTime: editing.task.dueTime || "",
+      nextDueDate: payload.dueDate || "",
+      nextDueTime: payload.dueTime || "",
+      previousCount: editing.task.dueRescheduleCount,
+      deliveryNote: plainTextFromDeliveryNote(payload.deliveryNote || ""),
+      now: new Date(),
+      maxChars: RichNotePolicy?.MAX_TEXT_CHARS || 4000
+    });
+    payload.dueRescheduleCount = reschedule.count;
+    if (reschedule.changed) payload.deliveryNote = reschedule.deliveryNote;
+  } else {
+    payload.dueRescheduleCount = Math.max(0, Number(editing?.task?.dueRescheduleCount) || 0);
+  }
   if (payload.recurrence && !payload.dueDate) return showTaskFieldError(el.taskDueDateTime, "每月例行任务需要选择首次目标日期");
   if (payload.recurrence && !payload.recurrence.until) {
     return showTaskFieldError(el.taskRecurringUntil, "请选择月度规则有效至哪个月");
@@ -6326,7 +6543,7 @@ function openProgressReview() {
 
   el.progressReviewList.innerHTML = "";
   if (!activeTasks.length) {
-    el.progressReviewList.innerHTML = `<div class="empty-state">当前没有可更新进度的明细任务<br>请把叶子待办拖入日程产生实际投入后，再来这里填写进度</div>`;
+    el.progressReviewList.innerHTML = `<div class="empty-state">当前没有符合条件的任务<br>需同时满足：叶子待办 · 进行中 · 已有日程投入<br>其它任务请打开详情改进度；父计划不在此列表</div>`;
     el.progressReviewForm.querySelector('button[type="submit"]').disabled = true;
   } else {
     el.progressReviewForm.querySelector('button[type="submit"]').disabled = false;
@@ -6341,6 +6558,7 @@ function openProgressReview() {
             <h4>${escapeHtml(task.title)}</h4>
             <div class="review-meta">
               <span>截止 ${formatDue(task)}</span>
+              ${Number(task.dueRescheduleCount) > 0 ? `<span>已改期 ${Number(task.dueRescheduleCount)} 次</span>` : ""}
               <span>责任人：${escapeHtml(task.owner || "未指定")}</span>
               <span>${priorityLabel(task.priority)}</span>
               ${parentPath ? `<span>归属：${escapeHtml(parentPath)}</span>` : ""}
@@ -6408,7 +6626,7 @@ function formatTaskCreatedAtDisplay(task) {
 function syncTaskCreatedAtDisplay(task) {
   const show = Boolean(task?.id);
   el.taskCreatedAtField?.classList.toggle("hidden", !show);
-  el.taskActualTimeRow?.classList.toggle("has-created-at", show);
+  el.taskCreatedStatusRow?.classList.toggle("has-created-at", show);
   if (!el.taskCreatedAtDisplay) return;
   if (!show) {
     el.taskCreatedAtDisplay.value = "";
@@ -11553,7 +11771,7 @@ function focusLinkedTaskFilter(taskId) {
   // Always surface the linked leaf in the todo list (not its parent container).
   state.listKind = "todo";
   state.showContinueYesterdayOnly = false;
-  state.attentionAlarmTaskIds = [];
+  clearAttentionAlarmSession();
   state.highlightTaskId = linked.id;
   // Newly created schedule-linked leaves are usually planned/unplanned; keep the
   // default in_progress tab from hiding them right after save.
@@ -12601,6 +12819,18 @@ function getTaskDueParts() {
   return { dueDate: parsed.dateKey, dueTime: parsed.time || "" };
 }
 
+function updateDueRescheduleHint(task = null) {
+  if (!el.taskDueRescheduleHint) return;
+  const count = Math.max(0, Number(task?.dueRescheduleCount) || 0);
+  if (!task || count <= 0 || isCreateMeetingKind()) {
+    el.taskDueRescheduleHint.hidden = true;
+    el.taskDueRescheduleHint.textContent = "";
+    return;
+  }
+  el.taskDueRescheduleHint.hidden = false;
+  el.taskDueRescheduleHint.textContent = `已改期 ${count} 次`;
+}
+
 function setTaskDueDateTime(dueDate, dueTime = "") {
   if (!el.taskDueDateTime) return;
   if (!dueDate) {
@@ -13179,10 +13409,7 @@ function scrollToWorkday() {
 function attentionAlarmTasks(todayKey = toDateKey(new Date())) {
   const tasks = uniqueTasks(getAllTasks().map(({ task }) => task)).filter(task => isTodoListTask(task));
   const settings = getReminderSettings();
-  const deps = {
-    isEndedStatus: status => TaskStatusPolicy.isEndedStatus(status),
-    isAttentionOnlyFn: task => TaskStatusPolicy.isAttentionOnly(task)
-  };
+  const deps = getReminderPolicyDeps();
   if (typeof TaskReminderPolicy?.filterDueReminderTasks === "function") {
     return TaskReminderPolicy.filterDueReminderTasks(tasks, todayKey, settings, deps);
   }
@@ -13215,11 +13442,30 @@ function showAttentionAlarmBanner(tasks = []) {
   el.attentionAlarmBanner.classList.add("show");
 }
 
-/** Drop ids that no longer match due-reminder rules (e.g. user pushed 目标完成时间). */
-function pruneAttentionAlarmTaskIds(todayKey = toDateKey(new Date())) {
+function clearAttentionAlarmSession() {
+  state.attentionAlarmTaskIds = [];
+  state.attentionAlarmDueBaseline = {};
+}
+
+/** Drop missing/ended tasks and ones that no longer match overdue/today/upcoming. */
+function syncAttentionAlarmTaskIds(todayKey = toDateKey(new Date())) {
   if (!state.attentionAlarmTaskIds?.length) return;
   const dueIds = new Set(attentionAlarmTasks(todayKey).map(task => task.id));
   state.attentionAlarmTaskIds = state.attentionAlarmTaskIds.filter(id => dueIds.has(id));
+  if (!state.attentionAlarmDueBaseline) state.attentionAlarmDueBaseline = {};
+  Object.keys(state.attentionAlarmDueBaseline).forEach(id => {
+    if (!state.attentionAlarmTaskIds.includes(id)) delete state.attentionAlarmDueBaseline[id];
+  });
+}
+
+function captureAttentionAlarmDueBaseline(ids = []) {
+  const idSet = new Set(ids);
+  const baseline = {};
+  uniqueTasks(getAllTasks().map(({ task }) => task)).forEach(task => {
+    if (!idSet.has(task.id)) return;
+    baseline[task.id] = String(task.dueDate || "").slice(0, 10);
+  });
+  state.attentionAlarmDueBaseline = baseline;
 }
 
 function openAttentionAlarmList(taskIds) {
@@ -13233,7 +13479,7 @@ function openAttentionAlarmList(taskIds) {
   markAttentionAlarmViewed(todayKey);
   lastAttentionAlarmPromptKey = todayKey;
   if (!ids.length) {
-    state.attentionAlarmTaskIds = [];
+    clearAttentionAlarmSession();
     renderTasks();
     return;
   }
@@ -13244,6 +13490,7 @@ function openAttentionAlarmList(taskIds) {
   el.taskSearchWrap?.classList.remove("has-query");
   el.continueYesterdayButton?.classList.remove("active");
   state.attentionAlarmTaskIds = ids;
+  captureAttentionAlarmDueBaseline(ids);
   render();
 }
 

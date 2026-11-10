@@ -51,7 +51,7 @@
         <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false" hidden><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
         <div class="header-tools-slot" id="headerToolsSlot">
           <div class="header-tools" id="headerTools">
-            <button class="soft-button" id="progressReviewButton" type="button" title="集中更新有投入的明细待办"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.2 8a4.8 4.8 0 0 1 8.2-3.3M12.8 8a4.8 4.8 0 0 1-8.2 3.3"/><path d="M11.2 2.6v2.8H14M4.8 13.4v-2.8H2"/></svg></i><span class="btn-label">更新进度</span></button>
+            <button class="soft-button" id="progressReviewButton" type="button" title="批量更新：进行中且已有日程投入的叶子待办"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.2 8a4.8 4.8 0 0 1 8.2-3.3M12.8 8a4.8 4.8 0 0 1-8.2 3.3"/><path d="M11.2 2.6v2.8H14M4.8 13.4v-2.8H2"/></svg></i><span class="btn-label">更新进度</span></button>
             <button class="soft-button" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.2l.85 3.35L12.2 6.4l-3.35.85L8 10.6l-.85-3.35L3.8 6.4l3.35-.85z"/><path d="M12.4 10.2l.45 1.75L14.6 12.4l-1.75.45-.45 1.75-.45-1.75-1.75-.45 1.75-.45z"/></svg></i><span class="btn-label">AI助手</span></button>
             <button class="soft-button" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.5v7.2"/><path d="M5.2 7.2 8 10l2.8-2.8"/><path d="M3.2 12.8h9.6"/></svg></i><span class="btn-label">导出</span></button>
             <button class="soft-button" id="importButton" type="button" title="从 JSON 备份文件导入恢复"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 10.5V3.3"/><path d="M5.2 5.8 8 3l2.8 2.8"/><path d="M3.2 12.8h9.6"/></svg></i><span class="btn-label">导入</span></button>
@@ -254,13 +254,17 @@
     <div class="task-close-confirm-fields">
       <label>
         <span>完成时间</span>
-        <div class="datetime-input-wrap">
-          <input type="text" id="taskCloseCompletedAt" inputmode="numeric" maxlength="20" placeholder="2026/10/10 09:10" autocomplete="off" spellcheck="false" aria-label="完成时间" title="可手写或点日历选择；失焦自动识别" />
+        <div class="datetime-input-wrap datetime-input-wrap--nudge">
+          <input type="text" id="taskCloseCompletedAt" inputmode="numeric" maxlength="20" placeholder="2026/10/10 09:10" autocomplete="off" spellcheck="false" aria-label="完成时间" title="可手写或点日历；右侧 > 推后一周，>> 推后一个月" />
           <button type="button" class="datetime-pick-button" data-datetime-target="taskCloseCompletedAt" aria-label="选择完成时间" title="打开日历选择">
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
               <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
             </svg>
           </button>
+          <div class="datetime-nudge-inline" role="group" aria-label="快捷推后完成时间">
+            <button type="button" class="datetime-nudge-button" data-datetime-nudge="week" data-datetime-nudge-target="taskCloseCompletedAt" title="推后一周" aria-label="推后一周">&gt;</button>
+            <button type="button" class="datetime-nudge-button datetime-nudge-button--month" data-datetime-nudge="month" data-datetime-nudge-target="taskCloseCompletedAt" title="推后一个月" aria-label="推后一个月">&gt;&gt;</button>
+          </div>
         </div>
       </label>
       <label>
@@ -394,7 +398,7 @@
   </dialog>
 
   <dialog class="modal" id="taskDialog">
-    <form id="taskEditForm">
+    <form id="taskEditForm" class="task-form-compact">
       <div class="modal-scroll" id="taskDialogScroll">
         <div class="modal-header">
           <div>
@@ -433,6 +437,8 @@
               <option value="meeting">会议</option>
             </select>
           </label>
+        </div>
+        <div class="form-row task-category-priority-row" id="taskCategoryPriorityRow">
           <label id="taskCategoryField">
             <span>任务类别</span>
             <select id="taskCategory" aria-label="任务类别">
@@ -443,9 +449,7 @@
               <option value="other">其他</option>
             </select>
           </label>
-        </div>
-        <div class="form-row" id="taskPriorityOwnerRow">
-          <label>
+          <label id="taskPriorityField">
             <span>任务级别</span>
             <select id="taskPriority">
               <option value="general_daily" selected>一般日常</option>
@@ -455,7 +459,6 @@
               <option value="monthly_fixed">每月例行</option>
             </select>
           </label>
-          <label><span>责任人员</span><input id="taskOwner" maxlength="30" placeholder="例如：王芳" /></label>
         </div>
         <label id="taskParentField" class="task-parent-field">
           <span>归属上级任务</span>
@@ -468,39 +471,46 @@
             </div>
           </div>
         </label>
-        <div class="form-row task-status-due-row" id="taskScheduleTimeRow">
-          <label id="taskStatusField">
-            <span>任务状态</span>
-            <select id="taskStatus" aria-label="任务状态">
-              <option value="planned">计划中</option>
-              <option value="in_progress" disabled>进行中</option>
-              <option value="done">已完成 / 已关闭</option>
-            </select>
+        <div class="form-row task-owner-due-row task-due-row" id="taskScheduleTimeRow">
+          <label id="taskOwnerField">
+            <span>责任人员</span>
+            <input id="taskOwner" maxlength="30" placeholder="例如：王芳" />
           </label>
-          <label id="taskDueDateField" title="请人工填写；到期与提前天数在设置 → 基础 中配置提醒">
-            <span>目标完成时间</span>
-            <div class="datetime-input-wrap">
-              <input type="text" id="taskDueDateTime" inputmode="numeric" maxlength="20" placeholder="2026/10/10 09:10" autocomplete="off" spellcheck="false" aria-label="目标完成时间" title="可手写或点日历选择；失焦自动识别" />
+          <label id="taskDueDateField" title="请人工填写；到期与提前天数在设置 → 基础 中配置提醒。快捷：> 推后一周，>> 推后一个月">
+            <span class="task-due-label-row">
+              <span>目标完成时间</span>
+              <small id="taskDueRescheduleHint" class="task-due-reschedule-hint" hidden></small>
+            </span>
+            <div class="datetime-input-wrap datetime-input-wrap--nudge task-due-datetime-wrap">
+              <input type="text" id="taskDueDateTime" inputmode="text" maxlength="20" placeholder="2026/10/10 09:10" autocomplete="off" spellcheck="false" aria-label="目标完成时间" title="可手写或点日历；右侧 > 推后一周，>> 推后一个月" />
               <button type="button" class="datetime-pick-button" data-datetime-target="taskDueDateTime" aria-label="选择目标完成时间" title="打开日历选择">
                 <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
                   <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
                 </svg>
               </button>
+              <div class="datetime-nudge-inline task-due-nudge-inline" id="taskDueNudgeRow" role="group" aria-label="快捷推后目标完成时间">
+                <button type="button" class="datetime-nudge-button task-due-nudge-button" id="taskDueNudgeWeek" data-datetime-nudge="week" data-datetime-nudge-target="taskDueDateTime" title="推后一周" aria-label="推后一周">&gt;</button>
+                <button type="button" class="datetime-nudge-button datetime-nudge-button--month task-due-nudge-button" id="taskDueNudgeMonth" data-datetime-nudge="month" data-datetime-nudge-target="taskDueDateTime" title="推后一个月" aria-label="推后一个月">&gt;&gt;</button>
+              </div>
             </div>
           </label>
           <label id="taskMeetingEndField" class="hidden">
             <span>结束日期时间</span>
-            <div class="datetime-input-wrap">
-              <input type="text" id="taskMeetingEndDateTime" inputmode="numeric" maxlength="20" placeholder="2026/10/10 10:10" autocomplete="off" spellcheck="false" aria-label="会议结束日期时间" title="可手写或点日历选择；失焦自动识别" />
+            <div class="datetime-input-wrap datetime-input-wrap--nudge">
+              <input type="text" id="taskMeetingEndDateTime" inputmode="numeric" maxlength="20" placeholder="2026/10/10 10:10" autocomplete="off" spellcheck="false" aria-label="会议结束日期时间" title="可手写或点日历；右侧 > 推后一周，>> 推后一个月" />
               <button type="button" class="datetime-pick-button" data-datetime-target="taskMeetingEndDateTime" aria-label="选择结束日期时间" title="打开日历选择">
                 <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
                   <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
                 </svg>
               </button>
+              <div class="datetime-nudge-inline" role="group" aria-label="快捷推后结束日期时间">
+                <button type="button" class="datetime-nudge-button" data-datetime-nudge="week" data-datetime-nudge-target="taskMeetingEndDateTime" title="推后一周" aria-label="推后一周">&gt;</button>
+                <button type="button" class="datetime-nudge-button datetime-nudge-button--month" data-datetime-nudge="month" data-datetime-nudge-target="taskMeetingEndDateTime" title="推后一个月" aria-label="推后一个月">&gt;&gt;</button>
+              </div>
             </div>
           </label>
         </div>
-        <div class="form-row task-actual-time-row" id="taskActualTimeRow">
+        <div class="form-row task-created-status-row" id="taskCreatedStatusRow">
           <label id="taskCreatedAtField" class="hidden">
             <span>创建时间</span>
             <div class="datetime-input-wrap datetime-input-wrap--readonly">
@@ -512,36 +522,55 @@
               </button>
             </div>
           </label>
-          <label id="taskActualStartField" title="有日程投入时优先取首次投入时间；手工填写会覆盖自动值">
-            <span>实际开始时间</span>
-            <div class="datetime-input-wrap">
-              <input type="text" id="taskActualStart" inputmode="numeric" maxlength="20" placeholder="2026/10/10 09:10" autocomplete="off" spellcheck="false" aria-label="实际开始时间" title="可手写或点日历选择；失焦自动识别" />
-              <button type="button" class="datetime-pick-button" data-datetime-target="taskActualStart" aria-label="选择实际开始时间" title="打开日历选择">
+          <label id="taskStatusField" title="由实际开始 / 实际关闭时间自动推算，不可手工改；关闭任务请用底部「关闭任务」">
+            <span>任务状态</span>
+            <div class="datetime-input-wrap datetime-input-wrap--readonly task-status-readonly">
+              <input type="text" id="taskStatusDisplay" readonly tabindex="-1" aria-readonly="true" aria-label="任务状态" title="由实际开始 / 实际关闭时间自动推算" />
+              <select id="taskStatus" class="visually-hidden-select" tabindex="-1" aria-hidden="true">
+                <option value="planned">计划中</option>
+                <option value="in_progress">进行中</option>
+                <option value="done">已完成 / 已关闭</option>
+              </select>
+              <button type="button" class="datetime-pick-button datetime-pick-button--locked" disabled tabindex="-1" aria-hidden="true" title="状态由时间自动推算">
                 <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
-                </svg>
-              </button>
-            </div>
-          </label>
-          <label id="taskActualEndField">
-            <span>实际关闭时间</span>
-            <div class="datetime-input-wrap">
-              <input type="text" id="taskActualEnd" inputmode="numeric" maxlength="20" placeholder="2026/10/10 18:10" autocomplete="off" spellcheck="false" aria-label="实际关闭时间" title="可手写或点日历选择；失焦自动识别" />
-              <button type="button" class="datetime-pick-button" data-datetime-target="taskActualEnd" aria-label="选择实际关闭时间" title="打开日历选择">
-                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
+                  <path fill="currentColor" d="M4.75 7V5.25A3.25 3.25 0 0 1 8 2a3.25 3.25 0 0 1 3.25 3.25V7h.5A1.25 1.25 0 0 1 13 8.25v5.5A1.25 1.25 0 0 1 11.75 15H4.25A1.25 1.25 0 0 1 3 13.75v-5.5A1.25 1.25 0 0 1 4.25 7h.5Zm1.5 0h3.5V5.25A1.75 1.75 0 0 0 8 3.5 1.75 1.75 0 0 0 6.25 5.25V7Z"/>
                 </svg>
               </button>
             </div>
           </label>
         </div>
-        <label class="hidden">
-          <span>任务进度</span>
-          <div class="progress-input">
-            <input type="range" id="taskProgress" min="0" max="100" step="5" value="0" />
-            <strong id="taskProgressValue">0%</strong>
-          </div>
-        </label>
+        <div class="form-row task-actual-time-row" id="taskActualTimeRow">
+          <label id="taskActualStartField" title="有日程投入时优先取首次投入时间；手工填写会覆盖自动值。快捷：> 推后一周，>> 推后一个月">
+            <span>实际开始时间</span>
+            <div class="datetime-input-wrap datetime-input-wrap--nudge">
+              <input type="text" id="taskActualStart" inputmode="numeric" maxlength="20" placeholder="2026/10/10 09:10" autocomplete="off" spellcheck="false" aria-label="实际开始时间" title="可手写或点日历；右侧 > 推后一周，>> 推后一个月" />
+              <button type="button" class="datetime-pick-button" data-datetime-target="taskActualStart" aria-label="选择实际开始时间" title="打开日历选择">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
+                </svg>
+              </button>
+              <div class="datetime-nudge-inline" role="group" aria-label="快捷推后实际开始时间">
+                <button type="button" class="datetime-nudge-button" data-datetime-nudge="week" data-datetime-nudge-target="taskActualStart" title="推后一周" aria-label="推后一周">&gt;</button>
+                <button type="button" class="datetime-nudge-button datetime-nudge-button--month" data-datetime-nudge="month" data-datetime-nudge-target="taskActualStart" title="推后一个月" aria-label="推后一个月">&gt;&gt;</button>
+              </div>
+            </div>
+          </label>
+          <label id="taskActualEndField" title="快捷：> 推后一周，>> 推后一个月">
+            <span>实际关闭时间</span>
+            <div class="datetime-input-wrap datetime-input-wrap--nudge">
+              <input type="text" id="taskActualEnd" inputmode="numeric" maxlength="20" placeholder="2026/10/10 18:10" autocomplete="off" spellcheck="false" aria-label="实际关闭时间" title="可手写或点日历；右侧 > 推后一周，>> 推后一个月" />
+              <button type="button" class="datetime-pick-button" data-datetime-target="taskActualEnd" aria-label="选择实际关闭时间" title="打开日历选择">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M4.5 1.5a.75.75 0 0 1 .75.75V3h5.5V2.25a.75.75 0 0 1 1.5 0V3H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 15H3A1.5 1.5 0 0 1 1.5 13.5v-9A1.5 1.5 0 0 1 3 3h.75V2.25a.75.75 0 0 1 .75-.75ZM3 4.5a.5.5 0 0 0-.5.5v1h11V5a.5.5 0 0 0-.5-.5H3Zm10.5 3h-11v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6Z"/>
+                </svg>
+              </button>
+              <div class="datetime-nudge-inline" role="group" aria-label="快捷推后实际关闭时间">
+                <button type="button" class="datetime-nudge-button" data-datetime-nudge="week" data-datetime-nudge-target="taskActualEnd" title="推后一周" aria-label="推后一周">&gt;</button>
+                <button type="button" class="datetime-nudge-button datetime-nudge-button--month" data-datetime-nudge="month" data-datetime-nudge-target="taskActualEnd" title="推后一个月" aria-label="推后一个月">&gt;&gt;</button>
+              </div>
+            </div>
+          </label>
+        </div>
         <div class="recurring-options hidden" id="recurringOptions">
           <label>
             <span>规则有效至</span>
@@ -569,9 +598,16 @@
           <span>问题原因（可选）</span>
           <textarea id="taskProblemReason" rows="2" maxlength="500" tabindex="-1"></textarea>
         </label>
-        <label id="taskDeliveryField" class="hidden" aria-hidden="true">
-          <span>详细计划 / 交付件（可选）</span>
-          <textarea id="taskDeliveryNote" rows="2" maxlength="500" tabindex="-1"></textarea>
+        <label id="taskProgressField">
+          <span>任务进度</span>
+          <div class="progress-input">
+            <input type="range" id="taskProgress" min="0" max="100" step="5" value="0" />
+            <strong id="taskProgressValue">0%</strong>
+          </div>
+        </label>
+        <label id="taskDeliveryField" class="task-context-field">
+          <span>进度说明</span>
+          <textarea id="taskDeliveryNote" rows="3" maxlength="4000" placeholder="已完成什么、下一步是什么；改期时会自动追加一行记录"></textarea>
         </label>
         <label class="hidden" aria-hidden="true"><span>任务说明（可选）</span><textarea id="taskDescription" rows="2" maxlength="240" tabindex="-1"></textarea></label>
         <section class="task-subtasks" id="taskSubtasksSection" aria-label="下级任务">
@@ -621,8 +657,10 @@
         </div>
         <button type="button" class="close-button" data-close-dialog="progressReviewDialog">×</button>
       </div>
-      <p class="form-hint progress-review-intro">只列出已有日程投入的明细待办（叶子任务），不含顶层计划节点。逐项填写交付进展并调整完成百分比。</p>
-      <div class="progress-review-list" id="progressReviewList"></div>
+      <div class="modal-scroll" id="progressReviewScroll">
+        <p class="form-hint progress-review-intro">批量入口：只列出<strong>进行中</strong>且<strong>已有日程投入</strong>的叶子待办（不含父计划）。其它任务请打开详情改「任务进度 / 进度说明」。</p>
+        <div class="progress-review-list" id="progressReviewList"></div>
+      </div>
       <div class="modal-actions">
         <span></span><span></span>
         <button type="button" class="soft-button" data-close-dialog="progressReviewDialog">取消</button>
@@ -986,6 +1024,7 @@
   <script src="task-status-policy.js"></script>
   <script src="task-actual-start-policy.js"></script>
   <script src="task-reminder-policy.js"></script>
+  <script src="due-reschedule-policy.js"></script>
   <script src="schedule-day-policy.js"></script>
   <script src="task-timeline-backfill-policy.js"></script>
   <script src="rich-note-policy.js"></script>

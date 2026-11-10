@@ -1,6 +1,6 @@
 {
   "name": "today-daily-planner",
-  "version": "2.0.143",
+  "version": "2.0.144",
   "private": true,
   "description": "桌面浮窗日程与待办记事本",
   "main": "main.js",
@@ -49,6 +49,7 @@
       "task-status-policy.js",
       "task-actual-start-policy.js",
       "task-reminder-policy.js",
+      "due-reschedule-policy.js",
       "schedule-day-policy.js",
       "task-timeline-backfill-policy.js",
       "rich-note-policy.js",

@@ -1958,11 +1958,122 @@ button.task-group-heading {
   display: inline-grid;
   place-items: center;
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
-  background: #e24b4b;
+  background: #c62828;
   color: #fff;
   font: 800 9px/1 "Segoe UI", "PingFang SC", sans-serif;
   padding-top: 4px;
 }
+/* 逾期：深红三角 + 白感叹号 */
+.task-attention-alarm.reminder-overdue .task-attention-alarm-mark {
+  background: #b71c1c;
+  color: #fff;
+}
+/* 今天：黄三角 + 白感叹号 */
+.task-attention-alarm.reminder-due_today .task-attention-alarm-mark {
+  background: #f0b429;
+  color: #fff;
+}
+/* 即将到期：黄色感叹号（无三角底） */
+.task-attention-alarm.reminder-upcoming .task-attention-alarm-mark {
+  clip-path: none;
+  width: auto;
+  height: auto;
+  background: transparent;
+  color: #e6a700;
+  font: 900 14px/1 "Segoe UI", "PingFang SC", sans-serif;
+  padding-top: 0;
+}
+/* 本轮已调整且仍在提醒范围：绿色恢复标 */
+.task-attention-restore {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #2e7d32;
+  color: #fff;
+  font: 700 11px/1 "Segoe UI", "PingFang SC", sans-serif;
+}
+.task-due-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.task-due-reschedule-hint {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* > / >> sit inside editable date fields, after the calendar — no extra outer chrome */
+.datetime-input-wrap--nudge > input[type="text"] {
+  padding-right: 96px;
+}
+.datetime-input-wrap--nudge > .datetime-pick-button {
+  right: 54px;
+}
+.datetime-nudge-inline,
+.task-due-nudge-inline {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+  z-index: 3;
+}
+.datetime-nudge-inline[hidden],
+.task-due-nudge-inline[hidden] {
+  display: none !important;
+}
+.datetime-nudge-button,
+.task-due-nudge-button {
+  box-sizing: border-box;
+  width: 22px;
+  min-width: 22px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: 700 13px/1 "Segoe UI", "Consolas", "PingFang SC", monospace;
+  letter-spacing: -0.06em;
+  cursor: pointer;
+}
+.datetime-nudge-button--month,
+#taskDueNudgeMonth.task-due-nudge-button {
+  width: 28px;
+  min-width: 28px;
+}
+.datetime-nudge-button:hover,
+.datetime-nudge-button:focus-visible,
+.task-due-nudge-button:hover,
+.task-due-nudge-button:focus-visible {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.06);
+  outline: none;
+}
+body.in-desktop.glass-mode .datetime-nudge-button,
+body.in-desktop.glass-mode .task-due-nudge-button {
+  color: #9eb4c2;
+  background: transparent;
+}
+body.in-desktop.glass-mode .datetime-nudge-button:hover,
+body.in-desktop.glass-mode .datetime-nudge-button:focus-visible,
+body.in-desktop.glass-mode .task-due-nudge-button:hover,
+body.in-desktop.glass-mode .task-due-nudge-button:focus-visible {
+  color: #f4fbff;
+  background: rgba(255, 255, 255, 0.08);
+}
+.task-group-heading.attention-alarm-tier.overdue strong { color: #b71c1c; }
+.task-group-heading.attention-alarm-tier.due_today strong { color: #c79100; }
+.task-group-heading.attention-alarm-tier.upcoming strong { color: #e6a700; }
 .task-card.setup-incomplete .task-body strong {
   color: var(--ink);
 }
@@ -2185,12 +2296,8 @@ button.task-group-heading {
   color: var(--muted);
   font-size: 9px;
 }
-/* 编辑已有任务：创建/开始/关闭各占一整行，与状态行同节奏 */
-#taskEditForm #taskActualTimeRow.has-created-at {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-}
-#taskEditForm #taskActualTimeRow:not(.has-created-at) {
+/* 实际开始 / 关闭成对排布；创建时间改与状态同行 */
+#taskEditForm #taskActualTimeRow {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 #taskEditForm .datetime-input-wrap--readonly > input[readonly] {
@@ -4448,10 +4555,16 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
   display: none !important;
 }
 .task-kind-category-row,
+.task-category-priority-row,
+.task-created-status-row,
 .task-status-due-row,
+.task-status-progress-row,
+.task-due-row,
+.task-owner-due-row,
 .task-due-attention-row,
 .task-category-due-row,
-.task-schedule-time-row {
+.task-schedule-time-row,
+.task-actual-time-row {
   align-items: center;
   gap: 10px;
 }
@@ -4488,24 +4601,37 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
   justify-content: flex-start;
 }
 #taskEditForm .task-kind-category-row {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-}
-#taskEditForm .task-kind-category-row:not(:has(#taskCreateKindField:not(.hidden))) {
   grid-template-columns: minmax(0, 1fr);
 }
-#taskEditForm .task-status-due-row {
+#taskEditForm .task-kind-category-row:not(:has(#taskCreateKindField:not(.hidden))) {
+  display: none;
+}
+#taskEditForm .task-category-priority-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
-#taskEditForm.create-kind-meeting .task-status-due-row {
-  /* 会议：状态隐藏，开始/结束并排 */
+#taskEditForm .task-created-status-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+#taskEditForm .task-created-status-row.has-created-at {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
-#taskEditForm.create-kind-meeting #taskKindCategoryRow #taskCategoryField {
+#taskEditForm .task-status-due-row,
+#taskEditForm .task-status-progress-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+#taskEditForm.create-kind-meeting #taskProgressField,
+#taskEditForm.create-kind-meeting #taskDeliveryField {
+  display: none;
+}
+#taskEditForm.create-kind-meeting #taskCategoryPriorityRow #taskCategoryField {
   /* 会议创建时类别跟类型走，避免重复占位 */
   display: none;
 }
-#taskEditForm.create-kind-meeting #taskKindCategoryRow {
+#taskEditForm.create-kind-meeting #taskCategoryPriorityRow {
   grid-template-columns: minmax(0, 1fr);
+}
+#taskEditForm.create-kind-meeting #taskCreatedStatusRow {
+  display: none;
 }
 .task-attention-inline {
   display: inline-flex !important;
@@ -4545,6 +4671,45 @@ body.in-desktop.glass-mode .task-attention-inline {
   align-items: center;
   gap: 12px 14px;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+/* Must follow .form-row: 责任|目标、创建|状态、开始|关闭 共用同一套双列，竖线对齐 */
+#taskEditForm .form-row.task-owner-due-row,
+#taskEditForm .form-row.task-due-row,
+#taskEditForm .form-row.task-created-status-row.has-created-at,
+#taskEditForm .form-row.task-actual-time-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 8px;
+}
+#taskEditForm .form-row.task-owner-due-row > #taskDueDateField,
+#taskEditForm .form-row.task-due-row > #taskDueDateField {
+  grid-column: auto;
+  min-width: 0;
+}
+#taskEditForm.create-kind-meeting .form-row.task-owner-due-row,
+#taskEditForm.create-kind-meeting .form-row.task-due-row {
+  /* 参会人 | 开始 | 结束 */
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+#taskEditForm.create-kind-meeting .form-row.task-owner-due-row > #taskDueDateField,
+#taskEditForm.create-kind-meeting .form-row.task-due-row > #taskDueDateField {
+  grid-column: auto;
+}
+/* 结束日期时间仅「新建会议」可见；任务详情/新建任务一律隐藏 */
+#taskEditForm:not(.create-kind-meeting) #taskMeetingEndField {
+  display: none !important;
+}
+#taskEditForm .form-row.task-category-priority-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+#taskEditForm .form-row.task-created-status-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+#taskEditForm .form-row.task-created-status-row.has-created-at {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+#taskEditForm.create-kind-meeting .form-row.task-category-priority-row {
+  grid-template-columns: minmax(0, 1fr);
 }
 #taskEditForm .form-row > label {
   margin-top: 0;
@@ -4612,6 +4777,9 @@ body.in-desktop.glass-mode .task-attention-inline {
 #taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > .datetime-input-wrap > input {
   padding-right: 38px;
 }
+#taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > .datetime-input-wrap--nudge > input {
+  padding-right: 96px;
+}
 #taskEditForm .form-row > label:not(#taskTitleField):not(.checkbox-setting) > select,
 #taskEditForm #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > select {
   line-height: 42px;
@@ -4650,6 +4818,95 @@ body.in-desktop.glass-mode .task-attention-inline {
   width: 100%;
   min-height: 42px;
   height: 42px;
+}
+/* 紧凑模式：缩短行距与控件高度，按字段长度成对排布 */
+#taskEditForm.task-form-compact .task-title-block {
+  margin-top: 8px;
+}
+#taskEditForm.task-form-compact .form-row,
+#taskEditForm.task-form-compact #taskParentField,
+#taskEditForm.task-form-compact #taskProgressField,
+#taskEditForm.task-form-compact .task-context-field {
+  margin-top: 8px;
+}
+#taskEditForm.task-form-compact .form-row {
+  gap: 8px 10px;
+}
+#taskEditForm.task-form-compact #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > span,
+#taskEditForm.task-form-compact .form-row > label:not(#taskTitleField):not(.checkbox-setting) > span {
+  flex-basis: 6.5em;
+  width: 6.5em;
+}
+#taskEditForm.task-form-compact .form-row > label:not(#taskTitleField):not(.checkbox-setting) > input,
+#taskEditForm.task-form-compact .form-row > label:not(#taskTitleField):not(.checkbox-setting) > select,
+#taskEditForm.task-form-compact .form-row > label:not(#taskTitleField):not(.checkbox-setting) > .datetime-input-wrap > input,
+#taskEditForm.task-form-compact #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > input,
+#taskEditForm.task-form-compact #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > select,
+#taskEditForm.task-form-compact #taskParentTrigger,
+#taskEditForm.task-form-compact .entry-task-trigger,
+#taskEditForm.task-form-compact #taskTitleField > input {
+  min-height: 36px;
+  height: 36px;
+}
+#taskEditForm.task-form-compact .form-row > label:not(#taskTitleField):not(.checkbox-setting) > .datetime-input-wrap {
+  height: 36px;
+}
+#taskEditForm.task-form-compact .form-row > label:not(#taskTitleField):not(.checkbox-setting) > select,
+#taskEditForm.task-form-compact #taskDialogScroll > label:not(#taskTitleField):not(.task-context-field):not(.checkbox-setting):not(.hidden) > select {
+  line-height: 36px;
+}
+#taskEditForm.task-form-compact .progress-input {
+  min-height: 36px;
+}
+#taskEditForm.task-form-compact .task-attention-inline {
+  min-height: 36px;
+}
+#taskEditForm.task-form-compact .task-context-field > span,
+#taskEditForm.task-form-compact label:has(> textarea) > span,
+#taskEditForm.task-form-compact label:has(> .rich-note-editor) > span {
+  margin-bottom: 5px;
+}
+#taskEditForm.task-form-compact #taskDeliveryNote {
+  min-height: 64px;
+}
+/* 紧凑字段统一「标签在上」：成对列等宽，长字段也不被侧标挤字 */
+#taskEditForm.task-form-compact .form-row.task-category-priority-row > label,
+#taskEditForm.task-form-compact .form-row.task-created-status-row > label,
+#taskEditForm.task-form-compact .form-row.task-actual-time-row > label,
+#taskEditForm.task-form-compact .form-row.task-owner-due-row > label,
+#taskEditForm.task-form-compact .form-row.task-due-row > label,
+#taskEditForm.task-form-compact #taskParentField,
+#taskEditForm.task-form-compact #taskProgressField {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 4px;
+}
+#taskEditForm.task-form-compact .form-row.task-category-priority-row > label > span,
+#taskEditForm.task-form-compact .form-row.task-created-status-row > label > span,
+#taskEditForm.task-form-compact .form-row.task-actual-time-row > label > span,
+#taskEditForm.task-form-compact .form-row.task-owner-due-row > label > span,
+#taskEditForm.task-form-compact .form-row.task-due-row > label > span,
+#taskEditForm.task-form-compact #taskParentField > span,
+#taskEditForm.task-form-compact #taskProgressField > span {
+  flex: none;
+  width: auto !important;
+  max-width: none;
+  margin-bottom: 0;
+}
+#taskEditForm.task-form-compact .form-row.task-category-priority-row > label > input,
+#taskEditForm.task-form-compact .form-row.task-category-priority-row > label > select,
+#taskEditForm.task-form-compact .form-row.task-created-status-row > label > .datetime-input-wrap,
+#taskEditForm.task-form-compact .form-row.task-actual-time-row > label > .datetime-input-wrap,
+#taskEditForm.task-form-compact .form-row.task-owner-due-row > label > input,
+#taskEditForm.task-form-compact .form-row.task-owner-due-row > label > .datetime-input-wrap,
+#taskEditForm.task-form-compact .form-row.task-due-row > label > .datetime-input-wrap,
+#taskEditForm.task-form-compact #taskParentField > .entry-task-combobox,
+#taskEditForm.task-form-compact #taskProgressField > .progress-input {
+  width: 100%;
+}
+#taskEditForm .task-status-readonly > input[readonly] {
+  padding-right: 38px;
 }
 .datetime-input-wrap {
   position: relative;
@@ -4977,11 +5234,13 @@ body.in-desktop.glass-mode .gantt-field-mark--priority {
   background: rgba(230, 150, 70, 0.24);
   border-color: rgba(240, 180, 100, 0.5);
 }
-#taskEditForm.create-kind-meeting #taskPriorityOwnerRow,
+#taskEditForm.create-kind-meeting #taskCategoryPriorityRow,
+#taskEditForm.create-kind-meeting #taskPriorityField,
 #taskEditForm.create-kind-meeting #taskActualTimeRow,
+#taskEditForm.create-kind-meeting #taskCreatedStatusRow,
 #taskEditForm.create-kind-meeting #taskStatusField,
-#taskEditForm.create-kind-meeting #taskPriority,
-#taskEditForm.create-kind-meeting #taskPriority + *,
+#taskEditForm.create-kind-meeting #taskProgressField,
+#taskEditForm.create-kind-meeting #taskDeliveryField,
 #taskEditForm.create-kind-meeting label:has(#taskPriority),
 #taskEditForm.create-kind-meeting label:has(#taskStatus),
 #taskEditForm.create-kind-meeting label:has(#taskActualStart),
@@ -4989,10 +5248,6 @@ body.in-desktop.glass-mode .gantt-field-mark--priority {
 #taskEditForm.create-kind-meeting #recurringOptions,
 #taskEditForm.create-kind-meeting #taskSubtasksSection {
   display: none;
-}
-#taskEditForm.create-kind-meeting .form-row:has(#taskPriority) {
-  display: grid;
-  grid-template-columns: 1fr;
 }
 #taskEditForm.create-kind-meeting .form-row:has(#taskActualStart) {
   display: none;
@@ -5122,9 +5377,16 @@ body.in-desktop.shell-focus #entryDialog {
 body.in-desktop.shell-focus #taskEditForm .form-row,
 body.in-desktop.shell-focus #entryForm .form-row,
 body.in-desktop.shell-focus #taskEditForm .task-kind-category-row,
+body.in-desktop.shell-focus #taskEditForm .task-category-priority-row,
+body.in-desktop.shell-focus #taskEditForm .task-created-status-row,
 body.in-desktop.shell-focus #taskEditForm .task-status-due-row,
+body.in-desktop.shell-focus #taskEditForm .task-status-progress-row,
+body.in-desktop.shell-focus #taskEditForm .task-owner-due-row,
+body.in-desktop.shell-focus #taskEditForm .task-due-row,
 body.in-desktop.shell-focus #taskEditForm #taskActualTimeRow,
 body.in-desktop.shell-focus #taskEditForm.create-kind-meeting .task-status-due-row,
+body.in-desktop.shell-focus #taskEditForm.create-kind-meeting .task-owner-due-row,
+body.in-desktop.shell-focus #taskEditForm.create-kind-meeting .task-due-row,
 body.in-desktop.shell-focus #taskEditForm .task-due-combined .task-due-inputs {
   grid-template-columns: minmax(0, 1fr) !important;
   gap: 8px;
@@ -6484,8 +6746,18 @@ body.in-desktop.glass-mode .task-due-hint {
   box-shadow: 0 0 0 3px rgba(226,123,116,.18) !important;
 }
 .progress-review-modal { width: min(760px, calc(100% - 40px)); }
-.progress-review-intro { margin-top: -10px; }
-.progress-review-list { display: grid; gap: 12px; margin-top: 18px; }
+.progress-review-modal .modal-header {
+  flex: 0 0 auto;
+  padding: 0 2px;
+}
+.progress-review-modal .modal-scroll {
+  padding-top: 0;
+}
+.progress-review-modal .modal-actions {
+  flex: 0 0 auto;
+}
+.progress-review-intro { margin: 0 0 4px; }
+.progress-review-list { display: grid; gap: 12px; margin-top: 12px; padding-bottom: 8px; }
 .progress-review-card {
   padding: 15px;
   border: 1px solid var(--line);

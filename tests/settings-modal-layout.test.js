@@ -70,5 +70,13 @@ assert.ok(
   fs.readFileSync("app.js", "utf8").includes("showUpdateProgressBanner"),
   "update progress must call showPopover when visible"
 );
+const main = fs.readFileSync("main.js", "utf8");
+assert.match(
+  main,
+  /getLoginItemSettings\(\{\s*name:\s*StartupPolicy\.canonicalName\s*\}\)/,
+  "Windows login items must query the DailyPlanner registry key"
+);
+assert.match(main, /keepCanonical:\s*enable/, "enabling startup must not delete the canonical Run entry before re-registering");
+assert.match(main, /ensureStartupApproved/, "Windows startup must mark StartupApproved as enabled");
 
 console.log("settings modal layout tests passed");

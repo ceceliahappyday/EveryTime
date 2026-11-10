@@ -17,6 +17,16 @@ assert.match(html, /目标完成时间/, "due field labeled 目标完成时间")
 assert.match(html, /实际关闭时间/, "actual end labeled 实际关闭时间");
 assert.match(html, /id="taskStatusField"/, "task status remains a dedicated field");
 assert.match(html, /id="taskMeetingEndDateTime"/, "meeting create needs end datetime");
+assert.match(
+  styles,
+  /#taskEditForm:not\(\.create-kind-meeting\)\s*#taskMeetingEndField[\s\S]*display:\s*none/,
+  "meeting end datetime stays hidden outside create-meeting mode"
+);
+assert.match(
+  app,
+  /taskMeetingEndField\?\.classList\.add\("hidden"\)/,
+  "opening a task clears any leftover meeting-end field from a prior create"
+);
 assert.match(app, /parseFlexibleDateTime|bindFlexibleDateTimeInput/, "typed datetime text must normalize to standard format");
 assert.match(app, /finalizeFlexibleDateTimeParts/, "compact YYYYMMDDHHmm must share one parse path");
 assert.match(app, /replace\(\/-\/g,\s*"\/"\)/, "display datetime uses 2026/10/10 style");
@@ -62,16 +72,39 @@ assert.match(app, /isSupersededClosedWorkTask/, "closed originals with a live tr
 assert.match(html, /task-attention-inline/, "仅关注 remains available inline");
 assert.match(
   html,
-  /taskTitleCaption[\s\S]*taskFollowUpOption[\s\S]*taskTitleField[\s\S]*taskCreateKind[\s\S]*taskCategory[\s\S]*taskPriority[\s\S]*taskOwner[\s\S]*taskParent[\s\S]*taskStatusField[\s\S]*taskDueDateTime[\s\S]*taskActualStart[\s\S]*taskActualEnd[\s\S]*taskBusinessBackground/,
-  "form order: title caption|attention → title input → kind|category → priority|owner → parent → status|due → actual → background"
+  /taskTitleCaption[\s\S]*taskFollowUpOption[\s\S]*taskTitleField[\s\S]*taskCreateKind[\s\S]*taskCategory[\s\S]*taskPriority[\s\S]*taskParent[\s\S]*taskOwner[\s\S]*taskDueDateTime[\s\S]*taskCreatedAtField[\s\S]*taskStatusField[\s\S]*taskActualStart[\s\S]*taskActualEnd[\s\S]*taskBusinessBackground[\s\S]*taskProgressField[\s\S]*taskDeliveryField/,
+  "form order: title → kind → category|priority → parent → owner|due → created|status → actual → background → progress → notes"
 );
-assert.match(html, /task-kind-category-row/, "type and category share one row");
+assert.match(html, /task-form-compact/, "task dialog uses compact form layout");
+assert.match(html, /task-category-priority-row/, "category and priority share one row");
+assert.match(html, /task-created-status-row/, "created time and status share one row");
+assert.match(html, /id="taskStatusDisplay"/, "status is shown as a locked read-only display");
+assert.match(app, /syncDerivedTaskStatusFromTimes/, "status is derived from actual start/end times");
+assert.match(html, /task-kind-category-row/, "create kind keeps its own compact row");
 assert.match(html, /task-title-block|task-title-heading/, "title caption and 仅关注 share the heading row");
 assert.match(html, /id="taskTitleCaption"/, "title caption sits on the heading row");
 assert.match(styles, /\.task-title-heading[\s\S]*justify-content:\s*space-between/, "仅关注 sits on the right of the title caption row");
-assert.match(html, /task-status-due-row/, "status and due time share one row");
+assert.match(html, /taskProgressField[\s\S]*taskDeliveryField/, "progress sits directly above progress notes");
+assert.match(html, /task-owner-due-row[\s\S]*taskOwnerField[\s\S]*taskDueDateField/, "owner and due share one compact row");
+assert.match(
+  styles,
+  /task-created-status-row\.has-created-at[\s\S]*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/,
+  "created time and status share equal compact columns"
+);
+assert.match(
+  styles,
+  /task-category-priority-row > label[\s\S]*display:\s*grid/,
+  "paired compact fields stack label above control so values stay readable"
+);
+assert.match(
+  styles,
+  /\.form-row\.task-owner-due-row[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/,
+  "owner|due, created|status, start|end share the same aligned two-column grid"
+);
+assert.match(html, /id="progressReviewScroll"/, "progress review list scrolls inside the dialog");
+assert.match(html, /id="taskProgressField"/, "task progress is visible in the detail dialog");
 assert.match(html, /待办类型/, "create kind labeled 待办类型");
-assert.match(html, /id="taskDueDateTime"[^>]*placeholder="2026\/10\/10 09:10"/, "datetime placeholder shows format only");
+assert.match(html, /id="taskDueDateTime"[^>]*placeholder="2026\/10\/10 09:10"/, "datetime placeholder stays format-only; nudges are side buttons");
 assert.match(html, /任务级别/, "priority labeled 任务级别");
 assert.match(html, /责任人员/, "owner labeled 责任人员");
 assert.match(html, /<option value="planned">计划中<\/option>/, "status option drops parenthetical hint");
@@ -83,12 +116,30 @@ assert.doesNotMatch(html, /task-attention-hint|只提醒，不排投入/, "仅�
 assert.match(html, /到目标完成日当天会用红色感叹号提醒/, "仅关注 explains the due-day alarm");
 assert.match(app, /isAttentionAlarmDue/, "attention tasks raise an alarm on the due date");
 assert.match(app, /task-attention-alarm-mark/, "due attention tasks show a red exclamation mark");
-assert.match(styles, /\.task-attention-alarm-mark[\s\S]*background:\s*#e24b4b/, "due-day alarm mark is red");
+assert.match(styles, /\.task-attention-alarm\.reminder-overdue[\s\S]*background:\s*#b71c1c/, "overdue alarm mark is deep red");
 assert.match(app, /maybePromptAttentionAlarms/, "startup should prompt due attention reminders");
 assert.match(html, /id="attentionAlarmBanner"/, "due attention reminders use a sticky clickable banner");
 assert.match(app, /openAttentionAlarmList/, "clicking the reminder must open those tasks in the todo list");
 assert.match(app, /attentionAlarmTaskIds/, "reminder click filters the todo list to the due attention tasks");
-assert.match(app, /pruneAttentionAlarmTaskIds/, "reminder overlay must drop tasks after due date is rescheduled");
+assert.match(app, /syncAttentionAlarmTaskIds/, "reminder overlay drops tasks that leave the due window");
+assert.match(app, /groupAttentionAlarmOverlay/, "reminder overlay groups by overdue / today / upcoming");
+assert.match(app, /bindDateTimeNudgeShortcuts/, "editable datetimes support > week and >> month nudges");
+assert.match(html, /task-due-datetime-wrap[\s\S]*id="taskDueNudgeWeek"[^>]*>\s*&gt;\s*</, "week nudge > sits inside the due date field");
+assert.match(html, /id="taskDueNudgeMonth"[^>]*>\s*&gt;&gt;\s*</, "month nudge button shows >>");
+assert.match(html, /data-datetime-nudge-target="taskActualStart"/, "actual start has week/month nudge buttons");
+assert.match(html, /data-datetime-nudge-target="taskActualEnd"/, "actual end has week/month nudge buttons");
+assert.match(html, /data-datetime-nudge-target="taskMeetingEndDateTime"/, "meeting end has week/month nudge buttons");
+assert.match(html, /data-datetime-nudge-target="taskCloseCompletedAt"/, "close-confirm completion time has week/month nudge buttons");
+assert.match(styles, /\.datetime-nudge-button[\s\S]*border:\s*0/, "nudge icons stay borderless");
+assert.match(app, /applyDateTimeNudge/, "nudge buttons and > / >> share one datetime shift helper");
+assert.match(app, /applyDueDateNudge/, "due-date nudge keeps a compatibility wrapper");
+assert.match(app, /DueReschedulePolicy\.applyOnSave/, "saving a changed due date appends a progress reschedule log");
+assert.match(html, /id="taskDueRescheduleHint"/, "task dialog shows how many times the due date was moved");
+assert.match(app, /dueRescheduleCount/, "tasks persist due-reschedule counts");
+assert.match(app, /attentionAlarmDueBaseline/, "session baseline detects which reminder tasks were rescheduled");
+assert.match(styles, /\.task-attention-alarm\.reminder-upcoming[\s\S]*background:\s*transparent/, "upcoming uses a bare yellow exclamation");
+assert.match(styles, /\.task-attention-restore[\s\S]*background:\s*#2e7d32/, "session-adjusted reminders use a green restore mark");
+assert.match(styles, /\.task-attention-alarm\.reminder-due_today[\s\S]*background:\s*#f0b429/, "today-due uses a yellow triangle");
 assert.match(app, /\$\{count\} 条待办临近或已到目标完成时间，点击查看/, "banner summarizes the task count instead of joining titles");
 assert.doesNotMatch(app, /titles\.join\("、"\)/, "reminder popup must not concatenate task titles");
 assert.match(app, /kind: "due-reminder"/, "desktop notification click must route back to the same task list");
@@ -154,11 +205,12 @@ assert.match(html, /id="taskBusinessBackground"[\s\S]*contenteditable="true"/, "
 assert.match(app, /bindRichNoteEditor\(el\.taskBusinessBackground\)/, "business background must bind rich note paste/drop");
 assert.match(app, /businessBackground,/, "save payload keeps businessBackground from rich editor");
 assert.match(html, /id="problemReasonLabel" class="hidden"/, "problem reason stays in DOM but hidden");
-assert.match(html, /id="taskDeliveryField" class="hidden"/, "delivery note stays in DOM but hidden");
+assert.match(html, /id="taskDeliveryField"[\s\S]*进度说明/, "progress notes are visible in the task dialog");
+assert.match(html, /id="taskDeliveryNote"/, "delivery/progress note textarea remains for storage");
 assert.match(html, /id="taskDescription"/, "description input must remain for storage compatibility");
-assert.match(html, /下级任务 \/ 交付拆解/, "child tasks replace the delivery textarea in the UI");
+assert.match(html, /下级任务 \/ 交付拆解/, "child tasks still handle deliverable breakdown");
 assert.match(html, /id="taskSubtaskList"/, "next-level child list must be present");
-assert.match(app, /deliveryNote: editing\?\.task\?\.deliveryNote/, "saving must preserve historical deliveryNote");
+assert.match(app, /el\.taskDeliveryNote/, "saving reads progress notes from the visible delivery textarea");
 assert.match(app, /problemReason: ""/, "saving merged context must clear problemReason to avoid duplicate reopen text");
 assert.match(styles, /#taskDialog\[open\]\s*\{[^}]*display:\s*flex/s, "task dialog flex layout must only apply while open");
 assert.doesNotMatch(

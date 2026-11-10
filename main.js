@@ -365,7 +365,7 @@ if (singleInstanceLock) app.whenReady().then(() => {
     locked,
     pinned: mainWindow?.isAlwaysOnTop() || false,
     compact: !!loadSettings().compact,
-    startAtLogin: app.getLoginItemSettings().openAtLogin
+    startAtLogin: isStartupRegistered()
   }));
   ipcMain.handle("app:save-settings", (_event, nextSettings) => {
     const incoming = { ...(nextSettings || {}) };
@@ -386,7 +386,7 @@ if (singleInstanceLock) app.whenReady().then(() => {
       }
     }
     saveSettings(incoming);
-    return { ...publicSettings(), pinned: mainWindow?.isAlwaysOnTop() || false, startAtLogin: app.getLoginItemSettings().openAtLogin };
+    return { ...publicSettings(), pinned: mainWindow?.isAlwaysOnTop() || false, startAtLogin: isStartupRegistered() };
   });
   ipcMain.handle("ai:ask", async (_event, payload) => askAi(payload || {}));
   ipcMain.handle("ai:extract-task", async (_event, payload) => extractAiTask(payload || {}));
@@ -603,6 +603,46 @@ function settingsPath() {
 const startupRunKey = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 const startupApprovedRunKey = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run";
 
+function getLoginItemState() {
+  if (process.platform === "win32") {
+    return app.getLoginItemSettings({ name: StartupPolicy.canonicalName });
+  }
+  return app.getLoginItemSettings();
+}
+
+function isStartupRegistered() {
+  if (process.platform !== "win32") return getLoginItemState().openAtLogin;
+  const cmd = queryRunValue(StartupPolicy.canonicalName);
+  return StartupPolicy.isOwnedCommand(cmd, app.getPath("exe"));
+}
+
+function ensureStartupApproved(name) {
+  if (process.platform !== "win32") return;
+  try {
+    execFileSync("reg.exe", [
+      "add", startupApprovedRunKey,
+      "/v", name,
+      "/t", "REG_BINARY",
+      "/d", "0200000000000000000000",
+      "/f"
+    ], { windowsHide: true, stdio: "ignore" });
+  } catch { /* best-effort */ }
+}
+
+function ensureRunKeyRegistration(name, exePath) {
+  if (process.platform !== "win32") return;
+  const value = `"${String(exePath || "").replace(/"/g, "")}"`;
+  try {
+    execFileSync("reg.exe", [
+      "add", startupRunKey,
+      "/v", name,
+      "/t", "REG_SZ",
+      "/d", value,
+      "/f"
+    ], { windowsHide: true, stdio: "ignore" });
+  } catch { /* best-effort */ }
+}
+
 function queryRunValue(name) {
   if (process.platform !== "win32") return "";
   try {
@@ -620,7 +660,7 @@ function deleteRegistryValue(key, name) {
   } catch { return false; }
 }
 
-function cleanupKnownStartupEntries() {
+function cleanupKnownStartupEntries({ keepCanonical = false } = {}) {
   if (process.platform !== "win32") return;
   StartupPolicy.aliases.filter(name => name !== StartupPolicy.canonicalName).forEach(name => {
     try {
@@ -629,19 +669,28 @@ function cleanupKnownStartupEntries() {
   });
   const entries = StartupPolicy.aliases.map(name => ({ name, command: queryRunValue(name) }));
   StartupPolicy.cleanupPlan(entries, app.getPath("exe")).forEach(entry => {
+    if (keepCanonical && entry.name === StartupPolicy.canonicalName) return;
     deleteRegistryValue(startupRunKey, entry.name);
     deleteRegistryValue(startupApprovedRunKey, entry.name);
   });
 }
 
 function configureLoginItem(openAtLogin) {
-  cleanupKnownStartupEntries();
+  const enable = !!openAtLogin;
+  cleanupKnownStartupEntries({ keepCanonical: enable });
   app.setLoginItemSettings({
-    openAtLogin: !!openAtLogin,
+    openAtLogin: enable,
     name: StartupPolicy.canonicalName,
     path: app.getPath("exe")
   });
-  if (!openAtLogin) {
+  if (enable && process.platform === "win32") {
+    ensureStartupApproved(StartupPolicy.canonicalName);
+    if (!isStartupRegistered()) {
+      ensureRunKeyRegistration(StartupPolicy.canonicalName, app.getPath("exe"));
+      ensureStartupApproved(StartupPolicy.canonicalName);
+    }
+  }
+  if (!enable) {
     deleteRegistryValue(startupRunKey, StartupPolicy.canonicalName);
     deleteRegistryValue(startupApprovedRunKey, StartupPolicy.canonicalName);
   }
@@ -1122,7 +1171,7 @@ function saveSettings(nextSettings) {
   return {
     ...settings,
     pinned: mainWindow?.isAlwaysOnTop() || !!settings.pinned,
-    startAtLogin: app.getLoginItemSettings().openAtLogin
+    startAtLogin: isStartupRegistered()
   };
 }
 
