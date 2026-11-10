@@ -5889,10 +5889,11 @@ function openTaskDialog(task = null, options = {}) {
   const rawPriority = isMonthly ? "monthly_fixed" : (task?.priority || "general_daily");
   el.taskPriority.value = rawPriority === "follow_up" ? "general_daily" : rawPriority;
   syncMonthlyRecurringFromPriority();
-  el.taskProgress.value = task?.progress || 0;
-  el.taskProgressValue.textContent = `${task?.progress || 0}%`;
+  // 先按投入重算进度，再填滑条，避免打开详情时仍显示旧百分比、保存又把自动进度盖掉。
   if (task?.id && refreshTaskStatusForId(task.id)) saveData();
   const statusTask = task?.id ? (findTask(task.id)?.task || task) : task;
+  el.taskProgress.value = statusTask?.progress || 0;
+  el.taskProgressValue.textContent = `${statusTask?.progress || 0}%`;
   const meetingCreate = options.createKind === "meeting" || el.taskCreateKind?.value === "meeting";
   // 仅关注 = 待跟踪的唯一入口（任务表单显示；会议隐藏）
   el.taskFollowUpOption?.classList.toggle("hidden", meetingCreate);
@@ -5948,10 +5949,15 @@ function openTaskDialog(task = null, options = {}) {
     el.taskTitleCaption.textContent = (followUpDraft || successorDraft) ? "待办名称（可修改）" : "待办名称";
   }
   updateProgressAvailability();
+  // updateProgressAvailability 在非进行中时会清零；进行中则恢复投入推算后的进度。
+  if (el.taskStatus?.value === "in_progress") {
+    el.taskProgress.value = statusTask?.progress || 0;
+    el.taskProgressValue.textContent = `${statusTask?.progress || 0}%`;
+  }
   updateParentRequirements();
   updateRecurringOptions();
   renderTaskSubtasks(task);
-  renderTaskDetailSummary(task);
+  renderTaskDetailSummary(statusTask || task);
   syncTaskCreatedAtDisplay(statusTask);
   // Keep create/edit focused on input fields: summary cards + subtasks are redundant here.
   el.taskDetailSummary?.classList.add("hidden");
@@ -6311,7 +6317,14 @@ function saveMeetingFromCreateDialog() {
   getDay(dateKey).entries.push(entry);
   if (taskId) {
     refreshTaskStatusForId(taskId);
-    if (entry.note) updateTaskRecords(taskId, task => { task.updatedAt = new Date().toISOString(); });
+    if (entry.note) {
+      applyInvestmentNoteToTask(taskId, {
+        dateKey,
+        start: entry.start,
+        end: entry.end,
+        note: entry.note
+      });
+    }
     focusLinkedTaskFilter(taskId);
   }
   state.listKind = "meeting";
@@ -6390,10 +6403,15 @@ function saveTask() {
       previousCount: editing.task.dueRescheduleCount,
       deliveryNote: plainTextFromDeliveryNote(payload.deliveryNote || ""),
       now: new Date(),
-      maxChars: RichNotePolicy?.MAX_TEXT_CHARS || 4000
+      maxChars: RichNotePolicy?.MAX_TEXT_CHARS || 4000,
+      // 与详情框展示一致：缺省时间按下班点比较，避免「仅补上默认 18:00」被当成改期。
+      defaultTime: defaultWorkEndTime()
     });
     payload.dueRescheduleCount = reschedule.count;
-    if (reschedule.changed) payload.deliveryNote = reschedule.deliveryNote;
+    if (reschedule.changed) {
+      payload.deliveryNote = reschedule.deliveryNote;
+      if (el.taskDeliveryNote) el.taskDeliveryNote.value = reschedule.deliveryNote;
+    }
   } else {
     payload.dueRescheduleCount = Math.max(0, Number(editing?.task?.dueRescheduleCount) || 0);
   }
@@ -6475,6 +6493,15 @@ function commitTaskSaveAfterValidation(payload, { effectiveStartedAt = "", actua
     payload.attentionOnly = false;
   }
   if (payload.status === "planned" || payload.status === TaskStatusPolicy.TRACKING_STATUS) payload.progress = 0;
+  // 进行中：投入推算与手动滑条取较高值，避免旧滑条 0% 盖掉已投入进度。
+  if (state.editingTaskId && payload.status === "in_progress" && typeof ProjectSummaryPolicy?.taskProgressPercent === "function") {
+    const computed = ProjectSummaryPolicy.taskProgressPercent({
+      status: "in_progress",
+      investedHours: getTaskDuration(state.editingTaskId),
+      scheduledHours: getTaskScheduledHours(state.editingTaskId)
+    });
+    payload.progress = Math.max(Number(payload.progress) || 0, computed);
+  }
 
   let parentIdForChildren = state.editingTaskId;
   if (state.editingTaskId) {
@@ -11458,6 +11485,14 @@ function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dat
       if (payload.note || id === payload.taskId) task.updatedAt = new Date().toISOString();
     });
   });
+  if (payload.taskId && payload.note) {
+    applyInvestmentNoteToTask(payload.taskId, {
+      dateKey,
+      start: payload.start,
+      end: payload.end,
+      note: payload.note
+    });
+  }
   focusLinkedTaskFilter(payload.taskId);
   const wasEditing = Boolean(state.editingEntryId);
   state.editingEntryId = null;
@@ -12519,6 +12554,33 @@ function updateTaskProgressFromSchedule(task) {
     scheduledHours: scheduled
   });
   return task.progress !== previous;
+}
+
+/** 投入时段上的完成说明追加到任务「进度说明」；同文案不重复写入。 */
+function applyInvestmentNoteToTask(taskId, { dateKey = "", start = 0, end = 0, note = "" } = {}) {
+  if (!taskId || !String(note || "").trim()) return false;
+  if (typeof TaskWorkPolicy?.appendInvestmentNote !== "function") return false;
+  let changed = false;
+  updateTaskRecords(taskId, task => {
+    const result = TaskWorkPolicy.appendInvestmentNote({
+      deliveryNote: plainTextFromDeliveryNote(task.deliveryNote || ""),
+      dateKey,
+      start,
+      end,
+      note,
+      maxChars: RichNotePolicy?.MAX_TEXT_CHARS || 4000
+    });
+    if (!result.changed) return;
+    task.deliveryNote = result.deliveryNote;
+    task.updatedAt = new Date().toISOString();
+    changed = true;
+  });
+  if (changed && state.editingTaskId === taskId && el.taskDeliveryNote) {
+    el.taskDeliveryNote.value = plainTextFromDeliveryNote(
+      findTask(taskId)?.task?.deliveryNote || el.taskDeliveryNote.value || ""
+    );
+  }
+  return changed;
 }
 
 function hasScheduledEntry(taskId) {

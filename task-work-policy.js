@@ -1,4 +1,8 @@
-(function (root) {
+(function (root, factory) {
+  const policy = factory();
+  if (typeof module === "object" && module.exports) module.exports = policy;
+  root.TaskWorkPolicy = policy;
+})(typeof globalThis !== "undefined" ? globalThis : window, function () {
   function validRange(start, end) {
     const from = Number(start);
     const to = Number(end);
@@ -52,13 +56,67 @@
     return pickEarliestDateKey([ownStartDateKey, ...investedDateKeys]);
   }
 
-  root.TaskWorkPolicy = {
+  function pad2(value) {
+    return String(Math.max(0, Number(value) || 0)).padStart(2, "0");
+  }
+
+  function formatHourLabel(hour) {
+    const raw = Number(hour);
+    if (!Number.isFinite(raw)) return "";
+    const h = Math.floor(raw);
+    const m = Math.round((raw - h) * 60);
+    return `${pad2(h)}:${pad2(m >= 60 ? 0 : m)}`;
+  }
+
+  function formatDateLabel(dateKey = "") {
+    const key = String(dateKey || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return key;
+    return key.replace(/-/g, "/");
+  }
+
+  function buildInvestmentNoteLine({ dateKey = "", start = 0, end = 0, note = "" } = {}) {
+    const text = String(note || "").trim();
+    if (!text) return "";
+    const day = formatDateLabel(dateKey);
+    const from = formatHourLabel(start);
+    const to = formatHourLabel(end);
+    const range = from && to ? `${from}–${to}` : "";
+    const head = range ? `[投入 ${day} ${range}]` : `[投入 ${day}]`;
+    return `${head} ${text}`;
+  }
+
+  function appendInvestmentNote({
+    deliveryNote = "",
+    dateKey = "",
+    start = 0,
+    end = 0,
+    note = "",
+    maxChars = 4000
+  } = {}) {
+    const line = buildInvestmentNoteLine({ dateKey, start, end, note });
+    const existing = String(deliveryNote || "");
+    if (!line) return { changed: false, deliveryNote: existing };
+    if (existing.includes(line)) return { changed: false, deliveryNote: existing };
+    const base = existing.replace(/\s+$/g, "");
+    const joined = base ? `${base}\n${line}` : line;
+    return {
+      changed: true,
+      deliveryNote: joined.slice(0, Math.max(0, Number(maxChars) || 4000)),
+      line
+    };
+  }
+
+  return {
     validRange,
     copyPlacement,
     statusForStart,
     statusForEntries,
     pickEarliestIso,
     pickEarliestDateKey,
-    rollupActualStartDateKey
+    rollupActualStartDateKey,
+    formatHourLabel,
+    formatDateLabel,
+    buildInvestmentNoteLine,
+    appendInvestmentNote
   };
-})(typeof window === "undefined" ? globalThis : window);
+});

@@ -145,6 +145,18 @@ assert.match(app, /applyDueDateNudge/, "due-date nudge keeps a compatibility wra
 assert.match(app, /DueReschedulePolicy\.applyOnSave/, "saving a changed due date appends a progress reschedule log");
 assert.match(html, /id="taskDueRescheduleHint"/, "task dialog shows how many times the due date was moved");
 assert.match(app, /dueRescheduleCount/, "tasks persist due-reschedule counts");
+assert.match(
+  app,
+  /refreshTaskStatusForId\(task\.id\)[\s\S]*el\.taskProgress\.value\s*=\s*statusTask\?\.progress/,
+  "opening a task refreshes schedule-derived progress before filling the slider"
+);
+assert.match(
+  app,
+  /Math\.max\(Number\(payload\.progress\) \|\| 0, computed\)/,
+  "saving an in-progress task keeps the higher of slider and invested/scheduled progress"
+);
+assert.match(app, /applyInvestmentNoteToTask/, "schedule notes sync into the task progress notes field");
+assert.match(app, /TaskWorkPolicy\.appendInvestmentNote/, "investment note append uses the shared task-work helper");
 assert.match(app, /attentionAlarmDueBaseline/, "session baseline detects which reminder tasks were rescheduled");
 assert.match(styles, /\.task-attention-alarm\.reminder-upcoming[\s\S]*background:\s*transparent/, "upcoming uses a bare yellow exclamation");
 assert.match(styles, /\.task-attention-restore[\s\S]*background:\s*#2e7d32/, "session-adjusted reminders use a green restore mark");
