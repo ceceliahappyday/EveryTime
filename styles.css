@@ -4600,14 +4600,14 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
 #taskEditForm.create-kind-meeting .task-title-heading {
   justify-content: flex-start;
 }
-#taskEditForm .task-kind-category-row {
-  grid-template-columns: minmax(0, 1fr);
-}
-#taskEditForm .task-kind-category-row:not(:has(#taskCreateKindField:not(.hidden))) {
-  display: none;
-}
-#taskEditForm .task-category-priority-row {
+#taskEditForm .task-kind-category-row,
+#taskEditForm .task-category-priority-row,
+#taskEditForm .task-kind-category-priority-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+/* 新建：待办类型 | 任务类别 | 任务级别；编辑：类别 | 级别 */
+#taskEditForm .form-row.task-category-priority-row:has(#taskCreateKindField:not(.hidden)) {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
 }
 #taskEditForm .task-created-status-row {
   grid-template-columns: minmax(0, 1fr);
@@ -4623,12 +4623,9 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
 #taskEditForm.create-kind-meeting #taskDeliveryField {
   display: none;
 }
-#taskEditForm.create-kind-meeting #taskCategoryPriorityRow #taskCategoryField {
+#taskEditForm.create-kind-meeting #taskCategoryField {
   /* 会议创建时类别跟类型走，避免重复占位 */
   display: none;
-}
-#taskEditForm.create-kind-meeting #taskCategoryPriorityRow {
-  grid-template-columns: minmax(0, 1fr);
 }
 #taskEditForm.create-kind-meeting #taskCreatedStatusRow {
   display: none;
@@ -4702,6 +4699,9 @@ body.in-desktop.glass-mode .task-attention-inline {
 #taskEditForm .form-row.task-category-priority-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
+#taskEditForm .form-row.task-category-priority-row:has(#taskCreateKindField:not(.hidden)) {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+}
 #taskEditForm .form-row.task-created-status-row {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -4709,6 +4709,7 @@ body.in-desktop.glass-mode .task-attention-inline {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 #taskEditForm.create-kind-meeting .form-row.task-category-priority-row {
+  /* 会议新建只留待办类型 */
   grid-template-columns: minmax(0, 1fr);
 }
 #taskEditForm .form-row > label {
@@ -5234,7 +5235,6 @@ body.in-desktop.glass-mode .gantt-field-mark--priority {
   background: rgba(230, 150, 70, 0.24);
   border-color: rgba(240, 180, 100, 0.5);
 }
-#taskEditForm.create-kind-meeting #taskCategoryPriorityRow,
 #taskEditForm.create-kind-meeting #taskPriorityField,
 #taskEditForm.create-kind-meeting #taskActualTimeRow,
 #taskEditForm.create-kind-meeting #taskCreatedStatusRow,

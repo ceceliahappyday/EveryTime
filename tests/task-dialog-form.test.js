@@ -77,10 +77,19 @@ assert.match(
 );
 assert.match(html, /task-form-compact/, "task dialog uses compact form layout");
 assert.match(html, /task-category-priority-row/, "category and priority share one row");
+assert.match(
+  html,
+  /task-category-priority-row[\s\S]*taskCreateKindField[\s\S]*taskCategoryField[\s\S]*taskPriorityField/,
+  "create kind sits with category and priority instead of a lonely full-width row"
+);
+assert.match(
+  styles,
+  /task-category-priority-row:has\(#taskCreateKindField:not\(\.hidden\)\)[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/,
+  "new-task form uses three equal columns for kind|category|priority"
+);
 assert.match(html, /task-created-status-row/, "created time and status share one row");
 assert.match(html, /id="taskStatusDisplay"/, "status is shown as a locked read-only display");
 assert.match(app, /syncDerivedTaskStatusFromTimes/, "status is derived from actual start/end times");
-assert.match(html, /task-kind-category-row/, "create kind keeps its own compact row");
 assert.match(html, /task-title-block|task-title-heading/, "title caption and 仅关注 share the heading row");
 assert.match(html, /id="taskTitleCaption"/, "title caption sits on the heading row");
 assert.match(styles, /\.task-title-heading[\s\S]*justify-content:\s*space-between/, "仅关注 sits on the right of the title caption row");
