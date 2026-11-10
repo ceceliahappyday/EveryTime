@@ -157,6 +157,12 @@ assert.match(
 );
 assert.match(app, /applyInvestmentNoteToTask/, "schedule notes sync into the task progress notes field");
 assert.match(app, /TaskWorkPolicy\.appendInvestmentNote/, "investment note append uses the shared task-work helper");
+assert.match(app, /backfillInvestmentProgressHistory/, "startup migration backfills historical investment notes and progress");
+assert.match(
+  app,
+  /backfillHistoricalTaskTimelines\(\);\s*backfillInvestmentProgressHistory\(\);/,
+  "investment progress backfill runs with other history repairs during migrateData"
+);
 assert.match(app, /attentionAlarmDueBaseline/, "session baseline detects which reminder tasks were rescheduled");
 assert.match(styles, /\.task-attention-alarm\.reminder-upcoming[\s\S]*background:\s*transparent/, "upcoming uses a bare yellow exclamation");
 assert.match(styles, /\.task-attention-restore[\s\S]*background:\s*#2e7d32/, "session-adjusted reminders use a green restore mark");

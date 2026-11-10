@@ -364,7 +364,62 @@ function migrateData() {
   }
   collapseAttentionSuccessorDuplicates();
   backfillHistoricalTaskTimelines();
+  backfillInvestmentProgressHistory();
   saveData();
+}
+
+/**
+ * One-shot style history repair (idempotent):
+ * 1) append past schedule notes into task.deliveryNote
+ * 2) recompute open-task progress from invested / scheduled hours
+ */
+function backfillInvestmentProgressHistory() {
+  const noteItems = [];
+  Object.entries(state.data || {}).forEach(([dateKey, day]) => {
+    (day.entries || []).forEach(entry => {
+      if (!entry?.taskId || !String(entry.note || "").trim()) return;
+      noteItems.push({
+        taskId: entry.taskId,
+        dateKey,
+        start: entry.start,
+        end: entry.end,
+        note: entry.note
+      });
+    });
+  });
+  noteItems.sort((a, b) =>
+    String(a.dateKey).localeCompare(String(b.dateKey))
+    || Number(a.start) - Number(b.start)
+    || String(a.note).localeCompare(String(b.note))
+  );
+  let changed = false;
+  noteItems.forEach(item => {
+    if (applyInvestmentNoteToTask(item.taskId, item)) changed = true;
+  });
+  getAllTasks().forEach(({ task }) => {
+    if (!task?.id) return;
+    if (["done", "closed"].includes(task.status)) {
+      if (Number(task.progress) !== 100) {
+        task.progress = 100;
+        changed = true;
+      }
+      return;
+    }
+    if (typeof ProjectSummaryPolicy?.taskProgressPercent !== "function") return;
+    const previous = Number(task.progress) || 0;
+    const next = ProjectSummaryPolicy.taskProgressPercent({
+      status: task.status,
+      investedHours: getTaskDuration(task.id),
+      scheduledHours: getTaskScheduledHours(task.id)
+    });
+    // Keep any higher manual value; lift stale zeros up to schedule-derived progress.
+    const merged = Math.max(previous, next);
+    if (merged !== previous) {
+      task.progress = merged;
+      changed = true;
+    }
+  });
+  return changed;
 }
 
 /** Re-scan all tasks on upgrade: fill missing created/started/completed times when inferrable. */
