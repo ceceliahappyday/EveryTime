@@ -60,8 +60,9 @@ DailyPlanner（中文名「今日日程」）是桌面浮窗式的任务、日�
 
 ## Windows 开机自启
 
-- 注册表名固定 `DailyPlanner`（`startup-policy.js`）。读写都必须带该 name；不得用无 name 的 `getLoginItemSettings()` 当真值，否则勾选假阴性，下次保存会关掉自启。
-- 开启时保留 canonical Run 项，并写入 `StartupApproved`；Electron 失败时用 `reg` 兜底写 Run。关闭时清理 canonical + 已校验的历史别名（仅 HKCU）。
+- 注册表名固定 `DailyPlanner`（`startup-policy.js`）。读写都必须带该 name；不得用无 name 的 `getLoginItemSettings()` 当真值。
+- 设置勾选保存的是用户意图 `settings.startAtLogin`；`startAtLoginApplied` 表示 HKCU Run 是否已写入。勾选不得只跟注册表走，否则注册失败/被清后下次保存会把意图写成 false 并删掉启动项。
+- 开启时强制写入带引号的 Run 命令（兼容 `Program Files` 空格路径），并写 `StartupApproved=02…`；关闭时清理 canonical + 已校验的历史别名（仅 HKCU）。
 - 别名含 `EveryTime`、`今日日程`、`today-daily-planner` 等；清理前须校验为本应用 exe。`startup-policy.js` 只给 main 用，勿进 `index.html`。
 
 ## 其它实现约束

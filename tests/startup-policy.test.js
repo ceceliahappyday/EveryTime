@@ -18,6 +18,18 @@ assert.strictEqual(
   true
 );
 assert.strictEqual(
+  policy.isOwnedCommand(
+    "D:\\Program Files\\today-daily-planner\\今日日程.exe",
+    "D:\\Program Files\\today-daily-planner\\今日日程.exe"
+  ),
+  true,
+  "unquoted Program Files paths with spaces must still count as owned"
+);
+assert.strictEqual(
+  policy.quoteCommand("D:\\Program Files\\today-daily-planner\\今日日程.exe"),
+  '"D:\\Program Files\\today-daily-planner\\今日日程.exe"'
+);
+assert.strictEqual(
   policy.isOwnedCommand('"D:\\OtherApp\\EveryTime.exe"', "C:\\Users\\LS\\AppData\\Local\\Programs\\EveryTime\\EveryTime.exe"),
   false
 );

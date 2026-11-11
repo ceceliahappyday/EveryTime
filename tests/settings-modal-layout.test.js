@@ -78,5 +78,12 @@ assert.match(
 );
 assert.match(main, /keepCanonical:\s*enable/, "enabling startup must not delete the canonical Run entry before re-registering");
 assert.match(main, /ensureStartupApproved/, "Windows startup must mark StartupApproved as enabled");
+assert.match(main, /startAtLoginApplied/, "settings API must report whether the Run key was actually written");
+assert.match(main, /ensureRunKeyRegistration\(StartupPolicy\.canonicalName,\s*exePath\)/, "enabling startup always force-writes a quoted Run value");
+assert.match(
+  fs.readFileSync("app.js", "utf8"),
+  /startAtLoginApplied/,
+  "settings toast must distinguish saved intent from registry application"
+);
 
 console.log("settings modal layout tests passed");

@@ -2574,10 +2574,15 @@ async function saveDesktopSettings() {
   el.settingsDialog.close();
   render();
   let toast = migrated > 0 ? `设置已保存，已更新 ${migrated} 处责任人` : "设置已保存";
-  if (nextSettings.startAtLogin && !saved?.startAtLogin) {
-    toast = "设置已保存，但开机自启未写入系统注册表，请重试或在任务管理器的启动应用中确认";
-  } else if (nextSettings.startAtLogin && saved?.startAtLogin) {
-    toast = migrated > 0 ? toast : "设置已保存，已启用开机自启（DailyPlanner）";
+  if (nextSettings.startAtLogin) {
+    const applied = saved?.startAtLoginApplied !== undefined
+      ? !!saved.startAtLoginApplied
+      : !!saved?.startAtLogin;
+    if (!applied) {
+      toast = "设置已保存并记下开机自启，但系统启动项未写入成功，请重试或在任务管理器「启动应用」中确认 DailyPlanner";
+    } else if (migrated <= 0) {
+      toast = "设置已保存，已启用开机自启（DailyPlanner）";
+    }
   }
   showToast(toast);
 }

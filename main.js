@@ -359,14 +359,19 @@ if (singleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("window:toggle-locked", () => setLocked(!locked));
   ipcMain.handle("window:get-glass", () => glass);
   ipcMain.handle("window:toggle-glass", () => setGlass(!glass));
-  ipcMain.handle("app:get-settings", () => ({
-    ...publicSettings(),
-    glass,
-    locked,
-    pinned: mainWindow?.isAlwaysOnTop() || false,
-    compact: !!loadSettings().compact,
-    startAtLogin: isStartupRegistered()
-  }));
+  ipcMain.handle("app:get-settings", () => {
+    const settings = loadSettings();
+    // Checkbox follows saved intent; registry may lag or be cleared by Windows.
+    return {
+      ...publicSettings(),
+      glass,
+      locked,
+      pinned: mainWindow?.isAlwaysOnTop() || false,
+      compact: !!settings.compact,
+      startAtLogin: !!settings.startAtLogin,
+      startAtLoginApplied: isStartupRegistered()
+    };
+  });
   ipcMain.handle("app:save-settings", (_event, nextSettings) => {
     const incoming = { ...(nextSettings || {}) };
     if (Object.prototype.hasOwnProperty.call(incoming, "aiApiKey")) {
@@ -385,8 +390,13 @@ if (singleInstanceLock) app.whenReady().then(() => {
         }
       }
     }
-    saveSettings(incoming);
-    return { ...publicSettings(), pinned: mainWindow?.isAlwaysOnTop() || false, startAtLogin: isStartupRegistered() };
+    const saved = saveSettings(incoming);
+    return {
+      ...publicSettings(),
+      pinned: mainWindow?.isAlwaysOnTop() || false,
+      startAtLogin: !!saved.startAtLogin,
+      startAtLoginApplied: !!saved.startAtLoginApplied
+    };
   });
   ipcMain.handle("ai:ask", async (_event, payload) => askAi(payload || {}));
   ipcMain.handle("ai:extract-task", async (_event, payload) => extractAiTask(payload || {}));
@@ -617,21 +627,28 @@ function isStartupRegistered() {
 }
 
 function ensureStartupApproved(name) {
-  if (process.platform !== "win32") return;
+  if (process.platform !== "win32") return false;
   try {
+    // 02 = enabled; trailing zeros keep Windows from treating the entry as user-disabled.
     execFileSync("reg.exe", [
       "add", startupApprovedRunKey,
       "/v", name,
       "/t", "REG_BINARY",
-      "/d", "0200000000000000000000",
+      "/d", "020000000000000000000000",
       "/f"
     ], { windowsHide: true, stdio: "ignore" });
-  } catch { /* best-effort */ }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function ensureRunKeyRegistration(name, exePath) {
-  if (process.platform !== "win32") return;
-  const value = `"${String(exePath || "").replace(/"/g, "")}"`;
+  if (process.platform !== "win32") return false;
+  const value = typeof StartupPolicy.quoteCommand === "function"
+    ? StartupPolicy.quoteCommand(exePath)
+    : `"${String(exePath || "").replace(/"/g, "")}"`;
+  if (!value) return false;
   try {
     execFileSync("reg.exe", [
       "add", startupRunKey,
@@ -640,7 +657,10 @@ function ensureRunKeyRegistration(name, exePath) {
       "/d", value,
       "/f"
     ], { windowsHide: true, stdio: "ignore" });
-  } catch { /* best-effort */ }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function queryRunValue(name) {
@@ -677,16 +697,23 @@ function cleanupKnownStartupEntries({ keepCanonical = false } = {}) {
 
 function configureLoginItem(openAtLogin) {
   const enable = !!openAtLogin;
+  const exePath = app.getPath("exe");
   cleanupKnownStartupEntries({ keepCanonical: enable });
-  app.setLoginItemSettings({
-    openAtLogin: enable,
-    name: StartupPolicy.canonicalName,
-    path: app.getPath("exe")
-  });
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: enable,
+      name: StartupPolicy.canonicalName,
+      path: exePath,
+      args: []
+    });
+  } catch { /* registry fallback below is authoritative on Windows */ }
   if (enable && process.platform === "win32") {
+    // Always force a quoted HKCU Run value. Electron may omit quotes for
+    // "Program Files" paths, which then fail both ownership checks and startup.
+    ensureRunKeyRegistration(StartupPolicy.canonicalName, exePath);
     ensureStartupApproved(StartupPolicy.canonicalName);
     if (!isStartupRegistered()) {
-      ensureRunKeyRegistration(StartupPolicy.canonicalName, app.getPath("exe"));
+      ensureRunKeyRegistration(StartupPolicy.canonicalName, exePath);
       ensureStartupApproved(StartupPolicy.canonicalName);
     }
   }
@@ -694,6 +721,7 @@ function configureLoginItem(openAtLogin) {
     deleteRegistryValue(startupRunKey, StartupPolicy.canonicalName);
     deleteRegistryValue(startupApprovedRunKey, StartupPolicy.canonicalName);
   }
+  return isStartupRegistered();
 }
 
 function defaultExportDir() {
@@ -1156,7 +1184,15 @@ function saveSettings(nextSettings) {
   }
   glass = !!settings.glass;
   locked = !!settings.locked;
-  if (!skipStartupRegistration) configureLoginItem(settings.startAtLogin);
+  settings.startAtLogin = !!settings.startAtLogin;
+  let startAtLoginApplied = isStartupRegistered();
+  if (!skipStartupRegistration) {
+    startAtLoginApplied = !!configureLoginItem(settings.startAtLogin);
+    if (settings.startAtLogin && !startAtLoginApplied) {
+      // Keep the user's intent; retry once more before surfacing failure.
+      startAtLoginApplied = !!configureLoginItem(true);
+    }
+  }
   if (mainWindow) {
     if (locked) applyLockedDesktopLayer(true);
     else {
@@ -1171,7 +1207,8 @@ function saveSettings(nextSettings) {
   return {
     ...settings,
     pinned: mainWindow?.isAlwaysOnTop() || !!settings.pinned,
-    startAtLogin: isStartupRegistered()
+    startAtLogin: !!settings.startAtLogin,
+    startAtLoginApplied
   };
 }
 
