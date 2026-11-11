@@ -626,21 +626,48 @@ function isStartupRegistered() {
   return StartupPolicy.isOwnedCommand(cmd, app.getPath("exe"));
 }
 
-function ensureStartupApproved(name) {
-  if (process.platform !== "win32") return false;
+function escapeRegFileString(value) {
+  return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+}
+
+function importUtf16RegFile(content) {
+  const tempPath = path.join(app.getPath("temp"), `dailyplanner-startup-${Date.now()}-${Math.random().toString(16).slice(2)}.reg`);
   try {
-    // 02 = enabled; trailing zeros keep Windows from treating the entry as user-disabled.
-    execFileSync("reg.exe", [
-      "add", startupApprovedRunKey,
-      "/v", name,
-      "/t", "REG_BINARY",
-      "/d", "020000000000000000000000",
-      "/f"
-    ], { windowsHide: true, stdio: "ignore" });
+    // UTF-16 LE + BOM keeps non-ASCII exe names like 今日日程.exe intact.
+    fs.writeFileSync(tempPath, `\ufeff${content}`, { encoding: "utf16le" });
+    execFileSync("reg.exe", ["import", tempPath], { windowsHide: true, stdio: "ignore" });
     return true;
   } catch {
     return false;
+  } finally {
+    try { fs.unlinkSync(tempPath); } catch { /* ignore temp cleanup */ }
   }
+}
+
+function runUnicodePowerShellFile(scriptBody) {
+  const tempPath = path.join(app.getPath("temp"), `dailyplanner-startup-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`);
+  try {
+    fs.writeFileSync(tempPath, `\ufeff${scriptBody}\r\n`, { encoding: "utf8" });
+    return execFileSync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", tempPath],
+      { encoding: "utf8", windowsHide: true }
+    );
+  } finally {
+    try { fs.unlinkSync(tempPath); } catch { /* ignore temp cleanup */ }
+  }
+}
+
+function ensureStartupApproved(name) {
+  if (process.platform !== "win32") return false;
+  const content = [
+    "Windows Registry Editor Version 5.00",
+    "",
+    "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run]",
+    `"${escapeRegFileString(name)}"=hex:02,00,00,00,00,00,00,00,00,00,00,00`,
+    ""
+  ].join("\r\n");
+  return importUtf16RegFile(content);
 }
 
 function ensureRunKeyRegistration(name, exePath) {
@@ -649,35 +676,58 @@ function ensureRunKeyRegistration(name, exePath) {
     ? StartupPolicy.quoteCommand(exePath)
     : `"${String(exePath || "").replace(/"/g, "")}"`;
   if (!value) return false;
-  try {
-    execFileSync("reg.exe", [
-      "add", startupRunKey,
-      "/v", name,
-      "/t", "REG_SZ",
-      "/d", value,
-      "/f"
-    ], { windowsHide: true, stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
+  const content = [
+    "Windows Registry Editor Version 5.00",
+    "",
+    "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run]",
+    `"${escapeRegFileString(name)}"="${escapeRegFileString(value)}"`,
+    ""
+  ].join("\r\n");
+  return importUtf16RegFile(content);
+}
+
+function registryKeyToPsPath(key) {
+  return String(key || "")
+    .replace(/^HKCU\\/i, "HKCU:\\")
+    .replace(/^HKLM\\/i, "HKLM:\\");
 }
 
 function queryRunValue(name) {
   if (process.platform !== "win32") return "";
+  const outPath = path.join(app.getPath("temp"), `dailyplanner-run-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`);
   try {
-    const output = execFileSync("reg.exe", ["query", startupRunKey, "/v", name], { encoding: "utf8", windowsHide: true });
-    const line = output.split(/\r?\n/).find(item => /\sREG_\w+\s+/i.test(item));
-    return line ? line.replace(/^.*?\sREG_\w+\s+/i, "").trim() : "";
-  } catch { return ""; }
+    const escapedName = String(name || "").replace(/'/g, "''");
+    const escapedOut = outPath.replace(/'/g, "''");
+    // Write to a UTF-8 file instead of stdout — console code pages mangle 今日日程.exe.
+    runUnicodePowerShellFile(
+      `$value = Get-ItemPropertyValue -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name '${escapedName}';`
+      + `[System.IO.File]::WriteAllText('${escapedOut}', [string]$value, (New-Object System.Text.UTF8Encoding $false))`
+    );
+    return String(fs.readFileSync(outPath, "utf8") || "").trim();
+  } catch {
+    return "";
+  } finally {
+    try { fs.unlinkSync(outPath); } catch { /* ignore temp cleanup */ }
+  }
 }
 
 function deleteRegistryValue(key, name) {
   if (process.platform !== "win32") return false;
   try {
-    execFileSync("reg.exe", ["delete", key, "/v", name, "/f"], { stdio: "ignore", windowsHide: true });
+    const psPath = registryKeyToPsPath(key).replace(/'/g, "''");
+    const escapedName = String(name || "").replace(/'/g, "''");
+    runUnicodePowerShellFile(
+      `Remove-ItemProperty -Path '${psPath}' -Name '${escapedName}' -ErrorAction Stop`
+    );
     return true;
-  } catch { return false; }
+  } catch {
+    try {
+      execFileSync("reg.exe", ["delete", key, "/v", name, "/f"], { stdio: "ignore", windowsHide: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 function cleanupKnownStartupEntries({ keepCanonical = false } = {}) {

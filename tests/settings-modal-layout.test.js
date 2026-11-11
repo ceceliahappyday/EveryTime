@@ -80,6 +80,8 @@ assert.match(main, /keepCanonical:\s*enable/, "enabling startup must not delete 
 assert.match(main, /ensureStartupApproved/, "Windows startup must mark StartupApproved as enabled");
 assert.match(main, /startAtLoginApplied/, "settings API must report whether the Run key was actually written");
 assert.match(main, /ensureRunKeyRegistration\(StartupPolicy\.canonicalName,\s*exePath\)/, "enabling startup always force-writes a quoted Run value");
+assert.match(main, /importUtf16RegFile/, "Windows startup registration must import UTF-16 .reg files for Unicode exe paths");
+assert.match(main, /WriteAllText\(/, "startup Run value reads must avoid console code-page mojibake");
 assert.match(
   fs.readFileSync("app.js", "utf8"),
   /startAtLoginApplied/,
