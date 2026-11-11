@@ -50,4 +50,52 @@ const deduped = policy.appendInvestmentNote({
 });
 assert.strictEqual(deduped.changed, false);
 
+assert.strictEqual(
+  policy.resolveInvestmentNoteText({ note: "", title: "对资料做本地开发" }),
+  "对资料做本地开发"
+);
+assert.strictEqual(
+  policy.buildInvestmentNoteLine({
+    dateKey: "2026-11-11",
+    start: 15,
+    end: 15.5,
+    note: "",
+    title: "对资料做本地开发"
+  }),
+  "[投入 2026/11/11 15:00–15:30] 对资料做本地开发"
+);
+assert.strictEqual(
+  policy.buildInvestmentNoteLine({
+    dateKey: "2026-11-11",
+    start: 15,
+    end: 15.5,
+    note: ""
+  }),
+  "[投入 2026/11/11 15:00–15:30] 已投入"
+);
+const titleFallbackAppended = policy.appendInvestmentNote({
+  deliveryNote: "",
+  dateKey: "2026-11-11",
+  start: 15,
+  end: 15.5,
+  note: "   ",
+  title: "对资料做本地开发"
+});
+assert.strictEqual(titleFallbackAppended.changed, true);
+assert.strictEqual(
+  titleFallbackAppended.deliveryNote,
+  "[投入 2026/11/11 15:00–15:30] 对资料做本地开发"
+);
+assert.strictEqual(
+  policy.appendInvestmentNote({
+    deliveryNote: titleFallbackAppended.deliveryNote,
+    dateKey: "2026-11-11",
+    start: 15,
+    end: 15.5,
+    note: "",
+    title: "对资料做本地开发"
+  }).changed,
+  false
+);
+
 console.log("task work behavior tests passed");

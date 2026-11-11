@@ -16,12 +16,24 @@ assert.match(app, /TodoListPolicy\.buildMeetingAllSections/, "all-meetings view 
 assert.match(app, /function createMeetingCard/, "meeting cards should open the schedule entry, not a todo");
 assert.match(html, />会议日程</, "calendar entry type label should be 会议日程");
 assert.match(html, />任务处理</, "task_work entry type label should be 任务处理");
+assert.match(html, /未挂接且为任务处理时也会用作新任务名/, "entry title copy explains empty-link create");
+assert.match(html, /任务处理将新建顶层任务/, "hang-task trigger copy explains empty-link create");
+assert.match(html, /有挂接任务时默认把「事项」写入其进度说明/, "entry note copy ties progress fallback to linked tasks");
 assert.doesNotMatch(html, /option value="task_work">新建待办</, "schedule type must not keep the old 新建待办 label");
 assert.doesNotMatch(html, /计入投入，在「会议」清单查看/, "entry type labels should not keep parenthetical hints");
 assert.match(app, /resolveEntryTaskLinkWithGuard/, "task work entries should resolve an explicit leaf task link");
-assert.match(app, /在已有父级下新建并关联/, "create-under-existing-parent is the primary create label");
+assert.match(app, /createStandaloneLeafFromEntry/, "empty link task_work creates a top-level leaf from the entry title");
+assert.match(app, /similar_top_level/, "similar-task confirm can still create a standalone top-level leaf");
+assert.match(app, /仍要新建任务/, "empty-link similar confirm offers standalone create");
+assert.match(app, /在已有父级下新建并关联/, "create-under-existing-parent remains an explicit option");
 assert.match(app, /promptEntryCreateUnderParent/, "creating under an existing parent requires an explicit parent pick");
 assert.match(app, /createMode === "under_parent"/, "confirm dialog supports under_parent create mode");
+assert.match(app, /createMode === "similar_top_level"/, "confirm dialog supports similar_top_level create mode");
+assert.doesNotMatch(
+  app,
+  /if \(similar\.length\) return promptEntryLinkChoice\(entryPayload, similar\);\s*return promptEntryCreateUnderParent/,
+  "empty link must not force parent pick before creating a top-level leaf"
+);
 assert.match(app, /formatParentPickPathHtml/, "parent picker lists tasks as hierarchy paths");
 assert.match(app, /join\(" \/ "\)/, "parent picker uses spaced / separators for clear hierarchy");
 assert.doesNotMatch(app, /将作为父级/, "parent picker must not use confusing 将作为父级 labels");

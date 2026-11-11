@@ -74,9 +74,13 @@
     return key.replace(/-/g, "/");
   }
 
-  function buildInvestmentNoteLine({ dateKey = "", start = 0, end = 0, note = "" } = {}) {
-    const text = String(note || "").trim();
-    if (!text) return "";
+  /** 进度文案：完成内容优先，否则用事项标题，再否则「已投入」。 */
+  function resolveInvestmentNoteText({ note = "", title = "" } = {}) {
+    return String(note || "").trim() || String(title || "").trim() || "已投入";
+  }
+
+  function buildInvestmentNoteLine({ dateKey = "", start = 0, end = 0, note = "", title = "" } = {}) {
+    const text = resolveInvestmentNoteText({ note, title });
     const day = formatDateLabel(dateKey);
     const from = formatHourLabel(start);
     const to = formatHourLabel(end);
@@ -91,9 +95,10 @@
     start = 0,
     end = 0,
     note = "",
+    title = "",
     maxChars = 4000
   } = {}) {
-    const line = buildInvestmentNoteLine({ dateKey, start, end, note });
+    const line = buildInvestmentNoteLine({ dateKey, start, end, note, title });
     const existing = String(deliveryNote || "");
     if (!line) return { changed: false, deliveryNote: existing };
     if (existing.includes(line)) return { changed: false, deliveryNote: existing };
@@ -116,6 +121,7 @@
     rollupActualStartDateKey,
     formatHourLabel,
     formatDateLabel,
+    resolveInvestmentNoteText,
     buildInvestmentNoteLine,
     appendInvestmentNote
   };

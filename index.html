@@ -324,8 +324,8 @@
       </div>
       <div class="modal-scroll" id="entryDialogScroll">
         <label>
-          <span>事项</span>
-          <input id="entryTitle" maxlength="80" required placeholder="这段时间做什么？" />
+          <span>事项（本时段做什么）</span>
+          <input id="entryTitle" maxlength="80" required placeholder="日程文案；未挂接且为任务处理时也会用作新任务名" />
         </label>
 
         <label>
@@ -337,12 +337,12 @@
         </label>
 
         <label>
-          <span>挂接任务</span>
+          <span>挂接任务（工时记到哪里）</span>
           <select id="entryTaskLink" class="visually-hidden-select" tabindex="-1" aria-hidden="true"></select>
           <div class="entry-task-combobox" id="entryTaskCombobox">
-            <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">搜索已有任务，或新建并关联…</button>
+            <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">可空：任务处理将新建顶层任务；或选已有叶子</button>
             <div class="entry-task-popup hidden" id="entryTaskPopup">
-              <input id="entryTaskSearch" type="search" autocomplete="off" placeholder="搜索任务名称、父级路径或状态…" aria-label="搜索挂接任务" aria-controls="entryTaskOptions" />
+              <input id="entryTaskSearch" type="search" autocomplete="off" placeholder="搜索要记工时的任务…" aria-label="搜索挂接任务" aria-controls="entryTaskOptions" />
               <div id="entryTaskOptions" class="entry-task-options" role="listbox"></div>
             </div>
           </div>
@@ -366,7 +366,7 @@
 
         <label>
           <span>完成内容 / 进度说明（可选）</span>
-          <textarea id="entryNote" rows="3" maxlength="360" placeholder="空着表示计划投入；填写后会作为这个任务在本时间段的进展记录"></textarea>
+          <textarea id="entryNote" rows="3" maxlength="360" placeholder="可不填：有挂接任务时默认把「事项」写入其进度说明"></textarea>
         </label>
 
         <label id="entryCategoryField">

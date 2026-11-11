@@ -377,20 +377,21 @@ function backfillInvestmentProgressHistory() {
   const noteItems = [];
   Object.entries(state.data || {}).forEach(([dateKey, day]) => {
     (day.entries || []).forEach(entry => {
-      if (!entry?.taskId || !String(entry.note || "").trim()) return;
+      if (!entry?.taskId) return;
       noteItems.push({
         taskId: entry.taskId,
         dateKey,
         start: entry.start,
         end: entry.end,
-        note: entry.note
+        note: entry.note || "",
+        title: entry.title || ""
       });
     });
   });
   noteItems.sort((a, b) =>
     String(a.dateKey).localeCompare(String(b.dateKey))
     || Number(a.start) - Number(b.start)
-    || String(a.note).localeCompare(String(b.note))
+    || String(a.note || a.title || "").localeCompare(String(b.note || b.title || ""))
   );
   let changed = false;
   noteItems.forEach(item => {
@@ -736,7 +737,15 @@ function bindEvents() {
       resolve(linkedId);
       return;
     }
-    // Similar-task dialog:「仍要新建」→ 选已有父级再挂子任务，不再静默建顶层
+    if (createMode === "similar_top_level" || createMode === "top_level") {
+      const dateKey = state.editingEntryDateKey || state.selectedDate;
+      const leaf = createStandaloneLeafFromEntry(entryPayload, dateKey);
+      pendingEntrySave = null;
+      el.entryLinkConfirmDialog.close();
+      resolve(leaf.id);
+      return;
+    }
+    // Similar-task dialog after「在已有父级下新建」：仍要新建 → 选父级再挂子任务
     const payload = entryPayload;
     const resolveFn = resolve;
     pendingEntrySave = null;
@@ -6067,7 +6076,9 @@ function renderTaskDetailSummary(task) {
   }
   const allTasks = getAllTasks().map(({ task }) => task);
   const hierarchyPath = TaskOptionPolicy.taskHierarchyPath({ task, tasks: allTasks, separator: " › " });
-  const duration = getTaskDuration(task.id);
+  const ownDuration = getTaskDuration(task.id);
+  const childDuration = hasChildTasks(task.id) ? getChildInvestedHours(task.id) : 0;
+  const duration = ownDuration + childDuration;
   const schedule = getTaskScheduleInfo(task.id);
   const latestProgress = latestTaskProgressNote(task.id);
   const createdAtText = formatTaskCreatedAtDisplay(task);
@@ -6080,7 +6091,13 @@ function renderTaskDetailSummary(task) {
     ["任务层级", hierarchyPath || "顶层任务"],
     ["实际开始", task.startedAt ? formatDateTime(task.startedAt) : "未开始"],
     ["实际完成", task.completedAt ? formatDateTime(task.completedAt) : "未完成"],
-    ["累计投入", duration ? formatHours(duration) : "0 小时"],
+    ["累计投入", duration
+      ? (childDuration > 0 && ownDuration > 0
+        ? `${formatHours(duration)}（含下级 ${formatHours(childDuration)}）`
+        : childDuration > 0
+          ? `${formatHours(duration)}（下级投入）`
+          : formatHours(duration))
+      : "0 小时"],
     ["进度", `${task.progress || 0}%`]
   ];
   if (schedule?.firstStartIso) rows.push(["最早安排", formatDateTime(schedule.firstStartIso)]);
@@ -6377,14 +6394,13 @@ function saveMeetingFromCreateDialog() {
   getDay(dateKey).entries.push(entry);
   if (taskId) {
     refreshTaskStatusForId(taskId);
-    if (entry.note) {
-      applyInvestmentNoteToTask(taskId, {
-        dateKey,
-        start: entry.start,
-        end: entry.end,
-        note: entry.note
-      });
-    }
+    applyInvestmentNoteToTask(taskId, {
+      dateKey,
+      start: entry.start,
+      end: entry.end,
+      note: entry.note || "",
+      title: entry.title || ""
+    });
     focusLinkedTaskFilter(taskId);
   }
   state.listKind = "meeting";
@@ -11545,12 +11561,13 @@ function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dat
       if (payload.note || id === payload.taskId) task.updatedAt = new Date().toISOString();
     });
   });
-  if (payload.taskId && payload.note) {
+  if (payload.taskId) {
     applyInvestmentNoteToTask(payload.taskId, {
       dateKey,
       start: payload.start,
       end: payload.end,
-      note: payload.note
+      note: payload.note || "",
+      title: payload.title || ""
     });
   }
   focusLinkedTaskFilter(payload.taskId);
@@ -11630,6 +11647,7 @@ function cancelPendingEntryLinkConfirm({ closingDialog = null } = {}) {
 
 function resolveEntryTaskLinkWithGuard(entryPayload, existingEntry = null) {
   const selected = el.entryTaskLink.value;
+  const dateKey = state.editingEntryDateKey || state.selectedDate;
   if (selected === "__create_parent__") {
     const parentTitle = el.entryTaskCombobox.dataset.parentTitle || "";
     // Selecting an existing parent means: create a sibling leaf under it and link.
@@ -11658,16 +11676,31 @@ function resolveEntryTaskLinkWithGuard(entryPayload, existingEntry = null) {
   });
   // 「在已有父级下新建」：必须先选父级，再把当前日程建成其子任务并关联。
   if (selected === "__create__") {
-    if (similar.length) return promptEntryLinkChoice(entryPayload, similar);
+    if (similar.length) {
+      return promptEntryLinkChoice(entryPayload, similar, { createMode: "similar_under_parent" });
+    }
     return promptEntryCreateUnderParent(entryPayload);
   }
-  if (similar.length) return promptEntryLinkChoice(entryPayload, similar);
-  return promptEntryCreateUnderParent(entryPayload);
+  // 空挂接 + 任务处理：默认用事项开顶层叶子；有相似待办时先确认。
+  if (similar.length) {
+    return promptEntryLinkChoice(entryPayload, similar, { createMode: "similar_top_level" });
+  }
+  return Promise.resolve(createStandaloneLeafFromEntry(entryPayload, dateKey).id);
 }
 
-function promptEntryLinkChoice(entryPayload, similar) {
+function createStandaloneLeafFromEntry(entryPayload, dateKey = state.selectedDate) {
+  const leaf = createTaskFromEntryPayload(
+    entryPayload,
+    dateKey,
+    "从日程投入新建的待办任务。"
+  );
+  showToast(`已新建任务「${leaf.title}」并关联投入`);
+  return leaf;
+}
+
+function promptEntryLinkChoice(entryPayload, similar, { createMode = "similar_top_level" } = {}) {
   return new Promise(resolve => {
-    pendingEntrySave = { entryPayload, resolve, similar };
+    pendingEntrySave = { entryPayload, resolve, similar, createMode };
     el.entryLinkConfirmTitle.textContent = "发现相似待办";
     el.entryLinkConfirmMessage.textContent = `日程「${entryPayload.title}」与以下待办相似。请先尝试关联，避免重复创建。`;
     el.entryLinkConfirmOptions.innerHTML = similar.map(({ task }) => {
@@ -11682,7 +11715,9 @@ function promptEntryLinkChoice(entryPayload, similar) {
         resolve(taskId);
       }, { once: true });
     });
-    el.entryLinkConfirmCreate.textContent = "仍要在父级下新建";
+    el.entryLinkConfirmCreate.textContent = createMode === "similar_under_parent"
+      ? "仍要在父级下新建"
+      : "仍要新建任务";
     el.entryLinkConfirmDialog.showModal();
   });
 }
@@ -11886,7 +11921,7 @@ function focusLinkedTaskFilter(taskId) {
 
 function fillEntryTaskOptions(entry = null) {
   el.entryTaskLink.innerHTML = "";
-  el.entryTaskLink.add(new Option("搜索已有任务，或新建并关联…", ""));
+  el.entryTaskLink.add(new Option("可空：任务处理将新建顶层任务；或选已有叶子", ""));
   el.entryTaskLink.add(new Option("在已有父级下新建并关联", "__create__"));
   el.entryTaskLink.add(new Option("新建父级任务并挂入当前事项", "__create_parent__"));
   getLeafTasksForEntryLink(entry).forEach(task => {
@@ -11965,10 +12000,10 @@ function renderEntryTaskOptions(query) {
   const selectedParentTitle = el.entryTaskCombobox.dataset.parentTitle || "";
   const parentOptions = preferredParents.map(task => {
     const selected = el.entryTaskLink.value === "__create_parent__" && selectedParentTitle === task.title;
-    return `<button type="button" class="entry-task-option create-option create-under-option" role="option" aria-selected="${selected}" data-value="__create_parent__" data-parent-title="${escapeHtml(task.title)}" title="在父级下新建当前事项，与现有子任务同级">
+    return `<button type="button" class="entry-task-option create-option create-under-option" role="option" aria-selected="${selected}" data-value="__create_parent__" data-parent-title="${escapeHtml(task.title)}" title="会把上方「事项」建成新子任务；若只想记工时，请直接选已有叶子任务">
       <strong>挂到父级「${escapeHtml(task.title)}」</strong>
-      <span>新建「${escapeHtml(entryTitle)}」作为其子待办并关联</span>
-      <small>与现有子任务同级 · 工时记在新子待办上</small>
+      <span>会新建子任务「${escapeHtml(entryTitle)}」并记工时</span>
+      <small>事项≠只写进度；只记工时请选下方已有叶子</small>
     </button>`;
   }).join("");
   const items = results.map(({ task, meta }) => {
@@ -11981,8 +12016,8 @@ function renderEntryTaskOptions(query) {
   const empty = items
     ? ""
     : `<div class="entry-task-no-results">${matchedParents.length
-      ? "没有同名叶子。可点「挂到父级」：在其下新建当前事项（与现有子任务同级）"
-      : "无匹配叶子时：选「在已有父级下新建」，或「新建父级并挂入」"}</div>`;
+      ? "没有同名叶子。可空着保存以新建顶层任务，或点「挂到父级」建成其子待办"
+      : "可空着保存：任务处理会按事项新建顶层任务；也可选「在已有父级下新建」或「新建父级并挂入」"}</div>`;
   // Create actions stay on top so they are not buried under long search results.
   el.entryTaskOptions.innerHTML = create + parentOptions + (items || empty);
   const createParentOption = el.entryTaskOptions.querySelector('.create-parent-option[data-value="__create_parent__"]');
@@ -12013,7 +12048,7 @@ function syncEntryTaskTrigger() {
   const selected = el.entryTaskLink.options[el.entryTaskLink.selectedIndex];
   el.entryTaskTrigger.textContent = selected?.value && selected.value !== ""
     ? selected.textContent
-    : "搜索已有任务，或新建并关联…";
+    : "可空：任务处理将新建顶层任务；或选已有叶子";
 }
 
 function getCalendarEntriesForDate(dateKey) {
@@ -12588,14 +12623,20 @@ function getTaskScheduledHours(taskId) {
 function getTaskProgressNotes(taskId) {
   return Object.entries(state.data).flatMap(([dateKey, day]) =>
     (day.entries || [])
-      .filter(entry => entry.taskId === taskId && entry.note?.trim())
-      .map(entry => ({
-        dateKey,
-        start: entry.start,
-        end: entry.end,
-        note: entry.note.trim(),
-        at: scheduledDateTime(dateKey, entry.start)
-      }))
+      .filter(entry => entry.taskId === taskId)
+      .map(entry => {
+        const note = typeof TaskWorkPolicy?.resolveInvestmentNoteText === "function"
+          ? TaskWorkPolicy.resolveInvestmentNoteText({ note: entry.note, title: entry.title })
+          : String(entry.note || entry.title || "").trim();
+        return {
+          dateKey,
+          start: entry.start,
+          end: entry.end,
+          note,
+          at: scheduledDateTime(dateKey, entry.start)
+        };
+      })
+      .filter(item => item.note)
   ).sort((a, b) => b.at - a.at);
 }
 
@@ -12616,9 +12657,9 @@ function updateTaskProgressFromSchedule(task) {
   return task.progress !== previous;
 }
 
-/** 投入时段上的完成说明追加到任务「进度说明」；同文案不重复写入。 */
-function applyInvestmentNoteToTask(taskId, { dateKey = "", start = 0, end = 0, note = "" } = {}) {
-  if (!taskId || !String(note || "").trim()) return false;
+/** 挂接任务的投入追加到「进度说明」；完成内容优先，否则用事项，同文案不重复。 */
+function applyInvestmentNoteToTask(taskId, { dateKey = "", start = 0, end = 0, note = "", title = "" } = {}) {
+  if (!taskId) return false;
   if (typeof TaskWorkPolicy?.appendInvestmentNote !== "function") return false;
   let changed = false;
   updateTaskRecords(taskId, task => {
@@ -12628,6 +12669,7 @@ function applyInvestmentNoteToTask(taskId, { dateKey = "", start = 0, end = 0, n
       start,
       end,
       note,
+      title,
       maxChars: RichNotePolicy?.MAX_TEXT_CHARS || 4000
     });
     if (!result.changed) return;
