@@ -4565,6 +4565,10 @@ body.in-desktop:not(.glass-mode) .month-add-task:hover {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.schedule-entry p.schedule-entry-task {
+  margin-top: 3px;
+  opacity: .88;
+}
 .schedule-entry-type {
   display: inline-block;
   margin-left: 4px;

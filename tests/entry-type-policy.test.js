@@ -7,7 +7,7 @@ const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 
 assert.match(html, /id="entryType"/, "entry dialog should expose an explicit schedule type");
 assert.match(app, /entry\.entryType \|\|= entry\.taskId \? "task_work" : "calendar"/, "existing entries should migrate without losing records");
-assert.match(app, /entryType === "calendar" && !linkSelected/, "meetings may save without a todo link");
+assert.match(app, /entryType === "calendar" && !linkedId/, "meetings may save without a todo link");
 assert.match(html, /data-list-kind="meeting"/, "meeting should be a parallel list-kind switch beside todos");
 assert.doesNotMatch(html, /data-filter="meeting"/, "meeting should not remain a status tab");
 assert.match(app, /function getMeetingListItems/, "meetings must surface as list items with invested hours");
@@ -16,13 +16,25 @@ assert.match(app, /TodoListPolicy\.buildMeetingAllSections/, "all-meetings view 
 assert.match(app, /function createMeetingCard/, "meeting cards should open the schedule entry, not a todo");
 assert.match(html, />会议日程</, "calendar entry type label should be 会议日程");
 assert.match(html, />任务处理</, "task_work entry type label should be 任务处理");
-assert.match(html, /新建时填写新任务名；已挂接叶子时自动锁定为任务名/, "entry title copy explains create vs locked linked title");
-assert.match(html, /选已有叶子或拖入左侧/, "hang-task trigger prefers existing leaf or drag-in");
-assert.match(html, /已挂接时事项锁定，细节写这里/, "entry note copy explains locked-title progress detail");
+assert.match(html, /id="entryTitleField"/, "meeting title field is separable from task investment");
+assert.match(html, /选择已有叶子任务/, "hang-task trigger only allows existing leaf");
+assert.match(html, /本时段投入内容/, "entry note is the session investment content field");
+assert.match(html, /写这次做了什么；显示在日程块，并记入任务进度/, "entry note copy explains schedule + task progress");
 assert.match(app, /normalizeEntryNote/, "duplicate title/note is collapsed on save");
-assert.match(app, /shouldShowEntryNoteOnSchedule/, "schedule cards hide note when it repeats the title");
+assert.match(app, /shouldShowEntryNoteOnSchedule|resolveScheduleEntryPrimaryText/, "schedule cards prefer concrete note on the primary line");
+assert.match(app, /resolveScheduleEntryPrimaryText/, "dragged and new entries share one primary-line resolver");
 assert.match(app, /function getEntryFieldLockState/, "schedule form exposes association lock state");
 assert.match(app, /function updateEntryFieldLocks/, "schedule form applies field locks for linked investments");
+assert.match(app, /function syncEntryTitleFromLinkedSelection/, "task_work title mirrors the selected leaf only");
+assert.match(app, /function syncEntryCategoryFromTask/, "schedule category mirrors the linked task");
+assert.match(app, /分类跟随任务/, "linked schedule hides/locks category because it follows the task");
+assert.doesNotMatch(app, /function adoptLinkedLeafTitle/, "schedule must not migrate typed title into note");
+assert.match(app, /绝不改写本时段投入内容/, "selecting a leaf must not overwrite session note");
+assert.doesNotMatch(
+  app,
+  /if \(id === payload\.taskId\) \{\s*task\.category = category/s,
+  "saving schedule must not rewrite the task category"
+);
 assert.match(app, /lockLink: editingLinked/, "saved linked entries lock the task association");
 assert.match(app, /computeScheduleDerivedProgress/, "parent and leaf progress share one schedule-derived helper");
 assert.match(app, /taskHasActiveChildWork/, "parents become in_progress from active child work");
@@ -33,38 +45,39 @@ assert.match(
 );
 assert.match(
   app,
-  /function createEntryFromTask[\s\S]*applyInvestmentNoteToTask/s,
-  "dragging a leaf into the schedule also writes investment progress notes"
+  /function createEntryFromTask[\s\S]*openEntryDialog/s,
+  "dragging a leaf opens the schedule form to fill session investment"
+);
+assert.match(
+  app,
+  /function finalizeEntrySave[\s\S]*applyInvestmentNoteToTask/s,
+  "saving a schedule writes the session note into task progress"
 );
 assert.doesNotMatch(html, /option value="task_work">新建待办</, "schedule type must not keep the old 新建待办 label");
 assert.doesNotMatch(html, /计入投入，在「会议」清单查看/, "entry type labels should not keep parenthetical hints");
 assert.match(app, /resolveEntryTaskLinkWithGuard/, "task work entries should resolve an explicit leaf task link");
-assert.match(app, /createStandaloneLeafFromEntry/, "empty link task_work creates a top-level leaf from the entry title");
-assert.match(app, /similar_top_level/, "similar-task confirm can still create a standalone top-level leaf");
-assert.match(app, /仍要新建任务/, "empty-link similar confirm offers standalone create");
-assert.match(app, /在已有父级下新建并关联/, "create-under-existing-parent remains an explicit option");
-assert.match(app, /promptEntryCreateUnderParent/, "creating under an existing parent requires an explicit parent pick");
-assert.match(app, /createMode === "under_parent"/, "confirm dialog supports under_parent create mode");
-assert.match(app, /createMode === "similar_top_level"/, "confirm dialog supports similar_top_level create mode");
-assert.doesNotMatch(
-  app,
-  /if \(similar\.length\) return promptEntryLinkChoice\(entryPayload, similar\);\s*return promptEntryCreateUnderParent/,
-  "empty link must not force parent pick before creating a top-level leaf"
-);
-assert.match(app, /formatParentPickPathHtml/, "parent picker lists tasks as hierarchy paths");
-assert.match(app, /join\(" \/ "\)/, "parent picker uses spaced / separators for clear hierarchy");
-assert.doesNotMatch(app, /将作为父级/, "parent picker must not use confusing 将作为父级 labels");
-assert.match(app, /按层级搜索任务/, "parent picker search label describes hierarchy listing");
-assert.match(app, /新建父级任务并挂入当前事项/, "create-new-parent option remains available");
-assert.match(app, /ensureScheduleLinkedLeafTask/, "schedule save must retarget parent links onto a concrete leaf");
+assert.match(app, /任务处理须选择已有叶子任务/, "empty link task_work must refuse and ask for an existing leaf");
+assert.match(app, /任务处理须挂接已有叶子/, "link guard also refuses empty task_work links");
+assert.doesNotMatch(app, /el\.entryTaskLink\.add\(new Option\("在已有父级下新建并关联"/, "schedule link list must not offer create-under-parent");
+assert.doesNotMatch(app, /el\.entryTaskLink\.add\(new Option\("新建父级任务并挂入当前事项"/, "schedule link list must not offer create-parent");
+assert.doesNotMatch(app, /空着则新建顶层任务/, "schedule copy must not invite empty-link task creation");
+assert.doesNotMatch(app, /data-value="__create__"/, "schedule popup must not expose __create__ actions");
+assert.doesNotMatch(app, /data-value="__create_parent__"/, "schedule popup must not expose __create_parent__ actions");
+assert.match(app, /ensureScheduleLinkedLeafTask/, "schedule save must retarget parent links onto an existing leaf");
+assert.match(app, /请选择其下已有叶子记工时/, "parent links must refuse create-from-schedule");
+assert.match(app, /if \(taskId && !linkedTaskId\) return/, "save aborts when parent cannot be retargeted to an existing leaf");
 assert.match(app, /highlightTaskId/, "newly linked leaf should be highlighted in the todo list");
 assert.match(app, /cancelPendingEntryLinkConfirm/, "canceling link confirm steps back to the schedule dialog");
 assert.match(app, /已返回日程，可继续修改挂接/, "cancel must keep the schedule draft and return to it");
-assert.match(app, /entryTaskOptions\.innerHTML = create \+/, "create-under-parent / create-parent actions stay at top of link list");
+assert.match(app, /entryTaskOptions\.innerHTML = items \|\| empty/, "link list shows existing leaves only");
 assert.match(app, /＋ 新建</, "week column quick-create uses short 新建 label");
 assert.match(html, /搜索\.\.\.\/@人员/, "list search placeholder hints @人员");
 assert.match(app, /Meetings stay in the meeting list, but may optionally link a todo/, "meetings should support optional todo linking");
-assert.match(app, /entryType: "task_work", taskId: workTask\.id/, "dragging a task into the calendar should remain task work");
+assert.match(
+  app,
+  /entryType:\s*"task_work"[\s\S]*taskId:\s*workTask\.id/,
+  "dragging a task into the calendar should remain task work"
+);
 assert.doesNotMatch(app, /fromMemo \? materializeWorkTodoFromMemo/, "仅关注 tasks must invest in place instead of spawning a second todo");
 assert.match(app, /isMemoReminderTask\(task\)/, "待跟踪 remains a mark filter, not a second work item");
 assert.match(

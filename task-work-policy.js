@@ -94,6 +94,23 @@
     return Boolean(normalizeEntryNote({ note, title }));
   }
 
+  /**
+   * 日程块主行：有完成内容则用完成内容，否则用事项名。
+   * 这样「拖入任务写进度」和「新建只写事项」的具体内容都出现在同一视觉位置（主行）。
+   */
+  function resolveScheduleEntryPrimaryText({ note = "", title = "" } = {}) {
+    const concrete = normalizeEntryNote({ note, title });
+    return concrete || String(title || "").trim();
+  }
+
+  /** 有完成内容时，副行显示任务名/事项名。 */
+  function resolveScheduleEntrySecondaryText({ note = "", title = "" } = {}) {
+    const concrete = normalizeEntryNote({ note, title });
+    const head = String(title || "").trim();
+    if (!concrete || !head) return "";
+    return head;
+  }
+
   function buildInvestmentNoteLine({ dateKey = "", start = 0, end = 0, note = "", title = "" } = {}) {
     const text = resolveInvestmentNoteText({ note, title });
     const day = formatDateLabel(dateKey);
@@ -186,6 +203,8 @@
     normalizeEntryNote,
     resolveInvestmentNoteText,
     shouldShowEntryNoteOnSchedule,
+    resolveScheduleEntryPrimaryText,
+    resolveScheduleEntrySecondaryText,
     buildInvestmentNoteLine,
     appendInvestmentNote,
     buildProgressUpdateLine,

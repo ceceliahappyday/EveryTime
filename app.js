@@ -11322,11 +11322,16 @@ function renderDayTimeline() {
       item.style.setProperty("--overlap-col", String(column));
     }
     applyCategoryColorStyle(item, entryColor);
-    const showNote = typeof TaskWorkPolicy?.shouldShowEntryNoteOnSchedule === "function"
-      ? TaskWorkPolicy.shouldShowEntryNoteOnSchedule({ note: entry.note, title: entry.title })
-      : Boolean(String(entry.note || "").trim() && String(entry.note).trim() !== String(entry.title || "").trim());
-    item.innerHTML = `<strong><b class="schedule-entry-badge">${escapeHtml(meta.badge)}</b>${escapeHtml(entry.title)}</strong>
-      ${showNote ? `<p>${escapeHtml(String(entry.note).trim())}</p>` : ""}`;
+    const primaryText = typeof TaskWorkPolicy?.resolveScheduleEntryPrimaryText === "function"
+      ? TaskWorkPolicy.resolveScheduleEntryPrimaryText({ note: entry.note, title: entry.title })
+      : (String(entry.note || "").trim() && String(entry.note).trim() !== String(entry.title || "").trim()
+        ? String(entry.note).trim()
+        : String(entry.title || "").trim());
+    const secondaryText = typeof TaskWorkPolicy?.resolveScheduleEntrySecondaryText === "function"
+      ? TaskWorkPolicy.resolveScheduleEntrySecondaryText({ note: entry.note, title: entry.title })
+      : (primaryText && primaryText !== String(entry.title || "").trim() ? String(entry.title || "").trim() : "");
+    item.innerHTML = `<strong><b class="schedule-entry-badge">${escapeHtml(meta.badge)}</b>${escapeHtml(primaryText)}</strong>
+      ${secondaryText ? `<p class="schedule-entry-task">${escapeHtml(secondaryText)}</p>` : ""}`;
     item.addEventListener("click", () => openEntryDialog(entry.start, entry));
     bindScheduleEntryOverflowScroll(item);
     item.addEventListener("dragstart", event => {
@@ -11542,7 +11547,9 @@ function scheduleOverviewItemsForDate(dateKey) {
   const meetingItems = [];
   (getDay(dateKey).entries || []).slice().sort((a, b) => a.start - b.start).forEach(entry => {
     if (entry.entryType === "calendar" || !entry.taskId) {
-      const meetingTitle = String(entry.title || "").trim();
+      const meetingTitle = typeof TaskWorkPolicy?.resolveScheduleEntryPrimaryText === "function"
+        ? TaskWorkPolicy.resolveScheduleEntryPrimaryText({ note: entry.note, title: entry.title })
+        : String(entry.title || "").trim();
       if (!TodoListPolicy.hasDisplayTitle(meetingTitle)) return;
       meetingItems.push({
         type: "meeting",
@@ -11556,7 +11563,12 @@ function scheduleOverviewItemsForDate(dateKey) {
     }
     const task = findTask(entry.taskId)?.task;
     if (!task) return;
-    const itemTitle = String(entry.title || task.title || "").trim();
+    const itemTitle = typeof TaskWorkPolicy?.resolveScheduleEntryPrimaryText === "function"
+      ? TaskWorkPolicy.resolveScheduleEntryPrimaryText({
+        note: entry.note,
+        title: entry.title || task.title || ""
+      })
+      : String(entry.title || task.title || "").trim();
     if (!TodoListPolicy.hasDisplayTitle(itemTitle)) return;
     const existing = taskItems.get(task.id);
     const kind = TaskStatusPolicy.scheduleOverviewKind({
@@ -11891,21 +11903,26 @@ function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
   const entryColor = typeof TaskCategoryPolicy?.resolveTaskColor === "function"
     ? TaskCategoryPolicy.resolveTaskColor(workTask)
     : (workTask.color || "sage");
-  getDay(dateKey).entries.push({
-    id: crypto.randomUUID(), entryType: "task_work", taskId: workTask.id, title: workTask.title,
-    ...placement, note: "", color: entryColor
-  });
-  applyInvestmentNoteToTask(workTask.id, {
-    dateKey,
-    start: placement.start,
-    end: placement.end,
+  const category = typeof TaskCategoryPolicy?.resolveTaskCategory === "function"
+    ? TaskCategoryPolicy.resolveTaskCategory(workTask)
+    : (workTask.category || "work");
+  const entry = {
+    id: crypto.randomUUID(),
+    entryType: "task_work",
+    taskId: workTask.id,
+    title: workTask.title,
+    ...placement,
     note: "",
-    title: workTask.title
-  });
+    color: entryColor,
+    category
+  };
+  getDay(dateKey).entries.push(entry);
+  // 进度说明等保存日程时写入；拖入后先打开表单填写本时段投入内容。
   refreshTaskStatusForId(workTask.id);
   saveData();
   render();
-  showToast(`已安排到 ${dateKey.slice(5)} ${formatTime(hour)}`);
+  openEntryDialog(placement.start, entry, dateKey);
+  showToast(`已安排到 ${dateKey.slice(5)} ${formatTime(hour)}，请填写本时段投入`);
   return true;
 }
 
@@ -11980,18 +11997,24 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
   state.editingEntryDateKey = resolvedDateKey;
   entryTitleAutoFilledFromTaskId = "";
   const linkedTask = entry?.taskId ? findTask(entry.taskId)?.task : null;
+  const resolvedType = entry
+    ? (entry.entryType || (entry.taskId ? "task_work" : "calendar"))
+    : "task_work";
+  const isTaskWork = resolvedType === "task_work";
   const category = linkedTask
     ? (TaskCategoryPolicy?.resolveTaskCategory?.(linkedTask) || "work")
     : (entry
       ? (entry.category || categoryIdFromColor(entry.color || "sage"))
-      : (el.entryType?.value === "calendar" ? "meeting" : "work"));
+      : (isTaskWork ? "work" : "meeting"));
   state.selectedColor = TaskCategoryPolicy?.colorForCategory?.(category) || entry?.color || "sage";
   el.entryEyebrow.textContent = entry ? "EDIT ENTRY" : "NEW ENTRY";
   el.entryDialogTitle.textContent = entry ? "编辑日程" : "添加日程";
-  // 已挂接叶子：事项跟任务名，进度细节写在完成内容，避免双标题。
-  el.entryTitle.value = linkedTask?.title || entry?.title || "";
+  el.entryType.value = resolvedType;
+  // 任务处理：标题只作存储字段，跟已选叶子；会议才手填名称。
+  el.entryTitle.value = isTaskWork
+    ? (linkedTask?.title || entry?.title || "")
+    : (entry?.title || "");
   if (linkedTask?.id) entryTitleAutoFilledFromTaskId = linkedTask.id;
-  el.entryType.value = entry?.entryType || (entry?.taskId ? "task_work" : "calendar");
   fillEntryTaskOptions(entry);
   el.entryStart.value = entry?.start ?? hour;
   el.entryEnd.value = entry?.end ?? Math.min(hour + 1, 22);
@@ -12007,45 +12030,70 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
     : (entry?.note && entry.note !== (linkedTask?.title || entry.title) ? entry.note : "") || "";
   fillCategorySelect(el.entryCategory, { selected: category, includeMeeting: true });
   updateEntryTypeControls();
-  updateEntryFieldLocks();
   el.deleteEntryButton.classList.toggle("hidden", !entry);
   el.colorPicker?.querySelectorAll("button").forEach(item => item.classList.toggle("selected", item.dataset.color === state.selectedColor));
   el.entryDialog.showModal();
   el.entryDialogScroll?.scrollTo?.(0, 0);
   setTimeout(() => {
-    const locks = getEntryFieldLockState();
-    if (locks.lockTitle) (el.entryNote || el.entryStart)?.focus?.();
-    else el.entryTitle.focus();
+    const isMeeting = el.entryType.value === "calendar";
+    const linked = String(el.entryTaskLink?.value || "").trim();
+    if (isMeeting) el.entryTitle?.focus?.();
+    else if (!linked) el.entryTaskTrigger?.focus?.();
+    else el.entryNote?.focus?.();
   }, 50);
 }
 
 function saveEntry() {
-  syncSelectedColorFromCategory();
   const locks = getEntryFieldLockState();
-  // 已挂接投入：禁止改挂接/类型；事项强制跟叶子任务名。
+  // 已挂接任务处理：禁止改挂接/类型；标题强制跟叶子任务名。
   if (locks.lockType) el.entryType.value = "task_work";
   if (locks.lockLink && locks.linkedTaskId) el.entryTaskLink.value = locks.linkedTaskId;
-  if (locks.lockTitle && locks.linkedTaskId) {
-    const linked = findTask(locks.linkedTaskId)?.task;
-    if (linked?.title) el.entryTitle.value = linked.title;
+  const entryType = el.entryType.value === "task_work" ? "task_work" : "calendar";
+  const linkSelected = String(el.entryTaskLink?.value || "").trim();
+  const linkedId = (locks.lockLink && locks.linkedTaskId)
+    ? locks.linkedTaskId
+    : (linkSelected && !linkSelected.startsWith("__") ? linkSelected : "");
+  const linkedTask = linkedId ? findTask(linkedId)?.task : null;
+  if (entryType === "task_work") {
+    if (!linkedTask) return showToast("任务处理须选择已有叶子任务，或从左侧拖入");
+    el.entryTitle.value = linkedTask.title || "";
   }
-  const category = typeof TaskCategoryPolicy?.normalizeCategory === "function"
-    ? TaskCategoryPolicy.normalizeCategory(el.entryCategory?.value)
-    : (el.entryCategory?.value || "work");
+  // 有挂接任务时分类/颜色跟随任务，日程表单不可改。
+  let category;
+  let color;
+  if (linkedTask) {
+    category = typeof TaskCategoryPolicy?.resolveTaskCategory === "function"
+      ? TaskCategoryPolicy.resolveTaskCategory(linkedTask)
+      : (linkedTask.category || "work");
+    color = typeof TaskCategoryPolicy?.resolveTaskColor === "function"
+      ? TaskCategoryPolicy.resolveTaskColor(linkedTask)
+      : (linkedTask.color || state.selectedColor || "sage");
+    syncEntryCategoryFromTask(linkedTask);
+  } else {
+    syncSelectedColorFromCategory();
+    category = typeof TaskCategoryPolicy?.normalizeCategory === "function"
+      ? TaskCategoryPolicy.normalizeCategory(el.entryCategory?.value)
+      : (el.entryCategory?.value || "work");
+    color = state.selectedColor;
+  }
   const title = el.entryTitle.value.trim();
   const rawNote = el.entryNote.value.trim();
   const note = typeof TaskWorkPolicy?.normalizeEntryNote === "function"
     ? TaskWorkPolicy.normalizeEntryNote({ note: rawNote, title })
     : (rawNote && rawNote !== title ? rawNote : "");
   const payload = {
-    title, start: Number(el.entryStart.value), end: Number(el.entryEnd.value),
-    owner: (el.entryOwner?.value || "").trim().slice(0, 80),
+    title,
+    start: Number(el.entryStart.value),
+    end: Number(el.entryEnd.value),
+    owner: entryType === "calendar" ? (el.entryOwner?.value || "").trim().slice(0, 80) : "",
     note,
-    color: state.selectedColor,
+    color,
     category,
-    entryType: el.entryType.value === "task_work" ? "task_work" : "calendar"
+    entryType
   };
-  if (!payload.title || payload.end <= payload.start) return showToast("请检查事项和时间");
+  if (payload.end <= payload.start) return showToast("请检查时间");
+  if (entryType === "calendar" && !payload.title) return showToast("请填写会议名称");
+  if (entryType === "task_work" && !payload.title) return showToast("请选择投入任务");
   const dateKey = state.editingEntryDateKey || state.selectedDate;
   const day = getDay(dateKey);
   const existingEntry = state.editingEntryId ? day.entries.find(entry => entry.id === state.editingEntryId) : null;
@@ -12054,9 +12102,8 @@ function saveEntry() {
     return;
   }
   const previousTaskId = existingEntry?.taskId || "";
-  const linkSelected = String(el.entryTaskLink?.value || "").trim();
   // Meetings stay in the meeting list, but may optionally link a todo so hours count as task investment.
-  if (payload.entryType === "calendar" && !linkSelected) {
+  if (payload.entryType === "calendar" && !linkedId) {
     finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId: "", dateKey });
     return;
   }
@@ -12066,30 +12113,41 @@ function saveEntry() {
     finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId: locks.linkedTaskId, dateKey });
     return;
   }
-  if (linkSelected && !linkSelected.startsWith("__")) {
-    const linked = findTask(linkSelected)?.task;
-    if (linked && !ensureTaskReadyForSchedule(linked)) return;
-  }
+  if (linkedTask && !ensureTaskReadyForSchedule(linkedTask)) return;
   resolveEntryTaskLinkWithGuard(payload, existingEntry).then(taskId => {
     if (!taskId) return;
     const linked = findTask(taskId)?.task;
     if (linked && !ensureTaskReadyForSchedule(linked)) return;
+    if (payload.entryType === "task_work" && linked?.title) payload.title = linked.title;
     finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dateKey });
   });
 }
 
 function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dateKey = state.editingEntryDateKey || state.selectedDate }) {
-  // Hours must land on a leaf. If a parent/container id slipped through, materialize/retarget a child.
+  // Hours must land on an existing leaf. Parents are refused (no create-from-schedule).
   const linkedTaskId = taskId
     ? ensureScheduleLinkedLeafTask(taskId, payload, dateKey)
     : "";
+  if (taskId && !linkedTaskId) return;
   payload.taskId = linkedTaskId;
-  const category = typeof TaskCategoryPolicy?.normalizeCategory === "function"
-    ? TaskCategoryPolicy.normalizeCategory(payload.category)
-    : (payload.category || "work");
-  payload.color = typeof TaskCategoryPolicy?.colorForCategory === "function"
-    ? TaskCategoryPolicy.colorForCategory(category)
-    : (payload.color || "sage");
+  const linked = linkedTaskId ? findTask(linkedTaskId)?.task : null;
+  if (linked) {
+    // 分类跟随任务：日程只镜像，不反写任务分类。
+    payload.category = typeof TaskCategoryPolicy?.resolveTaskCategory === "function"
+      ? TaskCategoryPolicy.resolveTaskCategory(linked)
+      : (linked.category || payload.category || "work");
+    payload.color = typeof TaskCategoryPolicy?.resolveTaskColor === "function"
+      ? TaskCategoryPolicy.resolveTaskColor(linked)
+      : (linked.color || payload.color || "sage");
+  } else {
+    const category = typeof TaskCategoryPolicy?.normalizeCategory === "function"
+      ? TaskCategoryPolicy.normalizeCategory(payload.category)
+      : (payload.category || "work");
+    payload.category = category;
+    payload.color = typeof TaskCategoryPolicy?.colorForCategory === "function"
+      ? TaskCategoryPolicy.colorForCategory(category)
+      : (payload.color || "sage");
+  }
   const day = getDay(dateKey);
   if (state.editingEntryId) {
     if (!existingEntry) {
@@ -12103,10 +12161,6 @@ function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dat
   [previousTaskId, payload.taskId].filter(Boolean).forEach(id => {
     refreshTaskStatusForId(id);
     updateTaskRecords(id, task => {
-      if (id === payload.taskId) {
-        task.category = category;
-        task.color = payload.color;
-      }
       if (payload.note || id === payload.taskId) task.updatedAt = new Date().toISOString();
     });
   });
@@ -12131,30 +12185,18 @@ function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dat
   showToast(wasEditing ? "日程已更新" : "日程已添加");
 }
 
-/** If taskId is a parent/container, return (or create) the leaf that should own the schedule hours. */
+/** If taskId is a parent/container, retarget an existing same-title leaf; never create from schedule. */
 function ensureScheduleLinkedLeafTask(taskId, entryPayload, dateKey = state.selectedDate) {
   const task = findTask(taskId)?.task;
-  if (!task) return taskId;
+  if (!task) return "";
   if (!hasChildTasks(task.id)) return taskId;
   const existingLeaf = findLeafUnderParentByTitle(task.id, entryPayload?.title || "");
   if (existingLeaf) {
     showToast(`工时已记在「${existingLeaf.title}」（父级「${task.title}」不可直接记投入）`);
     return existingLeaf.id;
   }
-  const leaf = createTaskFromEntryPayload(
-    {
-      title: entryPayload?.title || task.title,
-      end: entryPayload?.end ?? 18,
-      category: entryPayload?.category,
-      color: entryPayload?.color,
-      entryType: "task_work"
-    },
-    dateKey,
-    `从日程挂入父级「${task.title}」下的具体待办。`
-  );
-  leaf.parentId = task.id;
-  showToast(`已在「${task.title}」下创建「${leaf.title}」并关联投入`);
-  return leaf.id;
+  showToast(`「${task.title}」是父级，请选择其下已有叶子记工时`);
+  return "";
 }
 
 function resolveCreateUnderExistingParent(entryPayload, parentTitle) {
@@ -12195,46 +12237,18 @@ function cancelPendingEntryLinkConfirm({ closingDialog = null } = {}) {
 }
 
 function resolveEntryTaskLinkWithGuard(entryPayload, existingEntry = null) {
-  const selected = el.entryTaskLink.value;
-  const dateKey = state.editingEntryDateKey || state.selectedDate;
-  if (selected === "__create_parent__") {
-    const parentTitle = el.entryTaskCombobox.dataset.parentTitle || "";
-    // Selecting an existing parent means: create a sibling leaf under it and link.
-    // Skip the extra dialog when the parent is already identified.
-    if (parentTitle) {
-      const linkedId = resolveCreateUnderExistingParent(entryPayload, parentTitle);
-      if (linkedId) return Promise.resolve(linkedId);
-    }
-    return promptEntryParentCreate(entryPayload, parentTitle);
-  }
-  if (selected && selected !== "__create__" && selected !== "") {
+  const selected = String(el.entryTaskLink.value || "").trim();
+  if (selected && !selected.startsWith("__")) {
     const linked = findTask(selected)?.task;
     if (!linked || !TodoListPolicy.canLinkEntryToTask(linked, hasChildTasks)) {
-      showToast("工时只能记在叶子待办上；请选已有叶子，或选父级以在其下新建子待办");
+      showToast("工时只能记在已有叶子上；请选择叶子或从左侧拖入");
       return Promise.resolve(null);
     }
     return Promise.resolve(selected);
   }
-  if (existingEntry?.taskId && selected !== "__create__") return Promise.resolve(existingEntry.taskId);
-
-  const leafTasks = uniqueTasks(getAllTasks().map(({ task }) => task)).filter(isWorkLeafTask);
-  const similar = TodoListPolicy.findSimilarTasks({
-    title: entryPayload.title,
-    tasks: leafTasks,
-    hasChildTasks: taskId => hasChildTasks(taskId)
-  });
-  // 「在已有父级下新建」：必须先选父级，再把当前日程建成其子任务并关联。
-  if (selected === "__create__") {
-    if (similar.length) {
-      return promptEntryLinkChoice(entryPayload, similar, { createMode: "similar_under_parent" });
-    }
-    return promptEntryCreateUnderParent(entryPayload);
-  }
-  // 空挂接 + 任务处理：默认用事项开顶层叶子；有相似待办时先确认。
-  if (similar.length) {
-    return promptEntryLinkChoice(entryPayload, similar, { createMode: "similar_top_level" });
-  }
-  return Promise.resolve(createStandaloneLeafFromEntry(entryPayload, dateKey).id);
+  if (existingEntry?.taskId) return Promise.resolve(existingEntry.taskId);
+  showToast("任务处理须挂接已有叶子；请选择或从左侧拖入（新建任务请用待办）");
+  return Promise.resolve(null);
 }
 
 function createStandaloneLeafFromEntry(entryPayload, dateKey = state.selectedDate) {
@@ -12470,9 +12484,7 @@ function focusLinkedTaskFilter(taskId) {
 
 function fillEntryTaskOptions(entry = null) {
   el.entryTaskLink.innerHTML = "";
-  el.entryTaskLink.add(new Option("选已有叶子或拖入左侧；空着则新建顶层任务", ""));
-  el.entryTaskLink.add(new Option("在已有父级下新建并关联", "__create__"));
-  el.entryTaskLink.add(new Option("新建父级任务并挂入当前事项", "__create_parent__"));
+  el.entryTaskLink.add(new Option("选择已有叶子任务", ""));
   getLeafTasksForEntryLink(entry).forEach(task => {
     el.entryTaskLink.add(new Option(task.title, task.id));
   });
@@ -12520,7 +12532,6 @@ function toggleEntryTaskPopup() {
 function closeEntryTaskPopup() { el.entryTaskPopup.classList.add("hidden"); el.entryTaskTrigger.setAttribute("aria-expanded", "false"); if (document.activeElement === el.entryTaskSearch) el.entryTaskTrigger.focus(); }
 function renderEntryTaskOptions(query) {
   const tasks = getAllTasks().map(({ task }) => task);
-  const entryTitle = el.entryTitle.value.trim() || "当前事项";
   const results = TaskOptionPolicy.searchTaskCandidates({
     tasks,
     query,
@@ -12534,52 +12545,25 @@ function renderEntryTaskOptions(query) {
     statusText: task => statusLabel(task.status),
     dateText: task => task.dueDate || "未计划"
   });
-  const matchedParents = TaskOptionPolicy.matchingParentContainers({
-    tasks,
-    query,
-    hasChildTasks,
-    isHiddenFutureRecurringInstance: task => isHiddenRecurringCatalogInstance(task, {
-      keepCurrentLinked: true,
-      selectedId: el.entryTaskLink.value
-    })
-  });
-  // Partial matches count (e.g. 年度激励 → 完成ROIC…年度激励方案调整).
-  // Parents are first-class: choose one to create a sibling leaf under it (not to log hours on the parent).
-  const preferredParents = matchedParents.slice(0, 3).map(item => item.task);
-  const selectedParentTitle = el.entryTaskCombobox.dataset.parentTitle || "";
-  const parentOptions = preferredParents.map(task => {
-    const selected = el.entryTaskLink.value === "__create_parent__" && selectedParentTitle === task.title;
-    return `<button type="button" class="entry-task-option create-option create-under-option" role="option" aria-selected="${selected}" data-value="__create_parent__" data-parent-title="${escapeHtml(task.title)}" title="会把上方「事项」建成新子任务；若只想记工时，请直接选已有叶子任务">
-      <strong>挂到父级「${escapeHtml(task.title)}」</strong>
-      <span>会新建子任务「${escapeHtml(entryTitle)}」并记工时</span>
-      <small>事项≠只写进度；只记工时请选下方已有叶子</small>
-    </button>`;
-  }).join("");
   const items = results.map(({ task, meta }) => {
     const primary = meta.parentPath ? meta.path : task.title;
     return `<button type="button" class="entry-task-option" role="option" aria-selected="${el.entryTaskLink.value === task.id}" data-value="${escapeHtml(task.id)}" title="${escapeHtml(meta.path)}"><strong>${escapeHtml(primary)}</strong><span><b>第${meta.depth}层叶子</b>${meta.parentPath ? ` · 归属 ${escapeHtml(meta.parentPath)}` : ""}</span><small>${escapeHtml(statusLabel(task.status))} · ${task.dueDate ? escapeHtml(task.dueDate.slice(5)) : "未计划"}${el.entryTaskLink.value === task.id ? " · ✓ 已关联" : ""}</small></button>`;
   }).join("");
-  const parentTitle = query.trim();
-  const create = `<button type="button" class="entry-task-option create-option" role="option" aria-selected="${el.entryTaskLink.value === "__create__"}" data-value="__create__" title="在已有父级下，把当前日程建成新的子任务并关联投入">＋ 在已有父级下新建「${escapeHtml(entryTitle)}」并关联</button>
-    <button type="button" class="entry-task-option create-option create-parent-option" role="option" aria-selected="${el.entryTaskLink.value === "__create_parent__" && !preferredParents.length}" data-value="__create_parent__" title="没有合适父级时，先新建父级，再把当前日程挂成其子任务">＋ ${parentTitle && !preferredParents.length ? `新建父级「${escapeHtml(parentTitle)}」并挂入当前事项` : "新建父级任务并挂入当前事项"}</button>`;
   const empty = items
     ? ""
-    : `<div class="entry-task-no-results">${matchedParents.length
-      ? "没有同名叶子。可点「挂到父级」新建子任务，或空着保存新建顶层任务"
-      : "优先选已有叶子或从左侧拖入；也可挂父级新建子任务，或空着新建顶层任务"}</div>`;
-  // Create actions stay on top so they are not buried under long search results.
-  el.entryTaskOptions.innerHTML = create + parentOptions + (items || empty);
-  const createParentOption = el.entryTaskOptions.querySelector('.create-parent-option[data-value="__create_parent__"]');
-  if (createParentOption) createParentOption.dataset.parentTitle = preferredParents.length ? "" : parentTitle;
+    : `<div class="entry-task-no-results">${String(query || "").trim()
+      ? "没有匹配的叶子任务"
+      : "请选择已有叶子，或从左侧拖入；新建任务请用待办 / 周月历 / 甘特"}</div>`;
+  el.entryTaskOptions.innerHTML = items || empty;
   const current = [...el.entryTaskOptions.querySelectorAll('[role="option"]')].findIndex(option => option.getAttribute("aria-selected") === "true");
   entryTaskActiveIndex = current >= 0 ? current : 0;
   el.entryTaskOptions.querySelectorAll('[role="option"]').forEach(option => {
-    option.addEventListener("click", () => chooseEntryTaskOption(option.dataset.value, option.dataset.parentTitle || ""));
+    option.addEventListener("click", () => chooseEntryTaskOption(option.dataset.value));
   });
   updateEntryTaskActiveOption(el.entryTaskOptions.querySelectorAll('[role="option"]'));
 }
 function updateEntryTaskActiveOption(options) { options.forEach((option, index) => option.classList.toggle("active", index === entryTaskActiveIndex)); }
-function chooseEntryTaskOption(value, parentTitle = "") {
+function chooseEntryTaskOption(value) {
   const locks = getEntryFieldLockState();
   if (locks.lockLink) {
     showToast("已挂接的投入不能改关联；请删除后重建，或只改时间与进度说明");
@@ -12589,42 +12573,57 @@ function chooseEntryTaskOption(value, parentTitle = "") {
     const found = findTask(value);
     if (found && !ensureTaskReadyForSchedule(found.task)) return;
   }
-  el.entryTaskLink.value = value;
-  el.entryTaskCombobox.dataset.parentTitle = value === "__create_parent__" ? parentTitle : "";
-  if (value === "__create_parent__" && parentTitle) {
-    const existing = [...el.entryTaskLink.options].find(option => option.value === "__create_parent__");
-    if (existing) existing.textContent = `挂到父级「${parentTitle}」· 新建子待办并关联`;
+  el.entryTaskLink.value = value || "";
+  el.entryTaskCombobox.dataset.parentTitle = "";
+  // 选叶子只同步任务处理的存储标题与分类，不改本时段投入内容，也不强行改会议类型。
+  if (el.entryType.value === "task_work") syncEntryTitleFromLinkedSelection(value);
+  if (value && !String(value).startsWith("__")) {
+    const linked = findTask(value)?.task;
+    if (linked) syncEntryCategoryFromTask(linked);
   }
-  syncEntryTitleFromLinkedSelection(value);
-  if (value && !String(value).startsWith("__")) el.entryType.value = "task_work";
   syncEntryTaskTrigger();
   updateEntryFieldLocks();
   closeEntryTaskPopup();
+  if (value && !String(value).startsWith("__") && el.entryType.value === "task_work") {
+    try { el.entryNote?.focus?.(); } catch { /* ignore */ }
+  }
 }
 
-/** 选已有叶子时把事项同步为任务名；新建路径保持事项可编辑。 */
+/** 任务处理：标题只镜像已选叶子，绝不改写本时段投入内容。 */
 function syncEntryTitleFromLinkedSelection(taskId = "") {
+  if (el.entryType.value === "calendar") return;
   const selected = String(taskId || "").trim();
   if (!selected || selected.startsWith("__")) {
-    if (entryTitleAutoFilledFromTaskId) {
-      const previous = findTask(entryTitleAutoFilledFromTaskId)?.task?.title || "";
-      if (!el.entryTitle.value.trim() || el.entryTitle.value.trim() === previous) {
-        el.entryTitle.value = "";
-      }
-    }
+    el.entryTitle.value = "";
     entryTitleAutoFilledFromTaskId = "";
     return;
   }
   const linked = findTask(selected)?.task;
   if (!linked) return;
-  const current = el.entryTitle.value.trim();
-  const previousAuto = entryTitleAutoFilledFromTaskId
-    ? (findTask(entryTitleAutoFilledFromTaskId)?.task?.title || "")
-    : "";
-  if (!current || current === previousAuto || current === linked.title) {
-    el.entryTitle.value = linked.title;
-    entryTitleAutoFilledFromTaskId = linked.id;
+  el.entryTitle.value = String(linked.title || "").trim();
+  entryTitleAutoFilledFromTaskId = linked.id;
+}
+
+/** 分类跟随任务：仅镜像到日程表单，不可在日程里改任务分类。 */
+function syncEntryCategoryFromTask(task) {
+  if (!task || !el.entryCategory) return;
+  const category = typeof TaskCategoryPolicy?.resolveTaskCategory === "function"
+    ? TaskCategoryPolicy.resolveTaskCategory(task)
+    : (task.category || "work");
+  const normalized = typeof TaskCategoryPolicy?.normalizeCategory === "function"
+    ? TaskCategoryPolicy.normalizeCategory(category)
+    : category;
+  if (![...el.entryCategory.options].some(option => option.value === normalized)) {
+    fillCategorySelect(el.entryCategory, { selected: normalized, includeMeeting: true });
+  } else {
+    el.entryCategory.value = normalized;
   }
+  state.selectedColor = typeof TaskCategoryPolicy?.colorForCategory === "function"
+    ? TaskCategoryPolicy.colorForCategory(normalized)
+    : (task.color || state.selectedColor || "sage");
+  el.colorPicker?.querySelectorAll("button").forEach(item => {
+    item.classList.toggle("selected", item.dataset.color === state.selectedColor);
+  });
 }
 
 function getEntryFieldLockState() {
@@ -12635,32 +12634,54 @@ function getEntryFieldLockState() {
   const linkedTaskId = existing?.taskId
     || (selected && !selected.startsWith("__") ? selected : "");
   const editingLinked = Boolean(existing?.taskId);
-  const pickingLeaf = Boolean(linkedTaskId) && !String(selected).startsWith("__");
+  const editingTaskWork = Boolean(existing?.taskId && existing?.entryType === "task_work");
   return {
     // 已保存且已挂接：关联锁死，避免误改把工时挪走。
     lockLink: editingLinked,
-    // 已挂接或新建时已选叶子：事项跟任务名，细节写完成内容。
-    lockTitle: Boolean(editingLinked || pickingLeaf),
-    lockType: Boolean(editingLinked || pickingLeaf),
+    // 任务处理标题由叶子决定，界面上隐藏，不提供手填。
+    lockTitle: el.entryType.value === "task_work",
+    lockType: editingTaskWork,
     linkedTaskId
   };
 }
 
 function updateEntryFieldLocks() {
   const locks = getEntryFieldLockState();
-  if (locks.lockTitle && locks.linkedTaskId) {
-    const linked = findTask(locks.linkedTaskId)?.task;
-    if (linked?.title) {
-      el.entryTitle.value = linked.title;
-      entryTitleAutoFilledFromTaskId = linked.id;
-    }
-  }
+  const isMeeting = el.entryType.value === "calendar";
   if (locks.lockType) el.entryType.value = "task_work";
-  el.entryTitle.readOnly = locks.lockTitle;
-  el.entryTitle.closest("label")?.classList.toggle("disabled-field", locks.lockTitle);
-  el.entryTitle.title = locks.lockTitle
-    ? "已挂接叶子：事项固定为任务名；本时段进展请写下方完成内容"
-    : "";
+  if (!isMeeting && locks.linkedTaskId) {
+    syncEntryTitleFromLinkedSelection(locks.linkedTaskId);
+  }
+  if (locks.linkedTaskId) {
+    const linked = findTask(locks.linkedTaskId)?.task;
+    if (linked) syncEntryCategoryFromTask(linked);
+  }
+
+  document.getElementById("entryTitleField")?.classList.toggle("hidden", !isMeeting);
+  document.getElementById("entryOwnerField")?.classList.toggle("hidden", !isMeeting);
+  // 分类跟随任务：任务处理，或会议已挂接时，不在日程里改分类。
+  const categoryFollowsTask = !isMeeting || Boolean(locks.linkedTaskId);
+  el.entryCategoryField?.classList.toggle("hidden", categoryFollowsTask);
+  if (el.entryCategory) {
+    el.entryCategory.disabled = categoryFollowsTask;
+    el.entryCategory.title = categoryFollowsTask ? "分类跟随任务，请在任务详情中修改" : "";
+  }
+  const linkLabel = document.getElementById("entryTaskLinkLabel");
+  if (linkLabel) {
+    linkLabel.textContent = isMeeting ? "挂接任务（可选，计入工时）" : "投入任务（必选）";
+  }
+  const noteLabel = document.getElementById("entryNoteLabel");
+  if (noteLabel) {
+    noteLabel.textContent = isMeeting ? "会议说明（可选）" : "本时段投入内容";
+  }
+  if (el.entryNote) {
+    el.entryNote.placeholder = isMeeting
+      ? "可选；会显示在日程块主行"
+      : "写这次做了什么；显示在日程块，并记入任务进度";
+  }
+
+  el.entryTitle.readOnly = false;
+  el.entryTitle.removeAttribute("required");
   el.entryType.disabled = locks.lockType;
   el.entryType.closest("label")?.classList.toggle("disabled-field", locks.lockType);
   el.entryType.title = locks.lockType ? "已挂接投入固定为任务处理" : "";
@@ -12673,8 +12694,10 @@ function updateEntryFieldLocks() {
     el.entryTaskTrigger.disabled = lockLinkUi;
     el.entryTaskTrigger.setAttribute("aria-disabled", lockLinkUi ? "true" : "false");
     el.entryTaskTrigger.title = lockLinkUi
-      ? "已挂接投入不能改关联；可改时间与进度说明"
-      : "选已有叶子记工时；挂父级会新建子任务；空着则新建顶层任务";
+      ? "已挂接投入不能改关联；可改时间与本时段投入内容"
+      : (isMeeting
+        ? "会议可可选挂叶子以计入工时；新建任务请用待办"
+        : "选择已有叶子记工时，或从左侧拖入；日程不新建任务");
   }
   if (lockLinkUi) closeEntryTaskPopup();
   syncEntryTaskTrigger();
@@ -12692,7 +12715,7 @@ function syncEntryTaskTrigger() {
   }
   el.entryTaskTrigger.textContent = selected?.value && selected.value !== ""
     ? selected.textContent
-    : "选已有叶子或拖入左侧；空着则新建顶层任务";
+    : "选择已有叶子任务";
 }
 
 function getCalendarEntriesForDate(dateKey) {
@@ -12721,7 +12744,7 @@ function bindCalendarEntryList(container, dateKey) {
 }
 
 function updateEntryTypeControls() {
-  // Field locks depend on link state; keep association controls consistent.
+  // Switching meeting ↔ task work toggles title/owner vs investment fields.
   updateEntryFieldLocks();
 }
 

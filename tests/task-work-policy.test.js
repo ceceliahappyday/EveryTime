@@ -72,6 +72,34 @@ assert.strictEqual(
   true
 );
 assert.strictEqual(
+  policy.resolveScheduleEntryPrimaryText({
+    note: "已完成字典检索接口",
+    title: "对资料做本地开发"
+  }),
+  "已完成字典检索接口"
+);
+assert.strictEqual(
+  policy.resolveScheduleEntrySecondaryText({
+    note: "已完成字典检索接口",
+    title: "对资料做本地开发"
+  }),
+  "对资料做本地开发"
+);
+assert.strictEqual(
+  policy.resolveScheduleEntryPrimaryText({
+    note: "",
+    title: "新建时段标题"
+  }),
+  "新建时段标题"
+);
+assert.strictEqual(
+  policy.resolveScheduleEntrySecondaryText({
+    note: "",
+    title: "新建时段标题"
+  }),
+  ""
+);
+assert.strictEqual(
   policy.resolveInvestmentNoteText({ note: "", title: "对资料做本地开发" }),
   "对资料做本地开发"
 );

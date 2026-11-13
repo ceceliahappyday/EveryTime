@@ -324,28 +324,28 @@
       </div>
       <div class="modal-scroll" id="entryDialogScroll">
         <label>
-          <span>事项（任务名 / 时段标题）</span>
-          <input id="entryTitle" maxlength="80" required placeholder="新建时填写新任务名；已挂接叶子时自动锁定为任务名" />
-        </label>
-
-        <label>
           <span>日程类型</span>
           <select id="entryType">
-            <option value="calendar">会议日程</option>
             <option value="task_work">任务处理</option>
+            <option value="calendar">会议日程</option>
           </select>
         </label>
 
-        <label>
-          <span>挂接任务（工时记到叶子）</span>
+        <label id="entryTaskLinkField">
+          <span id="entryTaskLinkLabel">投入任务（必选）</span>
           <select id="entryTaskLink" class="visually-hidden-select" tabindex="-1" aria-hidden="true"></select>
           <div class="entry-task-combobox" id="entryTaskCombobox">
-            <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">选已有叶子或拖入左侧；挂父级则新建子任务</button>
+            <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">选择已有叶子任务</button>
             <div class="entry-task-popup hidden" id="entryTaskPopup">
-              <input id="entryTaskSearch" type="search" autocomplete="off" placeholder="搜索叶子任务；也可挂父级新建子任务…" aria-label="搜索挂接任务" aria-controls="entryTaskOptions" />
+              <input id="entryTaskSearch" type="search" autocomplete="off" placeholder="搜索已有叶子任务…" aria-label="搜索投入任务" aria-controls="entryTaskOptions" />
               <div id="entryTaskOptions" class="entry-task-options" role="listbox"></div>
             </div>
           </div>
+        </label>
+
+        <label id="entryTitleField" class="hidden">
+          <span id="entryTitleLabel">会议名称</span>
+          <input id="entryTitle" maxlength="80" placeholder="填写会议名称" />
         </label>
 
         <div class="form-row">
@@ -359,14 +359,14 @@
           </label>
         </div>
 
-        <label>
+        <label id="entryOwnerField" class="hidden">
           <span>参会人</span>
           <input id="entryOwner" maxlength="80" placeholder="例如：王芳、李明（多人用逗号分隔）" />
         </label>
 
-        <label>
-          <span>完成内容 / 进度说明（可选）</span>
-          <textarea id="entryNote" rows="3" maxlength="360" placeholder="本时段进展（可选）；已挂接时事项锁定，细节写这里"></textarea>
+        <label id="entryNoteField">
+          <span id="entryNoteLabel">本时段投入内容</span>
+          <textarea id="entryNote" rows="4" maxlength="360" placeholder="写这次做了什么；显示在日程块，并记入任务进度"></textarea>
         </label>
 
         <label id="entryCategoryField">
