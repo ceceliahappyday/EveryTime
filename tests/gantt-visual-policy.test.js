@@ -214,6 +214,15 @@ if (!styles.includes(".gantt-context-menu")) {
 if (!styles.includes(".gantt-context-submenu") || !styles.includes(".task-card.is-selected")) {
   throw new Error("Outlook-style categorize submenu and list multi-select styles are required");
 }
+if (!app.includes("bindLeftButtonDragGate") || !app.includes("showDomTaskContextMenu")) {
+  throw new Error("todo rows must gate HTML5 drag to left-button and use DOM context menus");
+}
+{
+  const selectedBlock = styles.match(/\.task-card\.is-selected[\s\S]*?\.task-card\.is-selected:hover/)?.[0] || "";
+  if (/outline:\s*1px|box-shadow:\s*inset/.test(selectedBlock)) {
+    throw new Error("task selection must use fill color only, not outline/inset border");
+  }
+}
 if (!app.includes("additive: event.ctrlKey || event.metaKey") || !app.includes("data-category-id")) {
   throw new Error("Ctrl multi-select and categorize submenu actions are required");
 }

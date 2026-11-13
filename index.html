@@ -51,7 +51,7 @@
         <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false" hidden><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
         <div class="header-tools-slot" id="headerToolsSlot">
           <div class="header-tools" id="headerTools">
-            <button class="soft-button" id="progressReviewButton" type="button" title="批量更新：进行中且已有日程投入的叶子待办"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.2 8a4.8 4.8 0 0 1 8.2-3.3M12.8 8a4.8 4.8 0 0 1-8.2 3.3"/><path d="M11.2 2.6v2.8H14M4.8 13.4v-2.8H2"/></svg></i><span class="btn-label">更新进度</span></button>
+            <button class="soft-button" id="progressReviewButton" type="button" title="批量更新：进行中、待跟踪、计划中叶子（含无投入），可搜索"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.2 8a4.8 4.8 0 0 1 8.2-3.3M12.8 8a4.8 4.8 0 0 1-8.2 3.3"/><path d="M11.2 2.6v2.8H14M4.8 13.4v-2.8H2"/></svg></i><span class="btn-label">更新进度</span></button>
             <button class="soft-button" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.2l.85 3.35L12.2 6.4l-3.35.85L8 10.6l-.85-3.35L3.8 6.4l3.35-.85z"/><path d="M12.4 10.2l.45 1.75L14.6 12.4l-1.75.45-.45 1.75-.45-1.75-1.75-.45 1.75-.45z"/></svg></i><span class="btn-label">AI助手</span></button>
             <button class="soft-button" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.5v7.2"/><path d="M5.2 7.2 8 10l2.8-2.8"/><path d="M3.2 12.8h9.6"/></svg></i><span class="btn-label">导出</span></button>
             <button class="soft-button" id="importButton" type="button" title="从 JSON 备份文件导入恢复"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 10.5V3.3"/><path d="M5.2 5.8 8 3l2.8 2.8"/><path d="M3.2 12.8h9.6"/></svg></i><span class="btn-label">导入</span></button>
@@ -324,8 +324,8 @@
       </div>
       <div class="modal-scroll" id="entryDialogScroll">
         <label>
-          <span>事项（本时段做什么）</span>
-          <input id="entryTitle" maxlength="80" required placeholder="日程文案；未挂接且为任务处理时也会用作新任务名" />
+          <span>事项（任务名 / 时段标题）</span>
+          <input id="entryTitle" maxlength="80" required placeholder="新建时填写新任务名；已挂接叶子时自动锁定为任务名" />
         </label>
 
         <label>
@@ -337,12 +337,12 @@
         </label>
 
         <label>
-          <span>挂接任务（工时记到哪里）</span>
+          <span>挂接任务（工时记到叶子）</span>
           <select id="entryTaskLink" class="visually-hidden-select" tabindex="-1" aria-hidden="true"></select>
           <div class="entry-task-combobox" id="entryTaskCombobox">
-            <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">可空：任务处理将新建顶层任务；或选已有叶子</button>
+            <button type="button" id="entryTaskTrigger" class="entry-task-trigger" role="combobox" aria-expanded="false" aria-controls="entryTaskOptions">选已有叶子或拖入左侧；挂父级则新建子任务</button>
             <div class="entry-task-popup hidden" id="entryTaskPopup">
-              <input id="entryTaskSearch" type="search" autocomplete="off" placeholder="搜索要记工时的任务…" aria-label="搜索挂接任务" aria-controls="entryTaskOptions" />
+              <input id="entryTaskSearch" type="search" autocomplete="off" placeholder="搜索叶子任务；也可挂父级新建子任务…" aria-label="搜索挂接任务" aria-controls="entryTaskOptions" />
               <div id="entryTaskOptions" class="entry-task-options" role="listbox"></div>
             </div>
           </div>
@@ -366,7 +366,7 @@
 
         <label>
           <span>完成内容 / 进度说明（可选）</span>
-          <textarea id="entryNote" rows="3" maxlength="360" placeholder="可不填：有挂接任务时默认把「事项」写入其进度说明"></textarea>
+          <textarea id="entryNote" rows="3" maxlength="360" placeholder="本时段进展（可选）；已挂接时事项锁定，细节写这里"></textarea>
         </label>
 
         <label id="entryCategoryField">
@@ -597,9 +597,9 @@
           <textarea id="taskProblemReason" rows="2" maxlength="500" tabindex="-1"></textarea>
         </label>
         <label id="taskProgressField">
-          <span>任务进度</span>
-          <div class="progress-input">
-            <input type="range" id="taskProgress" min="0" max="100" step="5" value="0" />
+          <span>任务进度（按投入/计划自动）</span>
+          <div class="progress-input progress-input-readonly">
+            <input type="range" id="taskProgress" min="0" max="100" step="5" value="0" disabled />
             <strong id="taskProgressValue">0%</strong>
           </div>
         </label>
@@ -646,17 +646,43 @@
     </form>
   </dialog>
 
+  <dialog class="modal small-modal progress-quick-modal" id="progressQuickDialog">
+    <form method="dialog" id="progressQuickForm">
+      <div class="modal-header">
+        <div>
+          <h3 id="progressQuickTitle">更新进度</h3>
+          <p class="form-hint progress-quick-hint">只写本次说明；百分比按「实际投入 ÷ 计划工时」自动计算，不手工拖拽。</p>
+        </div>
+        <button type="button" class="close-button" data-close-dialog="progressQuickDialog">×</button>
+      </div>
+      <div id="progressQuickStats" class="progress-quick-stats" aria-live="polite"></div>
+      <label class="progress-quick-note-field">
+        <span>本次进度说明</span>
+        <textarea id="progressQuickNote" rows="4" maxlength="800" placeholder="例如：已完成初稿，待评审"></textarea>
+      </label>
+      <div class="progress-quick-history" id="progressQuickHistory" hidden></div>
+      <div class="modal-actions">
+        <span></span><span></span>
+        <button type="button" class="soft-button" data-close-dialog="progressQuickDialog">取消</button>
+        <button type="submit" class="primary-button">保存本次进度</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog class="modal progress-review-modal" id="progressReviewDialog">
     <form method="dialog" id="progressReviewForm">
       <div class="modal-header">
         <div>
           <span class="eyebrow">PROGRESS REVIEW</span>
-          <h3>更新明细任务进度</h3>
+          <h3>更新进度</h3>
         </div>
         <button type="button" class="close-button" data-close-dialog="progressReviewDialog">×</button>
       </div>
+      <div class="progress-review-toolbar">
+        <input id="progressReviewSearch" type="search" autocomplete="off" placeholder="搜索标题、责任人、归属或进度说明…" aria-label="搜索可更新任务" />
+        <small id="progressReviewCount" aria-live="polite">0</small>
+      </div>
       <div class="modal-scroll" id="progressReviewScroll">
-        <p class="form-hint progress-review-intro">批量入口：只列出<strong>进行中</strong>且<strong>已有日程投入</strong>的叶子待办（不含父计划）。其它任务请打开详情改「任务进度 / 进度说明」。</p>
         <div class="progress-review-list" id="progressReviewList"></div>
       </div>
       <div class="modal-actions">

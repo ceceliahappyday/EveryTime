@@ -119,6 +119,8 @@ let projectGanttScrollTimer;
 let taskListScrollBarTimer;
 let persistentWritesEnabled = false;
 let pendingEntrySave = null;
+/** 日程表单：选已有叶子时自动填入的事项名，用于判断可否被覆盖。 */
+let entryTitleAutoFilledFromTaskId = "";
 let pendingCloseTaskId = null;
 let pendingSuccessorRollback = null;
 let successorDialogCommitted = false;
@@ -158,7 +160,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     "aiChatLog", "aiAttachment", "aiAttachmentPreview", "aiAttachmentClear", "aiImageInput", "aiAttachImageButton", "aiSubmitButton", "aiScreenshotHintButton",
     "taskAiDropzone", "taskAiDropzoneBody", "taskAiDropzoneStatus", "taskAiImageInput", "taskAiPickImageButton",
     "aiBatchDraftDialog", "aiBatchDraftForm", "aiBatchDraftTitle", "aiBatchDraftHint", "aiBatchDraftList", "aiBatchSelectAllButton", "aiBatchCreateButton",
-    "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewList",
+    "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewSearch", "progressReviewCount", "progressReviewList",
+    "progressQuickDialog", "progressQuickForm", "progressQuickTitle", "progressQuickStats", "progressQuickNote", "progressQuickHistory",
     "taskPanelToggle",
     "focusViewChrome", "focusViewButton", "focusViewMenu",
     "glassToggleButton",
@@ -406,13 +409,9 @@ function backfillInvestmentProgressHistory() {
       }
       return;
     }
-    if (typeof ProjectSummaryPolicy?.taskProgressPercent !== "function") return;
     const previous = Number(task.progress) || 0;
-    const next = ProjectSummaryPolicy.taskProgressPercent({
-      status: task.status,
-      investedHours: getTaskDuration(task.id),
-      scheduledHours: getTaskScheduledHours(task.id)
-    });
+    const next = computeScheduleDerivedProgress(task);
+    if (next == null) return;
     // Keep any higher manual value; lift stale zeros up to schedule-derived progress.
     const merged = Math.max(previous, next);
     if (merged !== previous) {
@@ -524,9 +523,14 @@ function bindEvents() {
   el.exportButton.addEventListener("click", () => el.exportDialog.showModal());
   el.importButton?.addEventListener("click", () => importAllData());
   el.progressReviewButton.addEventListener("click", openProgressReview);
+  el.progressReviewSearch?.addEventListener("input", () => filterProgressReviewCards());
   el.progressReviewForm.addEventListener("submit", event => {
     event.preventDefault();
     saveProgressReview();
+  });
+  el.progressQuickForm?.addEventListener("submit", event => {
+    event.preventDefault();
+    saveProgressQuickUpdate();
   });
   el.exportForm.addEventListener("submit", event => {
     event.preventDefault();
@@ -953,6 +957,30 @@ function bindEvents() {
   }, { passive: true });
   window.addEventListener("dragend", clearScheduleDragOver);
   window.addEventListener("drop", clearScheduleDragOver);
+  // Bubble backup when a card-level bind is missing. Do not open on pointerup —
+  // that races ahead of contextmenu and can swallow the working Gantt-style path.
+  el.taskList.addEventListener("contextmenu", event => {
+    if (event.defaultPrevented) return;
+    const card = event.target?.closest?.(
+      ".task-card[data-task-id], .project-card[data-task-id], .task-card[data-entry-id]"
+    );
+    if (!card) return;
+    if (card.dataset.taskId) {
+      const task = findTask(card.dataset.taskId)?.task;
+      showListItemContextMenu(event, {
+        kind: "task",
+        id: card.dataset.taskId,
+        open: task ? () => openTaskDialog(task) : null
+      });
+      return;
+    }
+    if (card.dataset.entryId) {
+      showListItemContextMenu(event, {
+        kind: "entry",
+        id: card.dataset.entryId
+      });
+    }
+  });
   el.taskList.addEventListener("scroll", () => {
     clearTimeout(taskListScrollBarTimer);
     el.taskList.classList.add("is-scrolling");
@@ -2587,7 +2615,10 @@ async function saveDesktopSettings() {
     const applied = saved?.startAtLoginApplied !== undefined
       ? !!saved.startAtLoginApplied
       : !!saved?.startAtLogin;
-    if (!applied) {
+    const isDevPreview = /开发预览/.test(document.title || "");
+    if (isDevPreview) {
+      toast = "设置已保存。开机自启请在安装版「今日日程」里勾选；开发预览不会改系统启动项";
+    } else if (!applied) {
       toast = "设置已保存并记下开机自启，但系统启动项未写入成功，请重试或在任务管理器「启动应用」中确认 DailyPlanner";
     } else if (migrated <= 0) {
       toast = "设置已保存，已启用开机自启（DailyPlanner）";
@@ -3917,7 +3948,6 @@ function updateMeetingFilterCounts(meetingItems = []) {
 function createMeetingCard(item) {
   const card = document.createElement("article");
   card.className = "task-card meeting-card has-priority";
-  card.draggable = true;
   card.dataset.entryId = item.entryId;
   const timeText = `${formatTime(item.start)}–${formatTime(item.end)}`;
   const investText = `${trimNumber(item.investedHours)}h`;
@@ -3934,13 +3964,14 @@ function createMeetingCard(item) {
     if (found) openEntryDialog(found.entry.start, found.entry, found.dateKey);
   };
   bindListSelectableCard(card, "entry", item.entryId, { onActivate: openMeeting });
-  card.addEventListener("contextmenu", event => {
-    showListItemContextMenu(event, {
-      kind: "entry",
-      id: item.entryId,
-      open: openMeeting
-    });
+  bindLeftButtonDragGate(card, {
+    ignoreSelector: "button, a, input, select, textarea"
   });
+  bindCardContextMenu(card, () => ({
+    kind: "entry",
+    id: item.entryId,
+    open: openMeeting
+  }));
   card.addEventListener("dragstart", event => {
     if (isListMultiSelectEvent(event)) {
       event.preventDefault();
@@ -4244,13 +4275,11 @@ function createProjectCard(project) {
       selectListItem("task", project.parent.id);
     }
   });
-  card.addEventListener("contextmenu", event => {
-    showListItemContextMenu(event, {
-      kind: "task",
-      id: project.parent.id,
-      open: openProject
-    });
-  });
+  bindCardContextMenu(card, () => ({
+    kind: "task",
+    id: project.parent.id,
+    open: openProject
+  }));
   card.addEventListener("dblclick", openProject);
   return card;
 }
@@ -4832,8 +4861,9 @@ function createTaskCard(task, { reminderTier = "" } = {}) {
   card.className = `task-card ${visualStatus}${incomplete ? " setup-incomplete" : ""}${reminderClass}`;
   if (state.highlightTaskId && state.highlightTaskId === task.id) card.classList.add("is-just-linked");
   card.dataset.taskId = task.id;
-  // Incomplete tasks stay "draggable" only so dragstart can toast + open the form.
-  card.draggable = incomplete || (
+  // Incomplete tasks stay drag-capable only so dragstart can toast + open the form.
+  // Gate drag behind left-button press so right-click contextmenu is not swallowed.
+  const canDragCard = () => incomplete || (
     visualStatus === "unplanned"
     || TaskStatusPolicy.isSchedulableStatus(task.status)
     || TaskStatusPolicy.isAttentionOnly?.(task)
@@ -4875,13 +4905,16 @@ function createTaskCard(task, { reminderTier = "" } = {}) {
     });
   }
   bindListSelectableCard(card, "task", task.id, { onActivate: openTask });
-  card.addEventListener("contextmenu", event => {
-    showListItemContextMenu(event, {
-      kind: "task",
-      id: task.id,
-      open: openTask
-    });
+  bindLeftButtonDragGate(card, {
+    canDrag: canDragCard,
+    ignoreSelector: ".task-check, .task-setup-warning, .task-menu, button, a, input, select, textarea"
   });
+  bindCardContextMenu(card, () => ({
+    kind: "task",
+    id: task.id,
+    task,
+    open: openTask
+  }));
   card.addEventListener("dragstart", event => {
     if (isListMultiSelectEvent(event)) {
       event.preventDefault();
@@ -4903,7 +4936,6 @@ function createTaskCard(task, { reminderTier = "" } = {}) {
 function createLinkedWorkCard(item) {
   const card = document.createElement("article");
   card.className = "task-card in_progress linked-work-card";
-  card.draggable = true;
   card.dataset.entryId = item.entryId;
   card.title = `${item.title} · 所属计划：${item.parentTitle || ""}`;
   card.innerHTML = `
@@ -4926,13 +4958,14 @@ function createLinkedWorkCard(item) {
     }
   };
   bindListSelectableCard(card, "entry", item.entryId, { onActivate: openConcreteTask });
-  card.addEventListener("contextmenu", event => {
-    showListItemContextMenu(event, {
-      kind: "entry",
-      id: item.entryId,
-      open: () => openConcreteTask()
-    });
+  bindLeftButtonDragGate(card, {
+    ignoreSelector: ".task-check, button, a, input, select, textarea"
   });
+  bindCardContextMenu(card, () => ({
+    kind: "entry",
+    id: item.entryId,
+    open: () => openConcreteTask()
+  }));
   card.addEventListener("dragstart", event => {
     if (isListMultiSelectEvent(event)) {
       event.preventDefault();
@@ -6442,7 +6475,10 @@ function saveTask() {
       : "sage",
     // 仅关注只打标；工作状态与优先级保持用户选择
     priority: resolvePersistedPriority(monthlySelected, editing?.task),
-    progress: Number(el.taskProgress.value),
+    // 百分比按投入/计划自动算；滑条只读展示，避免手工拖拽盖掉自动进度。
+    progress: editing?.task
+      ? getTaskProgressBreakdown(editing.task).progress
+      : Math.max(0, Math.min(100, Number(el.taskProgress.value) || 0)),
     attentionOnly,
     status: el.taskStatus.value,
     startedAt: "",
@@ -6570,13 +6606,12 @@ function commitTaskSaveAfterValidation(payload, { effectiveStartedAt = "", actua
   }
   if (payload.status === "planned" || payload.status === TaskStatusPolicy.TRACKING_STATUS) payload.progress = 0;
   // 进行中：投入推算与手动滑条取较高值，避免旧滑条 0% 盖掉已投入进度。
-  if (state.editingTaskId && payload.status === "in_progress" && typeof ProjectSummaryPolicy?.taskProgressPercent === "function") {
-    const computed = ProjectSummaryPolicy.taskProgressPercent({
-      status: "in_progress",
-      investedHours: getTaskDuration(state.editingTaskId),
-      scheduledHours: getTaskScheduledHours(state.editingTaskId)
-    });
-    payload.progress = Math.max(Number(payload.progress) || 0, computed);
+  if (state.editingTaskId && payload.status === "in_progress") {
+    const editing = findTask(state.editingTaskId)?.task;
+    const computed = editing
+      ? computeScheduleDerivedProgress({ ...editing, status: "in_progress" })
+      : null;
+    if (computed != null) payload.progress = Math.max(Number(payload.progress) || 0, computed);
   }
 
   let parentIdForChildren = state.editingTaskId;
@@ -6631,80 +6666,223 @@ function showTaskFieldError(field, message) {
   showToast(message);
 }
 
+let progressQuickTaskId = "";
+
+function formatProgressStatsHtml(task) {
+  if (task?.id) refreshTaskStatusForId(task.id);
+  const live = task?.id ? (findTask(task.id)?.task || task) : task;
+  const next = getTaskProgressBreakdown(live);
+  const pct = Math.max(0, Math.min(100, Number(next.progress) || 0));
+  const invested = formatHours(next.investedHours || 0);
+  const plan = Number(next.planHours) > 0 ? formatHours(next.planHours) : "—";
+  const basis = next.kind === "parent"
+    ? "进度 = 自身+下级投入 ÷ 下级预计/排期工时合计（不按日历天数重复计）"
+    : (getTaskEstimateHours(live) > 0
+      ? "进度 = 实际投入 ÷ 任务预计工时"
+      : "进度 = 实际投入 ÷ 本任务已排期工时（请先排进日程；并行任务互不抢同一天的 8 小时）");
+  return `<strong>${pct}%</strong>
+    <span>投入 ${escapeHtml(invested)} / 计划 ${escapeHtml(plan)}</span>
+    <small>${escapeHtml(basis)}；未关闭最高 95%</small>`;
+}
+
+function openProgressQuickUpdate(task) {
+  if (!canOpenProgressQuickUpdate(task) || !el.progressQuickDialog) return;
+  progressQuickTaskId = task.id;
+  if (el.progressQuickTitle) el.progressQuickTitle.textContent = task.title || "更新进度";
+  if (el.progressQuickStats) el.progressQuickStats.innerHTML = formatProgressStatsHtml(task);
+  if (el.progressQuickNote) el.progressQuickNote.value = "";
+  const preview = typeof TaskWorkPolicy?.recentProgressPreview === "function"
+    ? TaskWorkPolicy.recentProgressPreview(plainTextFromDeliveryNote(task.deliveryNote || ""), 3)
+    : [];
+  if (el.progressQuickHistory) {
+    if (preview.length) {
+      el.progressQuickHistory.hidden = false;
+      el.progressQuickHistory.innerHTML = `<span>最近记录</span><pre>${escapeHtml(preview.join("\n"))}</pre>`;
+    } else {
+      el.progressQuickHistory.hidden = true;
+      el.progressQuickHistory.innerHTML = "";
+    }
+  }
+  el.progressQuickDialog.showModal();
+  setTimeout(() => el.progressQuickNote?.focus?.(), 40);
+}
+
+function saveProgressQuickUpdate() {
+  const found = findTask(progressQuickTaskId);
+  if (!found?.task) {
+    el.progressQuickDialog?.close();
+    progressQuickTaskId = "";
+    return;
+  }
+  const note = String(el.progressQuickNote?.value || "").trim();
+  if (!note) {
+    showToast("请填写本次进度说明");
+    el.progressQuickNote?.focus?.();
+    return;
+  }
+  const previousPlain = plainTextFromDeliveryNote(found.task.deliveryNote || "");
+  const appended = typeof TaskWorkPolicy?.appendProgressUpdateNote === "function"
+    ? TaskWorkPolicy.appendProgressUpdateNote({
+      deliveryNote: previousPlain,
+      note,
+      now: new Date(),
+      maxChars: RichNotePolicy?.MAX_TEXT_CHARS || 4000
+    })
+    : { changed: false, deliveryNote: previousPlain };
+  updateTaskRecords(found.task.id, task => {
+    if (appended.changed) task.deliveryNote = appended.deliveryNote;
+  });
+  refreshTaskStatusForId(found.task.id);
+  saveData();
+  el.progressQuickDialog.close();
+  progressQuickTaskId = "";
+  render();
+  showToast("已追加本次进度说明；百分比按投入/计划自动计算");
+}
+
 function openProgressReview() {
   const allTasks = getAllTasks().map(({ task }) => task);
   const isActive = task => task.status === "in_progress";
+  const isAttention = task => Boolean(
+    TaskStatusPolicy.isAttentionOnly?.(task)
+    || TaskStatusPolicy.isTrackingStatus?.(task)
+  );
+  const isPlanned = task => task.status === "planned" && !isAttention(task);
   const hasInvestedWork = task => taskHasWorkHistory(task.id) || getTaskDuration(task.id) > 0;
   const activeTasks = TodoListPolicy.progressReviewCandidates({
     tasks: allTasks,
     hasChildTasks,
     isActive,
+    isAttention,
+    isPlanned,
     hasInvestedWork,
-    sortBy: (a, b) => `${a.dueDate || ""} ${a.dueTime || ""}`.localeCompare(`${b.dueDate || ""} ${b.dueTime || ""}`)
-      || String(a.title || "").localeCompare(String(b.title || ""))
+    sortBy: (a, b) => {
+      const rank = task => {
+        if (isAttention(task)) return 0;
+        if (isActive(task)) return 1;
+        return 2;
+      };
+      return rank(a) - rank(b)
+        || `${a.dueDate || ""} ${a.dueTime || ""}`.localeCompare(`${b.dueDate || ""} ${b.dueTime || ""}`)
+        || String(a.title || "").localeCompare(String(b.title || ""));
+    }
   });
 
+  if (el.progressReviewSearch) el.progressReviewSearch.value = "";
   el.progressReviewList.innerHTML = "";
   if (!activeTasks.length) {
-    el.progressReviewList.innerHTML = `<div class="empty-state">当前没有符合条件的任务<br>需同时满足：叶子待办 · 进行中 · 已有日程投入<br>其它任务请打开详情改进度；父计划不在此列表</div>`;
+    el.progressReviewList.innerHTML = `<div class="empty-state">当前没有可更新的叶子任务<br>可更新：进行中、待跟踪/仅关注、计划中（含无投入）<br>父计划不在此列表</div>`;
     el.progressReviewForm.querySelector('button[type="submit"]').disabled = true;
+    if (el.progressReviewCount) el.progressReviewCount.textContent = "0";
   } else {
     el.progressReviewForm.querySelector('button[type="submit"]').disabled = false;
     activeTasks.forEach(task => {
-      const parentPath = TaskOptionPolicy.hierarchyMeta({ task, tasks: allTasks }).parentPath;
+      refreshTaskStatusForId(task.id);
+      const live = findTask(task.id)?.task || task;
+      const parentPath = TaskOptionPolicy.hierarchyMeta({ task: live, tasks: allTasks }).parentPath;
+      const breakdown = getTaskProgressBreakdown(live);
+      const invested = breakdown.investedHours || 0;
+      const kindLabel = isAttention(live)
+        ? "待跟踪"
+        : (isActive(live) ? (invested > 0 ? "进行中·有投入" : "进行中·无投入") : "计划中");
       const card = document.createElement("section");
       card.className = "progress-review-card";
-      card.dataset.taskId = task.id;
+      card.dataset.taskId = live.id;
+      card.dataset.searchText = [
+        live.title,
+        live.owner,
+        parentPath,
+        plainTextFromDeliveryNote(live.deliveryNote || ""),
+        kindLabel
+      ].join(" ");
+      const planLabel = Number(breakdown.planHours) > 0 ? formatHours(breakdown.planHours) : "—";
+      const metaParts = [
+        `截止 ${formatDue(live)}`,
+        Number(live.dueRescheduleCount) > 0 ? `改期 ${Number(live.dueRescheduleCount)} 次` : "",
+        live.owner ? `责任人 ${live.owner}` : "",
+        parentPath ? `归属 ${parentPath}` : "",
+        `投入 ${formatHours(invested)}`,
+        `排期/预计 ${planLabel}`,
+        `自动 ${Math.max(0, Math.min(100, Number(breakdown.progress) || 0))}%`
+      ].filter(Boolean);
+      const preview = typeof TaskWorkPolicy?.recentProgressPreview === "function"
+        ? TaskWorkPolicy.recentProgressPreview(plainTextFromDeliveryNote(live.deliveryNote || ""), 2)
+        : [];
       card.innerHTML = `
-        <header>
-          <div>
-            <h4>${escapeHtml(task.title)}</h4>
-            <div class="review-meta">
-              <span>截止 ${formatDue(task)}</span>
-              ${Number(task.dueRescheduleCount) > 0 ? `<span>已改期 ${Number(task.dueRescheduleCount)} 次</span>` : ""}
-              <span>责任人：${escapeHtml(task.owner || "未指定")}</span>
-              <span>${priorityLabel(task.priority)}</span>
-              ${parentPath ? `<span>归属：${escapeHtml(parentPath)}</span>` : ""}
-              <span>已投入 ${formatHours(getTaskDuration(task.id))}</span>
-            </div>
-          </div>
-          <span>${task.startedAt ? `开始于 ${formatDateTime(task.startedAt)}` : ""}</span>
-        </header>
-        <div class="review-progress-row">
-          <input type="range" class="review-progress" min="0" max="100" step="5" value="${task.progress || 0}" />
-          <strong class="review-progress-value">${task.progress || 0}%</strong>
+        <div class="review-head">
+          <h4>${escapeHtml(live.title)}</h4>
+          <span class="review-kind">${escapeHtml(kindLabel)}</span>
         </div>
-        <textarea class="review-delivery-note" rows="3" maxlength="4000" placeholder="已完成什么、下一步是什么、目前有哪些风险">${escapeHtml(plainTextFromDeliveryNote(task.deliveryNote || ""))}</textarea>`;
-      const range = card.querySelector(".review-progress");
-      range.addEventListener("input", () => card.querySelector(".review-progress-value").textContent = `${range.value}%`);
+        <div class="review-meta">${metaParts.map(part => `<span>${escapeHtml(part)}</span>`).join("")}</div>
+        ${preview.length ? `<div class="review-history" title="最近进度说明">${escapeHtml(preview.join(" · "))}</div>` : ""}
+        <label class="review-note-label">
+          <span>本次说明</span>
+          <textarea class="review-delivery-note" rows="2" maxlength="800" placeholder="写完保存即追加；不改历史"></textarea>
+        </label>`;
       el.progressReviewList.appendChild(card);
     });
   }
+  filterProgressReviewCards();
   el.progressReviewDialog.showModal();
+  requestAnimationFrame(() => {
+    if (el.progressReviewScroll) el.progressReviewScroll.scrollTop = 0;
+    el.progressReviewSearch?.focus?.();
+  });
+}
+
+function filterProgressReviewCards() {
+  const query = String(el.progressReviewSearch?.value || "").trim();
+  const cards = [...(el.progressReviewList?.querySelectorAll(".progress-review-card") || [])];
+  let visible = 0;
+  cards.forEach(card => {
+    const task = { title: card.dataset.searchText || "" };
+    const show = typeof TodoListPolicy?.matchesProgressReviewQuery === "function"
+      ? TodoListPolicy.matchesProgressReviewQuery(task, query)
+      : !query || String(card.dataset.searchText || "").toLowerCase().includes(query.toLowerCase());
+    card.classList.toggle("is-filtered-out", !show);
+    if (show) visible += 1;
+  });
+  if (el.progressReviewCount) {
+    el.progressReviewCount.textContent = cards.length
+      ? (query ? `${visible}/${cards.length}` : String(cards.length))
+      : "0";
+  }
+  const empty = el.progressReviewList?.querySelector(".progress-review-filter-empty");
+  if (empty) empty.remove();
+  if (cards.length && visible === 0) {
+    const tip = document.createElement("div");
+    tip.className = "empty-state progress-review-filter-empty";
+    tip.textContent = "没有匹配的任务，试试改关键词";
+    el.progressReviewList.appendChild(tip);
+  }
+  el.progressReviewForm.querySelector('button[type="submit"]').disabled = cards.length === 0;
 }
 
 function saveProgressReview() {
   const now = new Date().toISOString();
+  let updated = 0;
   el.progressReviewList.querySelectorAll(".progress-review-card").forEach(card => {
     const found = findTask(card.dataset.taskId);
     if (!found) return;
-    found.task.progress = Number(card.querySelector(".review-progress").value);
     const noteField = card.querySelector(".review-delivery-note");
-    const nextPlain = String(noteField?.value || "").trim();
-    const previous = found.task.deliveryNote || "";
-    const previousPlain = plainTextFromDeliveryNote(previous);
-    if (nextPlain === previousPlain && typeof RichNotePolicy !== "undefined" && RichNotePolicy.hasInlineImages(previous)) {
-      found.task.deliveryNote = previous;
-    } else {
-      found.task.deliveryNote = nextPlain.slice(0, RichNotePolicy?.MAX_TEXT_CHARS || 4000);
+    const note = String(noteField?.value || "").trim();
+    if (note && typeof TaskWorkPolicy?.appendProgressUpdateNote === "function") {
+      const appended = TaskWorkPolicy.appendProgressUpdateNote({
+        deliveryNote: plainTextFromDeliveryNote(found.task.deliveryNote || ""),
+        note,
+        now: new Date(),
+        maxChars: RichNotePolicy?.MAX_TEXT_CHARS || 4000
+      });
+      if (appended.changed) found.task.deliveryNote = appended.deliveryNote;
     }
+    refreshTaskStatusForId(found.task.id);
     found.task.updatedAt = now;
-    if (found.task.progress > 100) found.task.progress = 100;
+    updated += 1;
   });
   saveData();
   el.progressReviewDialog.close();
   render();
-  showToast("进行中任务进度已更新");
+  showToast(updated ? `已保存 ${updated} 条：说明追加，进度按投入/计划自动计算` : "没有可保存的任务");
 }
 
 function formatDateTime(iso) {
@@ -8769,7 +8947,7 @@ function getChildInvestedHours(taskId) {
 function resolveGanttRowProgress(task, { isParent = false, progress = null } = {}) {
   if (isParent) {
     const childInvested = getChildInvestedHours(task.id);
-    const planHours = getTaskPlanWorkHours(task);
+    const planHours = getTaskProgressPlanHours(task);
     const nextProgress = progress == null
       ? ProjectSummaryPolicy.parentPlanProgressPercent({
         status: task.status,
@@ -8783,22 +8961,25 @@ function resolveGanttRowProgress(task, { isParent = false, progress = null } = {
       childInvested,
       planHours,
       investedHours: childInvested,
-      scheduledHours: planHours
+      scheduledHours: getChildScheduledHours(task.id)
     };
   }
   const investedHours = getTaskDuration(task.id);
   const scheduledHours = getTaskScheduledHours(task.id);
+  const planHours = getTaskProgressPlanHours(task);
   const nextProgress = progress == null
     ? ProjectSummaryPolicy.taskProgressPercent({
       status: task.status,
       investedHours,
-      scheduledHours
+      scheduledHours,
+      estimateHours: getTaskEstimateHours(task)
     })
     : Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
   return {
     kind: "leaf",
     progress: nextProgress,
     investedHours,
+    planHours,
     scheduledHours,
     notes: getTaskProgressNotes(task.id).map(item => item.note).filter(Boolean)
   };
@@ -8955,6 +9136,88 @@ function selectListItem(kind, id, { additive = false, range = false } = {}) {
 
 function isListMultiSelectEvent(event) {
   return Boolean(event && (event.ctrlKey || event.metaKey || event.shiftKey));
+}
+
+/**
+ * Only arm HTML5 drag after a left-button press. Keeping `draggable=true` always
+ * lets Chromium/Electron swallow right-click `contextmenu` on todo rows.
+ */
+function bindLeftButtonDragGate(card, { canDrag = () => true, ignoreSelector = "button, a, input, select, textarea" } = {}) {
+  if (!card) return;
+  let armed = false;
+  const sync = () => {
+    const on = Boolean(armed && (typeof canDrag !== "function" || canDrag()));
+    card.draggable = on;
+    card.classList.toggle("is-drag-armed", on);
+    card.style.setProperty("-webkit-user-drag", on ? "element" : "none");
+  };
+  card.draggable = false;
+  card.classList.remove("is-drag-armed");
+  card.style.setProperty("-webkit-user-drag", "none");
+  card.addEventListener("pointerdown", event => {
+    if (event.button !== 0) {
+      armed = false;
+      sync();
+      return;
+    }
+    if (event.target?.closest?.(ignoreSelector)) {
+      armed = false;
+      sync();
+      return;
+    }
+    armed = true;
+    sync();
+  }, true);
+  const disarm = () => {
+    if (!armed && !card.draggable) return;
+    armed = false;
+    sync();
+  };
+  card.addEventListener("pointerup", disarm, true);
+  card.addEventListener("pointercancel", disarm, true);
+  card.addEventListener("dragend", disarm);
+  card.addEventListener("dragstart", event => {
+    if (!armed || event.button === 2 || (event.buttons & 2) === 2) {
+      event.preventDefault();
+      disarm();
+    }
+  }, true);
+}
+
+function bindCardContextMenu(card, focusFactory) {
+  if (!card || typeof focusFactory !== "function") return;
+  let openedByContextMenu = false;
+  // Match Gantt: primary path is `contextmenu`.
+  card.addEventListener("contextmenu", event => {
+    const focus = focusFactory(event);
+    if (!focus?.kind || !focus?.id) return;
+    openedByContextMenu = true;
+    event.preventDefault();
+    event.stopPropagation();
+    showListItemContextMenu(event, focus);
+  });
+  // If drag suppressed contextmenu, open once after the click sequence finishes.
+  card.addEventListener("mouseup", event => {
+    if (event.button !== 2) return;
+    openedByContextMenu = false;
+    const focus = focusFactory(event);
+    if (!focus?.kind || !focus?.id) return;
+    const screenX = event.screenX;
+    const screenY = event.screenY;
+    const clientX = event.clientX;
+    const clientY = event.clientY;
+    window.setTimeout(() => {
+      if (openedByContextMenu) return;
+      showListItemContextMenu({
+        screenX,
+        screenY,
+        clientX,
+        clientY,
+        preventDefault() {},
+        stopPropagation() {}
+      }, focus);
+    }, 80);
+  });
 }
 
 /**
@@ -9298,7 +9561,7 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   labelRow.dataset.depth = String(treeDepth);
   labelRow.dataset.treeDepth = String(treeDepth);
   labelRow.dataset.taskId = task.id;
-  labelRow.title = "单击高亮整行；Ctrl+单击多选；悬停显示＋新建子任务；右键分类/更多操作；拖到其他名称可改挂接；双击编辑；右侧时间条仅展示";
+  labelRow.title = "单击高亮整行；Ctrl+单击多选；悬停显示＋新建子任务；右键可编辑/更新进度/分类；拖到其他名称可改挂接；双击编辑；右侧时间条仅展示";
   labelRow.innerHTML = `<div class="project-gantt-title is-title-pin">
         ${foldPrefix}
         <strong title="${escapeHtml(taskTitle)}">${escapeHtml(taskTitle)}</strong>
@@ -9370,7 +9633,11 @@ function createProjectGanttRow(task, buckets, scale = "day", rootId = "", option
   });
   labelRow.addEventListener("click", selectRow);
   labelRow.addEventListener("dblclick", openTask);
+  chartRow.addEventListener("pointerdown", onGanttRowPointerDown);
+  chartRow.addEventListener("click", selectRow);
+  chartRow.addEventListener("dblclick", openTask);
   bindGanttRowContextMenu(labelRow, task);
+  bindGanttRowContextMenu(chartRow, task);
   return { labelRow, chartRow };
 }
 
@@ -9378,24 +9645,41 @@ let ganttContextMenuEl = null;
 let ganttContextMenuTaskId = "";
 let contextMenuListKeys = null;
 let listContextMenuOpen = null;
+let contextMenuOpenedAt = 0;
 
 function positionGanttContextMenu(menu, event) {
+  contextMenuOpenedAt = Date.now();
   menu.classList.remove("hidden");
-  menu.style.maxHeight = "";
-  menu.style.overflowY = "";
+  menu.classList.add("is-open");
+  menu.hidden = false;
+  menu.removeAttribute("hidden");
+  menu.style.cssText = [
+    "position:fixed",
+    "display:block",
+    "visibility:visible",
+    "opacity:1",
+    "pointer-events:auto",
+    "z-index:2147483646",
+    "min-width:168px",
+    "max-height:none",
+    "overflow-y:visible"
+  ].join(";");
   const pad = 8;
+  const anchorX = Number(event?.clientX);
+  const anchorY = Number(event?.clientY);
   const place = () => {
+    if (!menu.classList.contains("is-open")) return;
     const rect = menu.getBoundingClientRect();
     const maxHeight = Math.max(160, window.innerHeight - pad * 2);
-    let width = rect.width || 160;
+    let width = Math.max(rect.width || 0, 168);
     let height = rect.height || 140;
     if (height > maxHeight) {
       menu.style.maxHeight = `${maxHeight}px`;
       menu.style.overflowY = "auto";
       height = maxHeight;
     }
-    let left = event.clientX;
-    let top = event.clientY;
+    let left = Number.isFinite(anchorX) ? anchorX : pad;
+    let top = Number.isFinite(anchorY) ? anchorY : pad;
     if (left + width > window.innerWidth - pad) left = window.innerWidth - width - pad;
     if (top + height > window.innerHeight - pad) top = window.innerHeight - height - pad;
     menu.style.left = `${Math.max(pad, left)}px`;
@@ -9403,6 +9687,10 @@ function positionGanttContextMenu(menu, event) {
   };
   place();
   requestAnimationFrame(place);
+}
+
+function shouldIgnoreContextMenuDismiss() {
+  return Date.now() - contextMenuOpenedAt < 450;
 }
 
 function positionContextSubmenu(host) {
@@ -9479,8 +9767,10 @@ function ensureGanttContextMenu() {
       event.stopPropagation();
       const action = listActionBtn.dataset.listAction;
       const open = listContextMenuOpen;
+      const entryId = ganttContextMenuEl?.dataset?.entryId || "";
       hideGanttContextMenu();
       if (action === "edit" && typeof open === "function") open();
+      else if (action === "delete" && entryId) confirmDeleteCalendarEntry(entryId);
       return;
     }
     const button = event.target?.closest?.("[data-gantt-action]");
@@ -9503,13 +9793,17 @@ function ensureGanttContextMenu() {
     }
     if (!task) return;
     if (action === "edit") openTaskDialog(task);
+    else if (action === "update-progress") openProgressQuickUpdate(task);
     else if (action === "add-child") openNewChildTaskFromGantt(task);
     else if (action === "close") requestTaskCompletion(task);
     else if (action === "delete") confirmDeleteTask(task);
   });
-  document.addEventListener("click", event => {
+  // Only left-click outside dismisses; ignore the opening right-click sequence.
+  document.addEventListener("mousedown", event => {
     if (!ganttContextMenuEl || ganttContextMenuEl.classList.contains("hidden")) return;
     if (ganttContextMenuEl.contains(event.target)) return;
+    if (event.button !== 0) return;
+    if (shouldIgnoreContextMenuDismiss()) return;
     hideGanttContextMenu();
   }, true);
   document.addEventListener("keydown", event => {
@@ -9522,13 +9816,11 @@ function ensureGanttContextMenu() {
     if (ensureListSelectionSet().size) clearListSelection();
     if (ensureGanttSelectionSet().size) selectGanttTaskRow("");
   });
-  window.addEventListener("scroll", hideGanttContextMenu, true);
   return ganttContextMenuEl;
 }
 
 function hideGanttContextMenu() {
   if (!ganttContextMenuEl) return;
-  ganttContextMenuEl.classList.add("hidden");
   ganttContextMenuEl._submenuHost = null;
   ganttContextMenuEl.querySelectorAll(".gantt-context-submenu").forEach(node => {
     node.classList.remove("is-flip-up", "is-flip-left");
@@ -9536,28 +9828,226 @@ function hideGanttContextMenu() {
     node.style.display = "";
     node.style.visibility = "";
   });
-  ganttContextMenuEl.style.maxHeight = "";
-  ganttContextMenuEl.style.overflowY = "";
+  ganttContextMenuEl.style.cssText = "";
+  ganttContextMenuEl.className = "gantt-context-menu hidden";
+  ganttContextMenuEl.hidden = true;
+  ganttContextMenuEl.setAttribute("hidden", "");
   ganttContextMenuTaskId = "";
   contextMenuListKeys = null;
   listContextMenuOpen = null;
+  if (ganttContextMenuEl) delete ganttContextMenuEl.dataset.entryId;
 }
 
-function taskContextActionsMenuHtml({ multi = false, ended = false, canMerge = false } = {}) {
-  return `
-    ${multi ? "" : `<button type="button" role="menuitem" data-gantt-action="edit">编辑</button>
-    <button type="button" role="menuitem" data-gantt-action="add-child">新建子任务</button>`}
+function taskContextActionsMenuHtml({ multi = false, ended = false, canMerge = false, canUpdateProgress = false } = {}) {
+  const singleActions = multi
+    ? ""
+    : [
+      `<button type="button" role="menuitem" data-gantt-action="edit">编辑</button>`,
+      canUpdateProgress
+        ? `<button type="button" role="menuitem" data-gantt-action="update-progress">更新进度…</button>`
+        : "",
+      `<button type="button" role="menuitem" data-gantt-action="add-child">新建子任务</button>`
+    ].join("");
+  const endActions = multi
+    ? ""
+    : `<button type="button" role="menuitem" data-gantt-action="close">${ended ? "恢复任务" : "关闭任务"}</button>
+    <button type="button" role="menuitem" data-gantt-action="delete" class="is-danger">删除…</button>`;
+  return `${singleActions}
     ${categoryMenuFlyoutHtml()}
     ${priorityMenuFlyoutHtml()}
     ${canMerge ? `<button type="button" role="menuitem" data-gantt-action="merge-selection">合并为一条…</button>` : ""}
-    ${multi ? "" : `<button type="button" role="menuitem" data-gantt-action="close">${ended ? "恢复任务" : "关闭任务"}</button>
-    <button type="button" role="menuitem" data-gantt-action="delete" class="is-danger">删除…</button>`}`;
+    ${endActions}`;
 }
 
-function showListItemContextMenu(event, focus = {}) {
+/** Meeting/entry menu: same chrome as todo, actions that apply to calendar rows. */
+function entryContextActionsMenuHtml({ multi = false } = {}) {
+  return `${multi ? "" : `<button type="button" role="menuitem" data-list-action="edit">编辑</button>`}
+    ${categoryMenuFlyoutHtml()}
+    ${multi ? "" : `<button type="button" role="menuitem" data-list-action="delete" class="is-danger">删除…</button>`}`;
+}
+
+function confirmDeleteCalendarEntry(entryId) {
+  const found = findEntry(entryId);
+  if (!found?.entry) {
+    showToast("未找到该会议");
+    return;
+  }
+  const title = String(found.entry.title || "未命名会议").trim() || "未命名会议";
+  appConfirm({
+    title: "删除会议",
+    message: `确定删除「${title}」？此操作不可撤销。`,
+    confirmLabel: "删除",
+    danger: true
+  }).then(ok => {
+    if (!ok) return;
+    const day = getDay(found.dateKey);
+    const deleted = day.entries.find(entry => entry.id === entryId);
+    day.entries = day.entries.filter(entry => entry.id !== entryId);
+    if (deleted?.taskId) {
+      const linked = findTask(deleted.taskId)?.task;
+      if (linked && !["done", "closed"].includes(linked.status)) {
+        applyAutomaticTaskStatus(linked);
+        linked.updatedAt = new Date().toISOString();
+      }
+    }
+    if (state.editingEntryId === entryId) {
+      state.editingEntryId = null;
+      state.editingEntryDateKey = null;
+      el.entryDialog?.close?.();
+    }
+    saveData();
+    render();
+    showToast("会议已删除");
+  });
+}
+
+function canOpenProgressQuickUpdate(task) {
+  if (!task?.id) return false;
+  if (TaskStatusPolicy.isEndedStatus?.(task.status)) return false;
+  return true;
+}
+
+function buildNativeTaskContextMenuItems({
+  multi = false,
+  ended = false,
+  canMerge = false,
+  canUpdateProgress = false
+} = {}) {
+  const categories = (typeof TaskCategoryPolicy?.listCategories === "function"
+    ? TaskCategoryPolicy.listCategories()
+    : (state.categories || []))
+    .map(item => ({
+      id: `category:${item.id}`,
+      label: String(item.label || item.id || "")
+    }))
+    .filter(item => item.label);
+  const priorities = BULK_PRIORITY_OPTIONS.map(([value, label]) => ({
+    id: `priority:${value}`,
+    label
+  }));
+  const items = [];
+  if (!multi) {
+    items.push({ id: "edit", label: "编辑" });
+    if (canUpdateProgress) items.push({ id: "update-progress", label: "更新进度…" });
+    items.push({ id: "add-child", label: "新建子任务" });
+    items.push({ type: "separator" });
+  }
+  if (categories.length) items.push({ label: "分类", submenu: categories });
+  if (priorities.length) items.push({ label: "任务级别", submenu: priorities });
+  if (canMerge) items.push({ id: "merge-selection", label: "合并为一条…" });
+  if (!multi) {
+    items.push({ type: "separator" });
+    items.push({ id: "close", label: ended ? "恢复任务" : "关闭任务" });
+    items.push({ id: "delete", label: "删除…" });
+  }
+  return items;
+}
+
+async function runNativeContextMenuAction(action, {
+  task = null,
+  listKeys = null,
+  ganttTaskIds = [],
+  open = null
+} = {}) {
+  if (!action) return;
+  if (String(action).startsWith("category:")) {
+    applyCategoryToSelection(String(action).slice("category:".length), {
+      listKeys: listKeys || [],
+      ganttTaskIds
+    });
+    return;
+  }
+  if (String(action).startsWith("priority:")) {
+    applyPriorityToSelection(String(action).slice("priority:".length), {
+      listKeys: listKeys || [],
+      ganttTaskIds
+    });
+    return;
+  }
+  if (action === "merge-selection") {
+    const mergeIds = Array.isArray(listKeys)
+      ? listKeys.filter(key => String(key).startsWith("task:")).map(key => String(key).slice(5)).filter(Boolean)
+      : [...ganttTaskIds];
+    mergeSelectedTasksIntoNew(mergeIds);
+    return;
+  }
+  if (action === "edit") {
+    if (typeof open === "function") open();
+    else if (task) openTaskDialog(task);
+    return;
+  }
+  if (!task) return;
+  if (action === "update-progress") openProgressQuickUpdate(task);
+  else if (action === "add-child") openNewChildTaskFromGantt(task);
+  else if (action === "close") requestTaskCompletion(task);
+  else if (action === "delete") confirmDeleteTask(task);
+}
+
+function showDomTaskContextMenu(event, {
+  task = null,
+  multi = false,
+  ended = false,
+  canMerge = false,
+  canUpdateProgress = false,
+  entryOpen = null,
+  entryId = ""
+} = {}) {
+  const menu = ensureGanttContextMenu();
+  if (task) {
+    ganttContextMenuTaskId = task.id;
+    listContextMenuOpen = null;
+    delete menu.dataset.entryId;
+    menu.innerHTML = taskContextActionsMenuHtml({
+      multi,
+      ended,
+      canMerge,
+      canUpdateProgress
+    });
+  } else {
+    ganttContextMenuTaskId = "";
+    listContextMenuOpen = typeof entryOpen === "function" ? entryOpen : null;
+    if (entryId) menu.dataset.entryId = entryId;
+    else delete menu.dataset.entryId;
+    menu.innerHTML = entryContextActionsMenuHtml({ multi });
+  }
+  positionGanttContextMenu(menu, event);
+}
+
+async function popupNativeTaskContextMenu(event, {
+  task = null,
+  multi = false,
+  ended = false,
+  canMerge = false,
+  canUpdateProgress = false,
+  listKeys = null,
+  ganttTaskIds = [],
+  open = null
+} = {}) {
+  if (!window.desktopAPI?.popupContextMenu) return false;
+  const started = Date.now();
+  // Electron Menu.popup x/y are screen coordinates. clientX/Y place the menu off-window.
+  const payload = {
+    items: buildNativeTaskContextMenuItems({ multi, ended, canMerge, canUpdateProgress })
+  };
+  const screenX = Number(event?.screenX);
+  const screenY = Number(event?.screenY);
+  if (Number.isFinite(screenX) && Number.isFinite(screenY)) {
+    payload.x = Math.round(screenX);
+    payload.y = Math.round(screenY);
+  }
+  const action = await window.desktopAPI.popupContextMenu(payload);
+  // Native popup that closes instantly usually failed on frameless windows.
+  if (action == null && Date.now() - started < 200) return false;
+  await runNativeContextMenuAction(action, { task, listKeys, ganttTaskIds, open });
+  return true;
+}
+
+async function showListItemContextMenu(event, focus = {}) {
   if (!focus?.kind || !focus?.id) return;
-  event.preventDefault();
-  event.stopPropagation();
+  try {
+    event.preventDefault();
+    event.stopPropagation();
+  } catch { /* event may be synthetic */ }
   const key = listSelectionKey(focus.kind, focus.id);
   const keys = ensureListSelectionSet();
   if (!keys.has(key)) {
@@ -9565,31 +10055,27 @@ function showListItemContextMenu(event, focus = {}) {
     keys.add(key);
     paintListSelection();
   }
-  const menu = ensureGanttContextMenu();
-  contextMenuListKeys = [...keys];
+  const listKeys = [...keys];
+  contextMenuListKeys = listKeys;
   const multi = keys.size > 1;
   if (focus.kind === "task") {
-    const task = findTask(focus.id)?.task;
-    ganttContextMenuTaskId = focus.id;
-    listContextMenuOpen = null;
-    const selectedTaskIds = keys
-      .filter(key => String(key).startsWith("task:"))
-      .map(key => String(key).slice(5))
-      .filter(Boolean);
-    const mergeableCount = selectedTaskIds.filter(id => isTodoListTask(findTask(id)?.task)).length;
-    menu.innerHTML = taskContextActionsMenuHtml({
-      multi,
-      ended: TaskStatusPolicy.isEndedStatus?.(task?.status),
-      canMerge: mergeableCount >= 2
+    // Prefer the task object from the card closure; same popup path as Gantt.
+    const task = focus.task || findTask(focus.id)?.task;
+    if (!task) {
+      showToast("未找到该任务");
+      return;
+    }
+    await showGanttContextMenu(event, task, {
+      listKeys,
+      open: typeof focus.open === "function" ? focus.open : null
     });
-  } else {
-    ganttContextMenuTaskId = "";
-    listContextMenuOpen = typeof focus.open === "function" ? focus.open : null;
-    menu.innerHTML = `
-      ${multi ? "" : `<button type="button" role="menuitem" data-list-action="edit">编辑</button>`}
-      ${categoryMenuFlyoutHtml()}`;
+    return;
   }
-  positionGanttContextMenu(menu, event);
+  showDomTaskContextMenu(event, {
+    multi,
+    entryOpen: typeof focus.open === "function" ? focus.open : null,
+    entryId: focus.id
+  });
 }
 
 function showGanttMeetingContextMenu(event, meeting, rowId) {
@@ -9598,38 +10084,51 @@ function showGanttMeetingContextMenu(event, meeting, rowId) {
   event.stopPropagation();
   const ids = ensureGanttSelectionSet();
   if (!ids.has(rowId)) selectGanttTaskRow(rowId);
-  const menu = ensureGanttContextMenu();
-  ganttContextMenuTaskId = "";
   contextMenuListKeys = null;
-  listContextMenuOpen = () => {
-    const first = meeting.entries?.[0];
-    if (first) openEntryDialog(first.entry.start, first.entry, first.dateKey);
-  };
+  const first = meeting.entries?.[0];
+  const entryId = first?.entry?.id || "";
   const selectedMeetings = [...ensureGanttSelectionSet()].filter(id => id.startsWith("meeting:"));
   const multi = selectedMeetings.length > 1;
-  menu.innerHTML = `
-    ${multi ? "" : `<button type="button" role="menuitem" data-list-action="edit">编辑</button>`}
-    ${categoryMenuFlyoutHtml()}`;
-  positionGanttContextMenu(menu, event);
+  showDomTaskContextMenu(event, {
+    multi,
+    entryId,
+    entryOpen: () => {
+      if (first) openEntryDialog(first.entry.start, first.entry, first.dateKey);
+    }
+  });
 }
 
-function showGanttContextMenu(event, task) {
+async function showGanttContextMenu(event, task, { listKeys = null, open = null } = {}) {
   if (!task?.id) return;
-  event.preventDefault();
-  event.stopPropagation();
-  const ids = ensureGanttSelectionSet();
-  if (!ids.has(task.id)) selectGanttTaskRow(task.id);
-  const menu = ensureGanttContextMenu();
-  ganttContextMenuTaskId = task.id;
-  contextMenuListKeys = null;
-  listContextMenuOpen = null;
-  const mergeableCount = [...ids].filter(id => isTodoListTask(findTask(id)?.task)).length;
-  menu.innerHTML = taskContextActionsMenuHtml({
-    multi: ids.size > 1,
+  try {
+    event.preventDefault();
+    event.stopPropagation();
+  } catch { /* synthetic */ }
+  const fromList = Array.isArray(listKeys);
+  if (fromList) {
+    contextMenuListKeys = listKeys;
+  } else {
+    const ids = ensureGanttSelectionSet();
+    if (!ids.has(task.id)) selectGanttTaskRow(task.id);
+    contextMenuListKeys = null;
+  }
+  const selected = fromList
+    ? listKeys.filter(key => String(key).startsWith("task:")).map(key => String(key).slice(5)).filter(Boolean)
+    : [...ensureGanttSelectionSet()];
+  const mergeableCount = selected.filter(id => isTodoListTask(findTask(id)?.task)).length;
+  const multi = selected.length > 1;
+  // In-page DOM menu: follows the click and matches glass chrome. Native OS menu
+  // ignores app theme and often lands at the wrong screen point on frameless windows.
+  showDomTaskContextMenu(event, {
+    task,
+    multi,
     ended: TaskStatusPolicy.isEndedStatus?.(task.status),
-    canMerge: mergeableCount >= 2
+    canMerge: mergeableCount >= 2,
+    canUpdateProgress: !multi && canOpenProgressQuickUpdate(task),
+    listKeys: fromList ? listKeys : null,
+    ganttTaskIds: fromList ? [] : selected,
+    open
   });
-  positionGanttContextMenu(menu, event);
 }
 
 function showGanttBlankContextMenu(event) {
@@ -9661,7 +10160,11 @@ function bindGanttBlankContextMenu(root) {
 
 function bindGanttRowContextMenu(row, task) {
   if (!row || !task?.id) return;
-  row.addEventListener("contextmenu", event => showGanttContextMenu(event, task));
+  row.addEventListener("contextmenu", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    showGanttContextMenu(event, task);
+  });
 }
 
 function isGanttReparentDrag(dataTransfer) {
@@ -9819,7 +10322,9 @@ function bindGanttReparentDropTarget(node, task) {
 function bindGanttMeetingLinkDrag(labelRow, meeting) {
   const entryId = meeting?.entries?.[0]?.entry?.id || "";
   if (!labelRow || !entryId) return;
-  labelRow.draggable = true;
+  bindLeftButtonDragGate(labelRow, {
+    ignoreSelector: ".task-tree-toggle, .gantt-add-child, button, a, input, select, textarea"
+  });
   labelRow.addEventListener("dragstart", event => {
     if (isListMultiSelectEvent(event)) {
       event.preventDefault();
@@ -9838,7 +10343,9 @@ function bindGanttMeetingLinkDrag(labelRow, meeting) {
 
 function bindGanttLabelReparent(labelRow, task) {
   if (!labelRow || !task?.id) return;
-  labelRow.draggable = true;
+  bindLeftButtonDragGate(labelRow, {
+    ignoreSelector: ".task-tree-toggle, .gantt-add-child, button, a, input, select, textarea"
+  });
   labelRow.addEventListener("dragstart", event => {
     if (event.target?.closest?.(".task-tree-toggle, .gantt-add-child")) {
       event.preventDefault();
@@ -10815,8 +11322,11 @@ function renderDayTimeline() {
       item.style.setProperty("--overlap-col", String(column));
     }
     applyCategoryColorStyle(item, entryColor);
+    const showNote = typeof TaskWorkPolicy?.shouldShowEntryNoteOnSchedule === "function"
+      ? TaskWorkPolicy.shouldShowEntryNoteOnSchedule({ note: entry.note, title: entry.title })
+      : Boolean(String(entry.note || "").trim() && String(entry.note).trim() !== String(entry.title || "").trim());
     item.innerHTML = `<strong><b class="schedule-entry-badge">${escapeHtml(meta.badge)}</b>${escapeHtml(entry.title)}</strong>
-      ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}`;
+      ${showNote ? `<p>${escapeHtml(String(entry.note).trim())}</p>` : ""}`;
     item.addEventListener("click", () => openEntryDialog(entry.start, entry));
     bindScheduleEntryOverflowScroll(item);
     item.addEventListener("dragstart", event => {
@@ -11385,6 +11895,13 @@ function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
     id: crypto.randomUUID(), entryType: "task_work", taskId: workTask.id, title: workTask.title,
     ...placement, note: "", color: entryColor
   });
+  applyInvestmentNoteToTask(workTask.id, {
+    dateKey,
+    start: placement.start,
+    end: placement.end,
+    note: "",
+    title: workTask.title
+  });
   refreshTaskStatusForId(workTask.id);
   saveData();
   render();
@@ -11461,6 +11978,7 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
     : (dateKey || state.selectedDate);
   state.editingEntryId = entry?.id || null;
   state.editingEntryDateKey = resolvedDateKey;
+  entryTitleAutoFilledFromTaskId = "";
   const linkedTask = entry?.taskId ? findTask(entry.taskId)?.task : null;
   const category = linkedTask
     ? (TaskCategoryPolicy?.resolveTaskCategory?.(linkedTask) || "work")
@@ -11470,7 +11988,9 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
   state.selectedColor = TaskCategoryPolicy?.colorForCategory?.(category) || entry?.color || "sage";
   el.entryEyebrow.textContent = entry ? "EDIT ENTRY" : "NEW ENTRY";
   el.entryDialogTitle.textContent = entry ? "编辑日程" : "添加日程";
-  el.entryTitle.value = entry?.title || "";
+  // 已挂接叶子：事项跟任务名，进度细节写在完成内容，避免双标题。
+  el.entryTitle.value = linkedTask?.title || entry?.title || "";
+  if (linkedTask?.id) entryTitleAutoFilledFromTaskId = linkedTask.id;
   el.entryType.value = entry?.entryType || (entry?.taskId ? "task_work" : "calendar");
   fillEntryTaskOptions(entry);
   el.entryStart.value = entry?.start ?? hour;
@@ -11479,25 +11999,48 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
     el.entryOwner.value = entry?.owner || "";
     el.entryOwner.placeholder = ownerFieldPlaceholder(true);
   }
-  el.entryNote.value = entry?.note || "";
+  el.entryNote.value = typeof TaskWorkPolicy?.normalizeEntryNote === "function"
+    ? TaskWorkPolicy.normalizeEntryNote({
+      note: entry?.note || "",
+      title: linkedTask?.title || entry?.title || ""
+    })
+    : (entry?.note && entry.note !== (linkedTask?.title || entry.title) ? entry.note : "") || "";
   fillCategorySelect(el.entryCategory, { selected: category, includeMeeting: true });
   updateEntryTypeControls();
+  updateEntryFieldLocks();
   el.deleteEntryButton.classList.toggle("hidden", !entry);
   el.colorPicker?.querySelectorAll("button").forEach(item => item.classList.toggle("selected", item.dataset.color === state.selectedColor));
   el.entryDialog.showModal();
   el.entryDialogScroll?.scrollTo?.(0, 0);
-  setTimeout(() => el.entryTitle.focus(), 50);
+  setTimeout(() => {
+    const locks = getEntryFieldLockState();
+    if (locks.lockTitle) (el.entryNote || el.entryStart)?.focus?.();
+    else el.entryTitle.focus();
+  }, 50);
 }
 
 function saveEntry() {
   syncSelectedColorFromCategory();
+  const locks = getEntryFieldLockState();
+  // 已挂接投入：禁止改挂接/类型；事项强制跟叶子任务名。
+  if (locks.lockType) el.entryType.value = "task_work";
+  if (locks.lockLink && locks.linkedTaskId) el.entryTaskLink.value = locks.linkedTaskId;
+  if (locks.lockTitle && locks.linkedTaskId) {
+    const linked = findTask(locks.linkedTaskId)?.task;
+    if (linked?.title) el.entryTitle.value = linked.title;
+  }
   const category = typeof TaskCategoryPolicy?.normalizeCategory === "function"
     ? TaskCategoryPolicy.normalizeCategory(el.entryCategory?.value)
     : (el.entryCategory?.value || "work");
+  const title = el.entryTitle.value.trim();
+  const rawNote = el.entryNote.value.trim();
+  const note = typeof TaskWorkPolicy?.normalizeEntryNote === "function"
+    ? TaskWorkPolicy.normalizeEntryNote({ note: rawNote, title })
+    : (rawNote && rawNote !== title ? rawNote : "");
   const payload = {
-    title: el.entryTitle.value.trim(), start: Number(el.entryStart.value), end: Number(el.entryEnd.value),
+    title, start: Number(el.entryStart.value), end: Number(el.entryEnd.value),
     owner: (el.entryOwner?.value || "").trim().slice(0, 80),
-    note: el.entryNote.value.trim(),
+    note,
     color: state.selectedColor,
     category,
     entryType: el.entryType.value === "task_work" ? "task_work" : "calendar"
@@ -11515,6 +12058,12 @@ function saveEntry() {
   // Meetings stay in the meeting list, but may optionally link a todo so hours count as task investment.
   if (payload.entryType === "calendar" && !linkSelected) {
     finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId: "", dateKey });
+    return;
+  }
+  if (locks.lockLink && locks.linkedTaskId) {
+    const linked = findTask(locks.linkedTaskId)?.task;
+    if (linked && !ensureTaskReadyForSchedule(linked)) return;
+    finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId: locks.linkedTaskId, dateKey });
     return;
   }
   if (linkSelected && !linkSelected.startsWith("__")) {
@@ -11921,7 +12470,7 @@ function focusLinkedTaskFilter(taskId) {
 
 function fillEntryTaskOptions(entry = null) {
   el.entryTaskLink.innerHTML = "";
-  el.entryTaskLink.add(new Option("可空：任务处理将新建顶层任务；或选已有叶子", ""));
+  el.entryTaskLink.add(new Option("选已有叶子或拖入左侧；空着则新建顶层任务", ""));
   el.entryTaskLink.add(new Option("在已有父级下新建并关联", "__create__"));
   el.entryTaskLink.add(new Option("新建父级任务并挂入当前事项", "__create_parent__"));
   getLeafTasksForEntryLink(entry).forEach(task => {
@@ -12016,8 +12565,8 @@ function renderEntryTaskOptions(query) {
   const empty = items
     ? ""
     : `<div class="entry-task-no-results">${matchedParents.length
-      ? "没有同名叶子。可空着保存以新建顶层任务，或点「挂到父级」建成其子待办"
-      : "可空着保存：任务处理会按事项新建顶层任务；也可选「在已有父级下新建」或「新建父级并挂入」"}</div>`;
+      ? "没有同名叶子。可点「挂到父级」新建子任务，或空着保存新建顶层任务"
+      : "优先选已有叶子或从左侧拖入；也可挂父级新建子任务，或空着新建顶层任务"}</div>`;
   // Create actions stay on top so they are not buried under long search results.
   el.entryTaskOptions.innerHTML = create + parentOptions + (items || empty);
   const createParentOption = el.entryTaskOptions.querySelector('.create-parent-option[data-value="__create_parent__"]');
@@ -12031,6 +12580,11 @@ function renderEntryTaskOptions(query) {
 }
 function updateEntryTaskActiveOption(options) { options.forEach((option, index) => option.classList.toggle("active", index === entryTaskActiveIndex)); }
 function chooseEntryTaskOption(value, parentTitle = "") {
+  const locks = getEntryFieldLockState();
+  if (locks.lockLink) {
+    showToast("已挂接的投入不能改关联；请删除后重建，或只改时间与进度说明");
+    return;
+  }
   if (value && !String(value).startsWith("__")) {
     const found = findTask(value);
     if (found && !ensureTaskReadyForSchedule(found.task)) return;
@@ -12041,14 +12595,104 @@ function chooseEntryTaskOption(value, parentTitle = "") {
     const existing = [...el.entryTaskLink.options].find(option => option.value === "__create_parent__");
     if (existing) existing.textContent = `挂到父级「${parentTitle}」· 新建子待办并关联`;
   }
+  syncEntryTitleFromLinkedSelection(value);
+  if (value && !String(value).startsWith("__")) el.entryType.value = "task_work";
   syncEntryTaskTrigger();
+  updateEntryFieldLocks();
   closeEntryTaskPopup();
 }
+
+/** 选已有叶子时把事项同步为任务名；新建路径保持事项可编辑。 */
+function syncEntryTitleFromLinkedSelection(taskId = "") {
+  const selected = String(taskId || "").trim();
+  if (!selected || selected.startsWith("__")) {
+    if (entryTitleAutoFilledFromTaskId) {
+      const previous = findTask(entryTitleAutoFilledFromTaskId)?.task?.title || "";
+      if (!el.entryTitle.value.trim() || el.entryTitle.value.trim() === previous) {
+        el.entryTitle.value = "";
+      }
+    }
+    entryTitleAutoFilledFromTaskId = "";
+    return;
+  }
+  const linked = findTask(selected)?.task;
+  if (!linked) return;
+  const current = el.entryTitle.value.trim();
+  const previousAuto = entryTitleAutoFilledFromTaskId
+    ? (findTask(entryTitleAutoFilledFromTaskId)?.task?.title || "")
+    : "";
+  if (!current || current === previousAuto || current === linked.title) {
+    el.entryTitle.value = linked.title;
+    entryTitleAutoFilledFromTaskId = linked.id;
+  }
+}
+
+function getEntryFieldLockState() {
+  const existing = state.editingEntryId
+    ? findEntry(state.editingEntryId)?.entry
+    : null;
+  const selected = String(el.entryTaskLink?.value || "").trim();
+  const linkedTaskId = existing?.taskId
+    || (selected && !selected.startsWith("__") ? selected : "");
+  const editingLinked = Boolean(existing?.taskId);
+  const pickingLeaf = Boolean(linkedTaskId) && !String(selected).startsWith("__");
+  return {
+    // 已保存且已挂接：关联锁死，避免误改把工时挪走。
+    lockLink: editingLinked,
+    // 已挂接或新建时已选叶子：事项跟任务名，细节写完成内容。
+    lockTitle: Boolean(editingLinked || pickingLeaf),
+    lockType: Boolean(editingLinked || pickingLeaf),
+    linkedTaskId
+  };
+}
+
+function updateEntryFieldLocks() {
+  const locks = getEntryFieldLockState();
+  if (locks.lockTitle && locks.linkedTaskId) {
+    const linked = findTask(locks.linkedTaskId)?.task;
+    if (linked?.title) {
+      el.entryTitle.value = linked.title;
+      entryTitleAutoFilledFromTaskId = linked.id;
+    }
+  }
+  if (locks.lockType) el.entryType.value = "task_work";
+  el.entryTitle.readOnly = locks.lockTitle;
+  el.entryTitle.closest("label")?.classList.toggle("disabled-field", locks.lockTitle);
+  el.entryTitle.title = locks.lockTitle
+    ? "已挂接叶子：事项固定为任务名；本时段进展请写下方完成内容"
+    : "";
+  el.entryType.disabled = locks.lockType;
+  el.entryType.closest("label")?.classList.toggle("disabled-field", locks.lockType);
+  el.entryType.title = locks.lockType ? "已挂接投入固定为任务处理" : "";
+  const lockLinkUi = locks.lockLink;
+  el.entryTaskLink.disabled = lockLinkUi;
+  el.entryTaskLink.closest("label")?.classList.toggle("disabled-field", lockLinkUi);
+  el.entryTaskCombobox?.classList.toggle("is-locked", lockLinkUi);
+  el.entryTaskCombobox?.classList.toggle("disabled", lockLinkUi);
+  if (el.entryTaskTrigger) {
+    el.entryTaskTrigger.disabled = lockLinkUi;
+    el.entryTaskTrigger.setAttribute("aria-disabled", lockLinkUi ? "true" : "false");
+    el.entryTaskTrigger.title = lockLinkUi
+      ? "已挂接投入不能改关联；可改时间与进度说明"
+      : "选已有叶子记工时；挂父级会新建子任务；空着则新建顶层任务";
+  }
+  if (lockLinkUi) closeEntryTaskPopup();
+  syncEntryTaskTrigger();
+}
+
 function syncEntryTaskTrigger() {
   const selected = el.entryTaskLink.options[el.entryTaskLink.selectedIndex];
+  const locks = typeof getEntryFieldLockState === "function" ? getEntryFieldLockState() : null;
+  if (locks?.lockLink && locks.linkedTaskId) {
+    const linked = findTask(locks.linkedTaskId)?.task;
+    el.entryTaskTrigger.textContent = linked?.title
+      ? `已挂接「${linked.title}」（不可改）`
+      : "已挂接叶子（不可改）";
+    return;
+  }
   el.entryTaskTrigger.textContent = selected?.value && selected.value !== ""
     ? selected.textContent
-    : "可空：任务处理将新建顶层任务；或选已有叶子";
+    : "选已有叶子或拖入左侧；空着则新建顶层任务";
 }
 
 function getCalendarEntriesForDate(dateKey) {
@@ -12077,12 +12721,8 @@ function bindCalendarEntryList(container, dateKey) {
 }
 
 function updateEntryTypeControls() {
-  // Both 会议日程 and 任务处理 can link a task; meeting link is optional.
-  el.entryTaskLink.disabled = false;
-  el.entryTaskLink.closest("label")?.classList.remove("disabled-field");
-  el.entryTaskCombobox?.classList.remove("disabled");
-  if (el.entryTaskTrigger) el.entryTaskTrigger.disabled = false;
-  syncEntryTaskTrigger();
+  // Field locks depend on link state; keep association controls consistent.
+  updateEntryFieldLocks();
 }
 
 let taskMergeCandidates = [];
@@ -12644,17 +13284,94 @@ function latestTaskProgressNote(taskId) {
   return getTaskProgressNotes(taskId)[0] || null;
 }
 
+/** 叶子按自身投入/排期；父级按自身+下级投入对照计划工时。 */
+function getTaskEstimateHours(task) {
+  const value = Number(task?.estimateHours ?? task?.plannedHours ?? 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function getChildScheduledHours(taskId) {
+  return getDescendantTasks(taskId).reduce((sum, child) => sum + getTaskScheduledHours(child.id), 0);
+}
+
+function getChildEstimateHours(taskId) {
+  return getDescendantTasks(taskId).reduce((sum, child) => sum + getTaskEstimateHours(child), 0);
+}
+
+/** 进度用的计划工时：只计本任务专属量，避免并行任务共用「一天 8 小时」。 */
+function getTaskProgressPlanHours(task) {
+  if (!task?.id) return 0;
+  if (hasChildTasks(task.id)) {
+    if (typeof ProjectSummaryPolicy?.resolvePlanHours === "function") {
+      return ProjectSummaryPolicy.resolvePlanHours({
+        estimateHours: getChildEstimateHours(task.id),
+        scheduledHours: getChildScheduledHours(task.id)
+      });
+    }
+    return getChildEstimateHours(task.id) || getChildScheduledHours(task.id);
+  }
+  const scheduledHours = getTaskScheduledHours(task.id);
+  if (typeof ProjectSummaryPolicy?.resolvePlanHours === "function") {
+    return ProjectSummaryPolicy.resolvePlanHours({
+      estimateHours: getTaskEstimateHours(task),
+      scheduledHours
+    });
+  }
+  return getTaskEstimateHours(task) || scheduledHours;
+}
+
+function getTaskProgressBreakdown(task) {
+  if (!task?.id) {
+    return { kind: "leaf", progress: 0, investedHours: 0, planHours: 0, scheduledHours: 0 };
+  }
+  if (hasChildTasks(task.id)) {
+    const investedHours = getTaskDuration(task.id) + getChildInvestedHours(task.id);
+    const scheduledHours = getChildScheduledHours(task.id);
+    const planHours = getTaskProgressPlanHours(task);
+    const progress = typeof ProjectSummaryPolicy?.parentPlanProgressPercent === "function"
+      ? ProjectSummaryPolicy.parentPlanProgressPercent({
+        status: task.status,
+        childInvestedHours: investedHours,
+        planHours
+      })
+      : 0;
+    return { kind: "parent", progress, investedHours, planHours, scheduledHours };
+  }
+  const investedHours = getTaskDuration(task.id);
+  const scheduledHours = getTaskScheduledHours(task.id);
+  const planHours = getTaskProgressPlanHours(task);
+  const progress = typeof ProjectSummaryPolicy?.taskProgressPercent === "function"
+    ? ProjectSummaryPolicy.taskProgressPercent({
+      status: task.status,
+      investedHours,
+      scheduledHours,
+      estimateHours: getTaskEstimateHours(task)
+    })
+    : 0;
+  return { kind: "leaf", progress, investedHours, planHours, scheduledHours };
+}
+
+function computeScheduleDerivedProgress(task) {
+  if (!task?.id || ["done", "closed"].includes(task.status)) return null;
+  return getTaskProgressBreakdown(task).progress;
+}
+
 function updateTaskProgressFromSchedule(task) {
   if (!task || ["done", "closed"].includes(task.status)) return false;
-  const previous = task.progress || 0;
-  const scheduled = getTaskScheduledHours(task.id);
-  const invested = getTaskDuration(task.id);
-  task.progress = ProjectSummaryPolicy.taskProgressPercent({
-    status: task.status,
-    investedHours: invested,
-    scheduledHours: scheduled
-  });
+  const previous = Number(task.progress) || 0;
+  const next = computeScheduleDerivedProgress(task);
+  if (next == null) return false;
+  task.progress = next;
   return task.progress !== previous;
+}
+
+function taskHasActiveChildWork(taskId, now = new Date()) {
+  if (!taskId || !hasChildTasks(taskId)) return false;
+  return getDescendantTasks(taskId).some(child => {
+    if (!child || ["done", "closed"].includes(child.status)) return false;
+    if (child.status === "in_progress") return true;
+    return Boolean(getTaskScheduleInfo(child.id, now)?.hasStarted);
+  });
 }
 
 /** 挂接任务的投入追加到「进度说明」；完成内容优先，否则用事项，同文案不重复。 */
@@ -12748,17 +13465,24 @@ function applyAutomaticTaskStatus(task, now = new Date()) {
     return changed;
   }
   const schedule = getTaskScheduleInfo(task.id, now);
+  const childActive = taskHasActiveChildWork(task.id, now);
   const manualStart = task.startOverrideAt ? new Date(task.startOverrideAt) : null;
   const manualStarted = manualStart && manualStart <= now;
-  const nextStatus = manualStarted || schedule?.hasStarted ? "in_progress" : "planned";
-  const nextStartedAt = task.startOverrideAt || schedule?.firstStartIso || "";
+  const nextStatus = manualStarted || schedule?.hasStarted || childActive ? "in_progress" : "planned";
+  const childFirstStart = childActive
+    ? getDescendantTasks(task.id)
+      .map(child => getTaskScheduleInfo(child.id, now)?.firstStartIso || child.startedAt || "")
+      .filter(Boolean)
+      .sort()[0] || ""
+    : "";
+  const nextStartedAt = task.startOverrideAt || schedule?.firstStartIso || childFirstStart || "";
   let changed = task.status !== nextStatus || task.startedAt !== nextStartedAt;
   task.status = nextStatus;
   task.startedAt = nextStartedAt;
   if (updateTaskProgressFromSchedule(task)) changed = true;
   const beforeStatusProgress = task.progress || 0;
   if (nextStatus === "in_progress") updateTaskProgressFromSchedule(task);
-  else if (!schedule?.hasStarted) task.progress = 0;
+  else if (!schedule?.hasStarted && !childActive) task.progress = 0;
   if ((task.progress || 0) !== beforeStatusProgress) changed = true;
   if (changed) task.updatedAt = now.toISOString();
   return changed;
@@ -12766,9 +13490,15 @@ function applyAutomaticTaskStatus(task, now = new Date()) {
 
 function refreshTaskStatusForId(taskId, now = new Date()) {
   let changed = false;
-  findTaskRecords(taskId).forEach(({ task }) => {
-    if (applyAutomaticTaskStatus(task, now)) changed = true;
-  });
+  const seen = new Set();
+  let currentId = taskId;
+  while (currentId && !seen.has(currentId)) {
+    seen.add(currentId);
+    findTaskRecords(currentId).forEach(({ task }) => {
+      if (applyAutomaticTaskStatus(task, now)) changed = true;
+    });
+    currentId = String(findTask(currentId)?.task?.parentId || "").trim();
+  }
   return changed;
 }
 
@@ -13317,14 +14047,11 @@ function formatElapsed(startedAt) {
 }
 
 function updateProgressAvailability() {
-  const enabled = el.taskStatus.value === "in_progress" || el.taskStatus.value === "done";
-  el.taskProgress.disabled = !enabled;
+  // Progress is always auto-derived from invested/plan hours; keep the slider read-only.
+  if (el.taskProgress) el.taskProgress.disabled = true;
   if (el.taskStatus.value === "done") {
     el.taskProgress.value = 100;
     el.taskProgressValue.textContent = "100%";
-  } else if (!enabled) {
-    el.taskProgress.value = 0;
-    el.taskProgressValue.textContent = "0%";
   }
 }
 

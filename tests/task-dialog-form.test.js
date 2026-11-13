@@ -111,6 +111,33 @@ assert.match(
   "owner|due, created|status, start|end share the same aligned two-column grid"
 );
 assert.match(html, /id="progressReviewScroll"/, "progress review list scrolls inside the dialog");
+assert.match(html, /id="progressReviewSearch"/, "progress review dialog exposes a search box");
+assert.match(html, /progress-review-toolbar[\s\S]*progressReviewSearch[\s\S]*progressReviewScroll/, "search stays above the scrollable list");
+assert.match(styles, /\.progress-review-toolbar[\s\S]*flex:\s*0\s+0\s+auto/s, "progress review search toolbar does not scroll away");
+assert.match(app, /本次说明/, "progress review asks for this-update notes instead of editing full history");
+assert.match(app, /filterProgressReviewCards/, "progress review filters cards by search without destroying edits");
+assert.match(app, /isAttention/, "progress review includes attention/tracking leaves");
+assert.match(app, /review-head/, "progress review uses compact row layout without nested cards");
+assert.match(html, /id="progressQuickDialog"/, "single-task progress update has its own dialog");
+assert.match(html, /id="progressQuickNote"/, "quick progress dialog starts from a blank note field");
+assert.match(html, /id="progressQuickStats"/, "quick progress shows auto invested/plan stats instead of a slider");
+assert.match(html, /taskProgress[\s\S]*disabled/, "task detail progress slider is read-only auto display");
+assert.match(app, /update-progress/, "todo/gantt context menu can open quick progress update");
+assert.match(app, /openProgressQuickUpdate|saveProgressQuickUpdate/, "quick progress appends a dated note without rewriting history");
+assert.match(app, /appendProgressUpdateNote/, "quick progress uses TaskWorkPolicy append helper");
+assert.match(app, /showDomTaskContextMenu/, "todo/gantt right-click uses an in-page DOM context menu");
+assert.match(app, /bindCardContextMenu/, "todo rows bind a dedicated right-click opener");
+assert.match(app, /showGanttContextMenu\(event, task/, "todo list reuses the same context menu path as Gantt");
+assert.match(app, /bindLeftButtonDragGate/, "todo rows gate HTML5 drag so right-click can fire");
+assert.doesNotMatch(
+  app,
+  /popupNativeTaskContextMenu\(event, options\)/,
+  "task context menu must not prefer the native OS popup (wrong theme/position)"
+);
+assert.match(app, /getTaskProgressBreakdown/, "progress percent comes from invested/plan breakdown");
+assert.match(app, /getTaskProgressPlanHours|已排期工时/, "progress plan hours stay task-exclusive instead of create→due day totals");
+assert.match(styles, /\.progress-review-modal\[open\][\s\S]*display:\s*flex/s, "progress review dialog uses a bounded flex layout so the list can scroll fully");
+assert.match(styles, /\.progress-review-card[\s\S]*border-radius:\s*10px/s, "progress review cards are spaced blocks, not clipped divider rows");
 assert.match(html, /id="taskProgressField"/, "task progress is visible in the detail dialog");
 assert.match(html, /待办类型/, "create kind labeled 待办类型");
 assert.match(html, /id="taskDueDateTime"[^>]*placeholder="2026\/10\/10 09:10"/, "datetime placeholder stays format-only; nudges are side buttons");

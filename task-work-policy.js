@@ -74,9 +74,24 @@
     return key.replace(/-/g, "/");
   }
 
+  /** 与事项相同的完成内容视为未填，避免日程块重复显示、进度重复抄写。 */
+  function normalizeEntryNote({ note = "", title = "" } = {}) {
+    const text = String(note || "").trim();
+    const head = String(title || "").trim();
+    if (!text) return "";
+    if (head && text === head) return "";
+    return text;
+  }
+
   /** 进度文案：完成内容优先，否则用事项标题，再否则「已投入」。 */
   function resolveInvestmentNoteText({ note = "", title = "" } = {}) {
-    return String(note || "").trim() || String(title || "").trim() || "已投入";
+    const cleaned = normalizeEntryNote({ note, title });
+    return cleaned || String(title || "").trim() || "已投入";
+  }
+
+  /** 日程块是否单独展示完成内容（与事项不同才显示）。 */
+  function shouldShowEntryNoteOnSchedule({ note = "", title = "" } = {}) {
+    return Boolean(normalizeEntryNote({ note, title }));
   }
 
   function buildInvestmentNoteLine({ dateKey = "", start = 0, end = 0, note = "", title = "" } = {}) {
@@ -111,6 +126,52 @@
     };
   }
 
+  function formatProgressClock(now = new Date()) {
+    const d = now instanceof Date ? now : new Date(now);
+    if (!Number.isFinite(d.getTime())) return "";
+    const m = d.getMonth() + 1;
+    const day = d.getDate();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${m}/${day} ${hh}:${mm}`;
+  }
+
+  /** 单次进度更新：只追加一行带时间戳的说明，不改写历史正文。 */
+  function buildProgressUpdateLine({ note = "", now = new Date() } = {}) {
+    const text = String(note || "").trim();
+    if (!text) return "";
+    const clock = formatProgressClock(now);
+    const head = clock ? `[进度 ${clock}]` : "[进度]";
+    return `${head} ${text}`;
+  }
+
+  function appendProgressUpdateNote({
+    deliveryNote = "",
+    note = "",
+    now = new Date(),
+    maxChars = 4000
+  } = {}) {
+    const line = buildProgressUpdateLine({ note, now });
+    const existing = String(deliveryNote || "");
+    if (!line) return { changed: false, deliveryNote: existing, line: "" };
+    const base = existing.replace(/\s+$/g, "");
+    const joined = base ? `${base}\n${line}` : line;
+    return {
+      changed: true,
+      deliveryNote: joined.slice(0, Math.max(0, Number(maxChars) || 4000)),
+      line
+    };
+  }
+
+  function recentProgressPreview(deliveryNote = "", limit = 3) {
+    const lines = String(deliveryNote || "")
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+    if (!lines.length) return [];
+    return lines.slice(Math.max(0, lines.length - Math.max(1, Number(limit) || 3)));
+  }
+
   return {
     validRange,
     copyPlacement,
@@ -121,8 +182,14 @@
     rollupActualStartDateKey,
     formatHourLabel,
     formatDateLabel,
+    formatProgressClock,
+    normalizeEntryNote,
     resolveInvestmentNoteText,
+    shouldShowEntryNoteOnSchedule,
     buildInvestmentNoteLine,
-    appendInvestmentNote
+    appendInvestmentNote,
+    buildProgressUpdateLine,
+    appendProgressUpdateNote,
+    recentProgressPreview
   };
 });

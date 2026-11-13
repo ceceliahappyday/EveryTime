@@ -47,10 +47,26 @@
     return Math.round((summary.taskProgresses || []).reduce((sum, progress) => sum + progress, 0) / summary.taskCount);
   }
 
-  function taskProgressPercent({ status, investedHours = 0, scheduledHours = 0 }) {
+  /**
+   * Leaf/parent plan hours for progress must be exclusive to the task, not
+   * “create→due 工作日总时长”. Parallel tasks would otherwise each claim the
+   * same 8h day. Prefer explicit estimate, else this task’s scheduled blocks.
+   */
+  function resolvePlanHours({ estimateHours = 0, scheduledHours = 0, planHours = 0 } = {}) {
+    const estimate = Math.max(0, Number(estimateHours) || 0);
+    if (estimate > 0) return estimate;
+    const scheduled = Math.max(0, Number(scheduledHours) || 0);
+    if (scheduled > 0) return scheduled;
+    // Legacy callers may still pass planHours; keep as last resort only.
+    return Math.max(0, Number(planHours) || 0);
+  }
+
+  function taskProgressPercent({ status, investedHours = 0, scheduledHours = 0, planHours = 0, estimateHours = 0 }) {
     if (["done", "closed", "ended"].includes(status)) return 100;
-    if (!investedHours || !scheduledHours) return 0;
-    return Math.round(Math.min(95, (investedHours / scheduledHours) * 100));
+    const invested = Math.max(0, Number(investedHours) || 0);
+    const plan = resolvePlanHours({ estimateHours, scheduledHours, planHours });
+    if (!invested || !plan) return 0;
+    return Math.round(Math.min(95, (invested / plan) * 100));
   }
 
   /** Parent plan progress: child invested hours / workday plan hours (create → due). */
@@ -92,6 +108,7 @@
     projectProgressPercent,
     taskProgressPercent,
     parentPlanProgressPercent,
+    resolvePlanHours,
     classifyProjectStatus
   };
 });

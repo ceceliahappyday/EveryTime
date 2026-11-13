@@ -51,7 +51,35 @@ const deduped = policy.appendInvestmentNote({
 assert.strictEqual(deduped.changed, false);
 
 assert.strictEqual(
+  policy.normalizeEntryNote({
+    note: "对当前已下载的会计准则资料进行本地应用开发",
+    title: "对当前已下载的会计准则资料进行本地应用开发"
+  }),
+  ""
+);
+assert.strictEqual(
+  policy.shouldShowEntryNoteOnSchedule({
+    note: "对当前已下载的会计准则资料进行本地应用开发",
+    title: "对当前已下载的会计准则资料进行本地应用开发"
+  }),
+  false
+);
+assert.strictEqual(
+  policy.shouldShowEntryNoteOnSchedule({
+    note: "已完成字典检索接口",
+    title: "对资料做本地开发"
+  }),
+  true
+);
+assert.strictEqual(
   policy.resolveInvestmentNoteText({ note: "", title: "对资料做本地开发" }),
+  "对资料做本地开发"
+);
+assert.strictEqual(
+  policy.resolveInvestmentNoteText({
+    note: "对资料做本地开发",
+    title: "对资料做本地开发"
+  }),
   "对资料做本地开发"
 );
 assert.strictEqual(
@@ -96,6 +124,25 @@ assert.strictEqual(
     title: "对资料做本地开发"
   }).changed,
   false
+);
+
+const progressAppended = policy.appendProgressUpdateNote({
+  deliveryNote: "旧说明",
+  note: "  完成初稿  ",
+  now: new Date(2026, 10, 13, 9, 5)
+});
+assert.strictEqual(progressAppended.changed, true);
+assert.strictEqual(
+  progressAppended.deliveryNote,
+  "旧说明\n[进度 11/13 09:05] 完成初稿"
+);
+assert.strictEqual(
+  policy.appendProgressUpdateNote({ deliveryNote: "旧说明", note: "   " }).changed,
+  false
+);
+assert.deepStrictEqual(
+  policy.recentProgressPreview("a\nb\nc\nd", 2),
+  ["c", "d"]
 );
 
 console.log("task work behavior tests passed");

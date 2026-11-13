@@ -69,6 +69,10 @@ assert.equal(classifyProjectStatus([{ status: "in_progress", completedAt: "2026-
 
 assert.equal(taskProgressPercent({ status: "planned", investedHours: 0, scheduledHours: 2 }), 0);
 assert.equal(taskProgressPercent({ status: "in_progress", investedHours: 1, scheduledHours: 2 }), 50);
+assert.equal(taskProgressPercent({ status: "in_progress", investedHours: 2, estimateHours: 8, scheduledHours: 1 }), 25,
+  "explicit estimate beats scheduled hours");
+assert.equal(taskProgressPercent({ status: "in_progress", investedHours: 1, planHours: 8, scheduledHours: 2 }), 50,
+  "scheduled hours beat legacy create→due planHours so parallel tasks do not share one day");
 assert.equal(taskProgressPercent({ status: "done", investedHours: 0, scheduledHours: 2 }), 100);
 
 assert.equal(parentPlanProgressPercent({ status: "in_progress", childInvestedHours: 9, planHours: 18 }), 50);

@@ -206,14 +206,26 @@
     return true;
   }
 
+  function isEndedProgressReviewTask(task) {
+    return ["done", "closed"].includes(String(task?.status || ""));
+  }
+
+  /**
+   * 批量更新进度候选：叶子且未结束，且满足其一——
+   * 进行中（有无投入均可）/ 待跟踪·仅关注 / 计划中（无投入也可写记录）。
+   * hasInvestedWork 保留兼容，不再作为硬条件。
+   */
   function isProgressReviewCandidate({
     task,
     hasChildTasks = () => false,
     isActive = () => false,
+    isAttention = () => false,
+    isPlanned = () => false,
     hasInvestedWork = () => false
   } = {}) {
     if (!task || !isLeafTask(task, hasChildTasks)) return false;
-    if (!isActive(task)) return false;
+    if (isEndedProgressReviewTask(task)) return false;
+    if (isActive(task) || isAttention(task) || isPlanned(task)) return true;
     return !!hasInvestedWork(task);
   }
 
@@ -221,6 +233,8 @@
     tasks = [],
     hasChildTasks = () => false,
     isActive = () => false,
+    isAttention = () => false,
+    isPlanned = () => false,
     hasInvestedWork = () => false,
     sortBy = null
   } = {}) {
@@ -228,10 +242,24 @@
       task,
       hasChildTasks,
       isActive,
+      isAttention,
+      isPlanned,
       hasInvestedWork
     }));
     if (typeof sortBy === "function") list.sort(sortBy);
     return list;
+  }
+
+  function matchesProgressReviewQuery(task = {}, query = "", extraText = "") {
+    const needle = String(query || "").trim().toLowerCase();
+    if (!needle) return true;
+    const hay = [
+      task.title,
+      task.owner,
+      task.deliveryNote,
+      extraText
+    ].map(part => String(part || "").toLowerCase()).join(" ");
+    return needle.split(/\s+/).filter(Boolean).every(token => hay.includes(token));
   }
 
   function taskCreatedAtMs(task) {
@@ -520,6 +548,7 @@
     shouldKeepVisibleWithWorkHistory,
     isProgressReviewCandidate,
     progressReviewCandidates,
+    matchesProgressReviewQuery,
     taskCreatedAtMs,
     parseFiniteIso,
     inferTaskCreatedAtIso,

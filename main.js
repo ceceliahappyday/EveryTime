@@ -407,6 +407,53 @@ if (singleInstanceLock) app.whenReady().then(() => {
     name: item.name,
     baseUrl: item.baseUrl
   })));
+  ipcMain.handle("menu:popup", async (event, payload) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    const items = Array.isArray(payload) ? payload : (payload?.items || []);
+    const x = Number(payload?.x);
+    const y = Number(payload?.y);
+    return await new Promise(resolve => {
+      let settled = false;
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        resolve(value == null ? null : value);
+      };
+      const mapItems = (list = []) => list.map(item => {
+        if (!item || item.type === "separator") return { type: "separator" };
+        if (Array.isArray(item.submenu)) {
+          return {
+            label: String(item.label || ""),
+            enabled: item.enabled !== false,
+            submenu: mapItems(item.submenu)
+          };
+        }
+        return {
+          label: String(item.label || ""),
+          enabled: item.enabled !== false,
+          click: () => finish(item.id || null)
+        };
+      });
+      try {
+        if (win && !win.isDestroyed()) {
+          try { win.focus(); } catch { /* focus best-effort */ }
+        }
+        const menu = Menu.buildFromTemplate(mapItems(items));
+        const options = {
+          window: win && !win.isDestroyed() ? win : undefined,
+          callback: () => finish(null)
+        };
+        // x/y must be screen coordinates. Omit them to use the current cursor position.
+        if (Number.isFinite(x) && Number.isFinite(y) && x > -100000 && y > -100000) {
+          options.x = Math.round(x);
+          options.y = Math.round(y);
+        }
+        menu.popup(options);
+      } catch {
+        finish(null);
+      }
+    });
+  });
   ipcMain.handle("clipboard:write-text", (_event, text) => {
     clipboard.writeText(String(text ?? ""));
     return true;
@@ -660,14 +707,25 @@ function runUnicodePowerShellFile(scriptBody) {
 
 function ensureStartupApproved(name) {
   if (process.platform !== "win32") return false;
-  const content = [
-    "Windows Registry Editor Version 5.00",
-    "",
-    "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run]",
-    `"${escapeRegFileString(name)}"=hex:02,00,00,00,00,00,00,00,00,00,00,00`,
-    ""
-  ].join("\r\n");
-  return importUtf16RegFile(content);
+  try {
+    const escapedName = String(name || "").replace(/'/g, "''");
+    runUnicodePowerShellFile(
+      `$path = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run';`
+      + `New-Item -Path $path -Force | Out-Null;`
+      + `$bytes = [byte[]](0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00);`
+      + `New-ItemProperty -Path $path -Name '${escapedName}' -PropertyType Binary -Value $bytes -Force | Out-Null`
+    );
+    return true;
+  } catch {
+    const content = [
+      "Windows Registry Editor Version 5.00",
+      "",
+      "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run]",
+      `"${escapeRegFileString(name)}"=hex:02,00,00,00,00,00,00,00,00,00,00,00`,
+      ""
+    ].join("\r\n");
+    return importUtf16RegFile(content);
+  }
 }
 
 function ensureRunKeyRegistration(name, exePath) {
@@ -676,14 +734,37 @@ function ensureRunKeyRegistration(name, exePath) {
     ? StartupPolicy.quoteCommand(exePath)
     : `"${String(exePath || "").replace(/"/g, "")}"`;
   if (!value) return false;
-  const content = [
-    "Windows Registry Editor Version 5.00",
-    "",
-    "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run]",
-    `"${escapeRegFileString(name)}"="${escapeRegFileString(value)}"`,
-    ""
-  ].join("\r\n");
-  return importUtf16RegFile(content);
+  try {
+    const escapedName = String(name || "").replace(/'/g, "''");
+    const escapedValue = String(value).replace(/'/g, "''");
+    runUnicodePowerShellFile(
+      `Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' `
+      + `-Name '${escapedName}' -Value '${escapedValue}' -Type String -Force`
+    );
+    return queryRunValue(name) === value;
+  } catch {
+    const content = [
+      "Windows Registry Editor Version 5.00",
+      "",
+      "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run]",
+      `"${escapeRegFileString(name)}"="${escapeRegFileString(value)}"`,
+      ""
+    ].join("\r\n");
+    return importUtf16RegFile(content);
+  }
+}
+
+/** Dev preview must not create/destroy the installed app's DailyPlanner Run key. */
+function canManageStartupRegistration() {
+  return process.platform === "win32" && !isDevRuntime;
+}
+
+function registeredStartupBelongsToThisExe(exePath = app.getPath("exe")) {
+  const command = queryRunValue(StartupPolicy.canonicalName);
+  if (!command) return false;
+  const registered = String(StartupPolicy.commandExecutablePath(command) || "").replaceAll("/", "\\").toLowerCase();
+  const current = String(exePath || "").replaceAll("/", "\\").toLowerCase();
+  return Boolean(registered && current && registered === current);
 }
 
 function registryKeyToPsPath(key) {
@@ -748,6 +829,11 @@ function cleanupKnownStartupEntries({ keepCanonical = false } = {}) {
 function configureLoginItem(openAtLogin) {
   const enable = !!openAtLogin;
   const exePath = app.getPath("exe");
+  if (!canManageStartupRegistration()) {
+    // Unpackaged preview shares the same Run value name as the install.
+    // Leaving it alone keeps the installed 今日日程.exe autostart intact.
+    return isStartupRegistered();
+  }
   cleanupKnownStartupEntries({ keepCanonical: enable });
   try {
     app.setLoginItemSettings({
@@ -757,7 +843,7 @@ function configureLoginItem(openAtLogin) {
       args: []
     });
   } catch { /* registry fallback below is authoritative on Windows */ }
-  if (enable && process.platform === "win32") {
+  if (enable) {
     // Always force a quoted HKCU Run value. Electron may omit quotes for
     // "Program Files" paths, which then fail both ownership checks and startup.
     ensureRunKeyRegistration(StartupPolicy.canonicalName, exePath);
@@ -766,8 +852,8 @@ function configureLoginItem(openAtLogin) {
       ensureRunKeyRegistration(StartupPolicy.canonicalName, exePath);
       ensureStartupApproved(StartupPolicy.canonicalName);
     }
-  }
-  if (!enable) {
+  } else if (registeredStartupBelongsToThisExe(exePath) || !queryRunValue(StartupPolicy.canonicalName)) {
+    // Only remove our own install path — never wipe another build's entry.
     deleteRegistryValue(startupRunKey, StartupPolicy.canonicalName);
     deleteRegistryValue(startupApprovedRunKey, StartupPolicy.canonicalName);
   }

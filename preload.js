@@ -35,5 +35,6 @@ contextBridge.exposeInMainWorld("desktopAPI", {
   exportData: (filename, format, data) => ipcRenderer.invoke("data:export", filename, format, data),
   importData: () => ipcRenderer.invoke("data:import"),
   exportTables: (filename, tables) => ipcRenderer.invoke("data:export-tables", filename, tables),
-  writeClipboardText: text => ipcRenderer.invoke("clipboard:write-text", text)
+  writeClipboardText: text => ipcRenderer.invoke("clipboard:write-text", text),
+  popupContextMenu: payload => ipcRenderer.invoke("menu:popup", payload)
 });

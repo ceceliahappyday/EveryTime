@@ -80,12 +80,22 @@ assert.match(main, /keepCanonical:\s*enable/, "enabling startup must not delete 
 assert.match(main, /ensureStartupApproved/, "Windows startup must mark StartupApproved as enabled");
 assert.match(main, /startAtLoginApplied/, "settings API must report whether the Run key was actually written");
 assert.match(main, /ensureRunKeyRegistration\(StartupPolicy\.canonicalName,\s*exePath\)/, "enabling startup always force-writes a quoted Run value");
-assert.match(main, /importUtf16RegFile/, "Windows startup registration must import UTF-16 .reg files for Unicode exe paths");
+assert.match(main, /menu:popup/, "renderer can open a native context menu through IPC");
+assert.match(main, /canManageStartupRegistration|!isDevRuntime/, "dev preview must not mutate the installed DailyPlanner Run key");
+assert.match(main, /registeredStartupBelongsToThisExe/, "disabling startup only removes this install's Run value");
+assert.match(main, /Set-ItemProperty/, "startup Run writes prefer PowerShell Set-ItemProperty");
+assert.match(main, /CurrentVersion\\\\Run/, "startup Run PowerShell path targets HKCU Run");
+assert.match(main, /importUtf16RegFile/, "Windows startup registration keeps UTF-16 .reg fallback for Unicode exe paths");
 assert.match(main, /WriteAllText\(/, "startup Run value reads must avoid console code-page mojibake");
 assert.match(
   fs.readFileSync("app.js", "utf8"),
   /startAtLoginApplied/,
   "settings toast must distinguish saved intent from registry application"
+);
+assert.match(
+  fs.readFileSync("app.js", "utf8"),
+  /开发预览不会改系统启动项/,
+  "dev preview explains that autostart belongs to the installed build"
 );
 
 console.log("settings modal layout tests passed");

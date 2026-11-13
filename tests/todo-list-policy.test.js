@@ -91,9 +91,11 @@ const reviewCandidates = policy.progressReviewCandidates({
   tasks: reviewPool,
   hasChildTasks: reviewHasChildren,
   isActive: task => task.status === "in_progress",
+  isAttention: () => false,
+  isPlanned: () => false,
   hasInvestedWork: task => task.id === "leaf" || task.id === "solo"
 });
-assert.deepStrictEqual(reviewCandidates.map(task => task.id), ["leaf", "solo"]);
+assert.deepStrictEqual(reviewCandidates.map(task => task.id), ["leaf", "solo", "idle-leaf"]);
 assert.strictEqual(
   policy.isProgressReviewCandidate({
     task: reviewPool[0],
@@ -103,6 +105,31 @@ assert.strictEqual(
   }),
   false,
   "top-level plan nodes should not appear in progress review"
+);
+assert.strictEqual(
+  policy.isProgressReviewCandidate({
+    task: { id: "track", title: "跟进合同", status: "planned", attentionOnly: true },
+    hasChildTasks: () => false,
+    isActive: () => false,
+    isAttention: task => Boolean(task.attentionOnly),
+    isPlanned: task => task.status === "planned" && !task.attentionOnly,
+    hasInvestedWork: () => false
+  }),
+  true,
+  "attention-only leaves without investment stay in progress review"
+);
+assert.strictEqual(
+  policy.matchesProgressReviewQuery(
+    { title: "会计准则字典", owner: "罗素", deliveryNote: "已完成检索" },
+    "准则 罗素"
+  ),
+  true,
+  "progress review search matches all tokens"
+);
+assert.strictEqual(
+  policy.matchesProgressReviewQuery({ title: "会计准则字典", owner: "罗素" }, "合同"),
+  false,
+  "progress review search rejects non-matching tokens"
 );
 
 const byCreatedDesc = policy.sortByCreatedAtDesc([

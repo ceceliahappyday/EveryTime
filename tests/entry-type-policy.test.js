@@ -16,9 +16,26 @@ assert.match(app, /TodoListPolicy\.buildMeetingAllSections/, "all-meetings view 
 assert.match(app, /function createMeetingCard/, "meeting cards should open the schedule entry, not a todo");
 assert.match(html, />会议日程</, "calendar entry type label should be 会议日程");
 assert.match(html, />任务处理</, "task_work entry type label should be 任务处理");
-assert.match(html, /未挂接且为任务处理时也会用作新任务名/, "entry title copy explains empty-link create");
-assert.match(html, /任务处理将新建顶层任务/, "hang-task trigger copy explains empty-link create");
-assert.match(html, /有挂接任务时默认把「事项」写入其进度说明/, "entry note copy ties progress fallback to linked tasks");
+assert.match(html, /新建时填写新任务名；已挂接叶子时自动锁定为任务名/, "entry title copy explains create vs locked linked title");
+assert.match(html, /选已有叶子或拖入左侧/, "hang-task trigger prefers existing leaf or drag-in");
+assert.match(html, /已挂接时事项锁定，细节写这里/, "entry note copy explains locked-title progress detail");
+assert.match(app, /normalizeEntryNote/, "duplicate title/note is collapsed on save");
+assert.match(app, /shouldShowEntryNoteOnSchedule/, "schedule cards hide note when it repeats the title");
+assert.match(app, /function getEntryFieldLockState/, "schedule form exposes association lock state");
+assert.match(app, /function updateEntryFieldLocks/, "schedule form applies field locks for linked investments");
+assert.match(app, /lockLink: editingLinked/, "saved linked entries lock the task association");
+assert.match(app, /computeScheduleDerivedProgress/, "parent and leaf progress share one schedule-derived helper");
+assert.match(app, /taskHasActiveChildWork/, "parents become in_progress from active child work");
+assert.match(
+  app,
+  /while \(currentId && !seen\.has\(currentId\)\)/,
+  "refreshTaskStatusForId walks ancestors after leaf investment"
+);
+assert.match(
+  app,
+  /function createEntryFromTask[\s\S]*applyInvestmentNoteToTask/s,
+  "dragging a leaf into the schedule also writes investment progress notes"
+);
 assert.doesNotMatch(html, /option value="task_work">新建待办</, "schedule type must not keep the old 新建待办 label");
 assert.doesNotMatch(html, /计入投入，在「会议」清单查看/, "entry type labels should not keep parenthetical hints");
 assert.match(app, /resolveEntryTaskLinkWithGuard/, "task work entries should resolve an explicit leaf task link");
