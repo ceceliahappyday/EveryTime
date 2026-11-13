@@ -133,6 +133,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "todaySummary", "monthLabel", "monthPickerButton", "datePicker", "dateControls", "dateNavPrev", "dateNavNext",
     "appVersionBadge",
     "taskPanel", "todayButton", "weekDays", "taskCount", "taskList", "taskListSearch", "taskSearchWrap", "continueYesterdayButton", "unplannedCount", "openCount", "doneCount", "closedCount", "memoCount", "meetingCount", "exportButton",
+    "dueReminderDock", "dueReminderDockTitle", "dueReminderDockHint",
     "plannedHours", "progressLabel", "progressBar", "scheduleTitle", "loggedHours", "freeHours",
     "timeline", "timelineWrap", "projectGanttChrome", "quickAddButton", "quickTaskForm", "quickTaskInput", "taskAddTrigger", "panelAiImageInput", "workspaceSplitHandle", "viewSwitcher",
     "taskTabs", "meetingTabs", "allCount", "meetingAllCount", "meetingPlannedCount", "meetingDoingCount", "meetingEndedCount",
@@ -154,7 +155,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     "appConfirmDialog", "appConfirmForm", "appConfirmTitle", "appConfirmMessage", "appConfirmCancel", "appConfirmOk",
     "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryOwner", "entryNote", "entryCategoryField", "entryCategory", "colorPicker", "deleteEntryButton", "dayNoteButton",
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
-    "attentionAlarmBanner", "attentionAlarmBannerText",
     "updateProgress", "updateProgressText", "updateProgressBar",
     "exportDialog", "exportForm", "exportFormat", "importButton", "minimizeWindow", "maximizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiExportTablesButton", "aiQuickActions",
     "aiChatLog", "aiAttachment", "aiAttachmentPreview", "aiAttachmentClear", "aiImageInput", "aiAttachImageButton", "aiSubmitButton", "aiScreenshotHintButton",
@@ -217,13 +217,13 @@ async function initPersistentStorage() {
   if (!window.desktopAPI?.loadPlannerData) return;
   const persisted = await window.desktopAPI.loadPlannerData();
   if (!persisted || typeof persisted !== "object") return;
-  const localCount = countPlannerRecords(state.data);
-  const persistedCount = countPlannerRecords(persisted);
-  // Prefer the desktop file when it has equal/more records so a stale
-  // localStorage copy of「我」cannot overwrite an already-migrated disk store.
-  if (persistedCount > localCount || (persistedCount > 0 && persistedCount === localCount)) {
-    state.data = persisted;
+  const chosen = chooseFresherPlannerData(state.data, persisted);
+  // 合并会减少条数；不能再按「条数多的赢」，否则更新后旧磁盘会把已合并任务复活。
+  if (chosen !== state.data) {
+    state.data = chosen;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+  } else {
+    mergePlannerRemovedTaskIdsFrom(persisted);
   }
 }
 
@@ -281,8 +281,76 @@ function readDueReminderSettingsFromForm() {
     : getReminderSettings();
 }
 
+function isPlannerDateKey(key) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(key || ""));
+}
+
+function getPlannerMeta(data = state.data) {
+  if (!data || typeof data !== "object") return { savedAt: "", removedTaskIds: [] };
+  if (!data.__meta || typeof data.__meta !== "object" || Array.isArray(data.__meta)) {
+    data.__meta = { savedAt: "", removedTaskIds: [] };
+  }
+  if (!Array.isArray(data.__meta.removedTaskIds)) data.__meta.removedTaskIds = [];
+  return data.__meta;
+}
+
+function plannerSavedAtMs(data) {
+  const stamp = String(getPlannerMeta(data).savedAt || "").trim();
+  const ms = Date.parse(stamp);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function rememberRemovedTaskIds(ids = [], data = state.data) {
+  const meta = getPlannerMeta(data);
+  const set = new Set((meta.removedTaskIds || []).filter(Boolean));
+  (ids || []).filter(Boolean).forEach(id => set.add(String(id)));
+  meta.removedTaskIds = [...set].slice(-800);
+  return meta.removedTaskIds;
+}
+
+function mergePlannerRemovedTaskIdsFrom(otherData) {
+  const otherIds = getPlannerMeta(otherData).removedTaskIds || [];
+  if (!otherIds.length) return;
+  rememberRemovedTaskIds(otherIds);
+}
+
+function purgeRememberedRemovedTasks(data = state.data) {
+  const removed = new Set((getPlannerMeta(data).removedTaskIds || []).filter(Boolean));
+  if (!removed.size) return 0;
+  let purged = 0;
+  Object.entries(data || {}).forEach(([dateKey, day]) => {
+    if (!isPlannerDateKey(dateKey) || !day || typeof day !== "object") return;
+    const before = (day.tasks || []).length;
+    day.tasks = (day.tasks || []).filter(task => {
+      if (!removed.has(task?.id)) return true;
+      purged += 1;
+      return false;
+    });
+    if ((day.tasks || []).length !== before && state.editingTaskId && removed.has(state.editingTaskId)) {
+      state.editingTaskId = null;
+    }
+  });
+  return purged;
+}
+
+/** Prefer the store that was saved later; fall back to record count only when both lack stamps. */
+function chooseFresherPlannerData(localData, diskData) {
+  mergePlannerRemovedTaskIdsFrom(diskData);
+  mergePlannerRemovedTaskIdsFrom(localData);
+  const localMs = plannerSavedAtMs(localData);
+  const diskMs = plannerSavedAtMs(diskData);
+  if (diskMs && localMs) return diskMs >= localMs ? diskData : localData;
+  if (diskMs && !localMs) return diskData;
+  if (localMs && !diskMs) return localData;
+  const localCount = countPlannerRecords(localData);
+  const diskCount = countPlannerRecords(diskData);
+  if (diskCount > localCount || (diskCount > 0 && diskCount === localCount)) return diskData;
+  return localData;
+}
+
 function migrateData() {
   Object.entries(state.data).forEach(([dateKey, day]) => {
+    if (!isPlannerDateKey(dateKey) || !day || typeof day !== "object") return;
     day.tasks ||= [];
     day.entries ||= [];
     day.note ||= "";
@@ -345,7 +413,8 @@ function migrateData() {
     });
   });
   // Second pass: sync entry category/color after all tasks are normalized.
-  Object.values(state.data).forEach(day => {
+  Object.entries(state.data).forEach(([dateKey, day]) => {
+    if (!isPlannerDateKey(dateKey) || !day || typeof day !== "object") return;
     (day.entries || []).forEach(entry => {
       const linkedTask = entry.taskId ? findTask(entry.taskId)?.task : null;
       entry.category = typeof TaskCategoryPolicy?.resolveEntryCategory === "function"
@@ -356,6 +425,7 @@ function migrateData() {
         : (entry.color || "sage");
     });
   });
+  purgeRememberedRemovedTasks(state.data);
   if (typeof ScheduleHierarchyRepairPolicy?.repairPlannerData === "function") {
     ScheduleHierarchyRepairPolicy.repairPlannerData(state.data, {
       createId: () => crypto.randomUUID(),
@@ -483,6 +553,7 @@ function saveData() {
   invalidateRecurringCatalogCache();
   invalidateTaskScheduleEntriesIndex();
   invalidateCalendarEntryCaches();
+  getPlannerMeta(state.data).savedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
   if (persistentWritesEnabled && window.desktopAPI?.savePlannerData) {
     window.desktopAPI.savePlannerData(state.data).catch(() => {});
@@ -490,8 +561,10 @@ function saveData() {
 }
 
 function countPlannerRecords(data) {
-  return Object.values(data || {}).reduce((sum, day) =>
-    sum + (day.tasks?.length || 0) + (day.entries?.length || 0) + (day.note ? 1 : 0), 0);
+  return Object.entries(data || {}).reduce((sum, [dateKey, day]) => {
+    if (!isPlannerDateKey(dateKey) || !day || typeof day !== "object") return sum;
+    return sum + (day.tasks?.length || 0) + (day.entries?.length || 0) + (day.note ? 1 : 0);
+  }, 0);
 }
 
 function getDay(key = state.selectedDate) {
@@ -500,9 +573,10 @@ function getDay(key = state.selectedDate) {
 }
 
 function getAllTasks() {
-  return Object.entries(state.data).flatMap(([dateKey, day]) =>
-    (day.tasks || []).map(task => ({ task, dateKey }))
-  );
+  return Object.entries(state.data).flatMap(([dateKey, day]) => {
+    if (!isPlannerDateKey(dateKey) || !day || typeof day !== "object") return [];
+    return (day.tasks || []).map(task => ({ task, dateKey }));
+  });
 }
 
 function findTask(id) {
@@ -644,7 +718,7 @@ function bindEvents() {
     if (state.taskView === "project") renderProjectSurface();
     else renderTasks();
   });
-  el.attentionAlarmBanner?.addEventListener("click", () => openAttentionAlarmList());
+  el.dueReminderDock?.addEventListener("click", () => openAttentionAlarmList());
 
   el.continueYesterdayButton?.addEventListener("click", () => {
     state.listKind = "todo";
@@ -3819,7 +3893,7 @@ function renderUnifiedTodoList() {
       : hasListSearch
         ? "没有匹配的待办或会议"
         : hasAttentionAlarmList
-          ? `这些关注提醒任务已处理，或不在当前清单<br><button type="button" class="soft-button" id="clearAttentionAlarmFilter">返回全部任务</button>`
+          ? `这些目标完成提醒任务已处理，或不在当前清单<br><button type="button" class="soft-button" id="clearAttentionAlarmFilter">返回全部任务</button>`
           : state.filter === "memo" && !meetingMode
           ? "暂无待跟踪事项<br>在进行中的待办上勾选「仅关注」即可标记，不会关闭任务"
           : meetingMode
@@ -3828,6 +3902,7 @@ function renderUnifiedTodoList() {
     el.taskList.querySelector("#emptyCreateMeeting")?.addEventListener("click", () => openNewFromQuickAdd("", { kind: "meeting" }));
     el.taskList.querySelector("#clearAttentionAlarmFilter")?.addEventListener("click", () => applyTaskFilter("all"));
     paintListSelection();
+    syncDueReminderDock();
     return;
   }
 
@@ -3871,6 +3946,7 @@ function renderUnifiedTodoList() {
     });
   });
   paintListSelection();
+  syncDueReminderDock();
 }
 
 function getWorkEntriesByDate() {
@@ -12910,8 +12986,10 @@ function applyMergedFieldsToSurvivor(survivor, sources = []) {
 function removeMergedSourceTasks(sourceIds = []) {
   const ids = new Set((sourceIds || []).filter(Boolean));
   if (!ids.size) return 0;
+  rememberRemovedTaskIds([...ids]);
   let removed = 0;
-  Object.values(state.data || {}).forEach(day => {
+  Object.entries(state.data || {}).forEach(([dateKey, day]) => {
+    if (!isPlannerDateKey(dateKey) || !day || typeof day !== "object") return;
     const before = (day.tasks || []).length;
     day.tasks = (day.tasks || []).filter(task => {
       if (!ids.has(task.id)) return true;
@@ -14340,22 +14418,6 @@ function markAttentionAlarmViewed(todayKey = toDateKey(new Date())) {
   catch { /* ignore quota */ }
 }
 
-function hideAttentionAlarmBanner() {
-  if (!el.attentionAlarmBanner) return;
-  el.attentionAlarmBanner.hidden = true;
-  el.attentionAlarmBanner.classList.remove("show");
-  delete el.attentionAlarmBanner.dataset.taskIds;
-}
-
-function showAttentionAlarmBanner(tasks = []) {
-  if (!el.attentionAlarmBanner || !el.attentionAlarmBannerText) return;
-  const count = tasks.length;
-  el.attentionAlarmBannerText.textContent = `${count} 条待办临近或已到目标完成时间，点击查看`;
-  el.attentionAlarmBanner.dataset.taskIds = tasks.map(task => task.id).filter(Boolean).join(",");
-  el.attentionAlarmBanner.hidden = false;
-  el.attentionAlarmBanner.classList.add("show");
-}
-
 function clearAttentionAlarmSession() {
   state.attentionAlarmTaskIds = [];
   state.attentionAlarmDueBaseline = {};
@@ -14382,19 +14444,46 @@ function captureAttentionAlarmDueBaseline(ids = []) {
   state.attentionAlarmDueBaseline = baseline;
 }
 
+/** Left-panel dock: same compact copy/style as the former 关注提醒 banner. */
+function syncDueReminderDock(todayKey = toDateKey(new Date())) {
+  const dock = el.dueReminderDock;
+  if (!dock) return;
+  const due = attentionAlarmTasks(todayKey);
+  const count = due.length;
+  const inOverlay = Boolean(state.attentionAlarmTaskIds?.length);
+  if (!count) {
+    dock.hidden = true;
+    dock.classList.remove("is-active");
+    delete dock.dataset.taskIds;
+    return;
+  }
+  dock.hidden = false;
+  dock.classList.toggle("is-active", inOverlay);
+  dock.dataset.taskIds = due.map(task => task.id).filter(Boolean).join(",");
+  if (el.dueReminderDockTitle) el.dueReminderDockTitle.textContent = `关注提醒（${count}）`;
+  if (el.dueReminderDockHint) el.dueReminderDockHint.textContent = "点击查看临近或已到目标时间的任务";
+  dock.title = `关注提醒（${count}）`;
+  dock.setAttribute("aria-pressed", inOverlay ? "true" : "false");
+}
+
 function openAttentionAlarmList(taskIds) {
   const todayKey = toDateKey(new Date());
-  const fromBanner = String(el.attentionAlarmBanner?.dataset.taskIds || "")
+  // Always reopen from the live due set so exiting and returning stays accurate.
+  const liveIds = attentionAlarmTasks(todayKey).map(task => task.id);
+  const fromDock = String(el.dueReminderDock?.dataset.taskIds || "")
     .split(",")
     .map(id => id.trim())
     .filter(Boolean);
-  const ids = [...new Set((Array.isArray(taskIds) ? taskIds : fromBanner.length ? fromBanner : attentionAlarmTasks(todayKey).map(task => task.id)).filter(Boolean))];
-  hideAttentionAlarmBanner();
+  const ids = [...new Set((Array.isArray(taskIds) && taskIds.length
+    ? taskIds
+    : (liveIds.length ? liveIds : fromDock)).filter(Boolean))];
   markAttentionAlarmViewed(todayKey);
   lastAttentionAlarmPromptKey = todayKey;
   if (!ids.length) {
     clearAttentionAlarmSession();
+    syncDueReminderDock(todayKey);
     renderTasks();
+    showToast("当前没有待处理的目标完成提醒");
     return;
   }
   state.listKind = "todo";
@@ -14411,11 +14500,10 @@ function openAttentionAlarmList(taskIds) {
 function maybePromptAttentionAlarms() {
   const todayKey = toDateKey(new Date());
   const due = attentionAlarmTasks(todayKey);
-  if (!due.length || attentionAlarmViewedKey() === todayKey) {
-    hideAttentionAlarmBanner();
-    return;
-  }
-  showAttentionAlarmBanner(due);
+  syncDueReminderDock(todayKey);
+  if (!due.length) return;
+  // Dock stays available; OS notify only fires once per day until viewed.
+  if (attentionAlarmViewedKey() === todayKey) return;
   if (lastAttentionAlarmPromptKey === todayKey) return;
   lastAttentionAlarmPromptKey = todayKey;
   const message = `${due.length} 条待办临近或已到目标完成时间，点击查看`;

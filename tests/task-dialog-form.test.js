@@ -154,10 +154,16 @@ assert.match(app, /isAttentionAlarmDue/, "attention tasks raise an alarm on the 
 assert.match(app, /task-attention-alarm-mark/, "due attention tasks show a red exclamation mark");
 assert.match(styles, /\.task-attention-alarm\.reminder-overdue[\s\S]*background:\s*#b71c1c/, "overdue alarm mark is deep red");
 assert.match(app, /maybePromptAttentionAlarms/, "startup should prompt due attention reminders");
-assert.match(html, /id="attentionAlarmBanner"/, "due attention reminders use a sticky clickable banner");
+assert.doesNotMatch(html, /id="attentionAlarmBanner"/, "due reminders no longer use a separate floating banner");
+assert.match(html, /id="dueReminderDock"/, "left todo panel keeps a bottom dock to reopen due reminders");
+assert.match(html, /id="dueReminderDockTitle"/, "due reminder dock title carries the count");
+assert.match(html, /点击查看临近或已到目标时间的任务/, "due reminder dock keeps a short action line");
+assert.match(app, /关注提醒（\$\{count\}）/, "dock title updates as 关注提醒（N）");
 assert.match(app, /openAttentionAlarmList/, "clicking the reminder must open those tasks in the todo list");
 assert.match(app, /attentionAlarmTaskIds/, "reminder click filters the todo list to the due attention tasks");
 assert.match(app, /syncAttentionAlarmTaskIds/, "reminder overlay drops tasks that leave the due window");
+assert.match(app, /function syncDueReminderDock/, "due reminder dock stays available after exiting the overlay");
+assert.match(app, /dueReminderDock\?\.addEventListener\("click"/, "dock click reopens the live due reminder list");
 assert.match(app, /groupAttentionAlarmOverlay/, "reminder overlay groups by overdue / today / upcoming");
 assert.match(app, /bindDateTimeNudgeShortcuts/, "editable datetimes support > week and >> month nudges");
 assert.match(html, /task-due-datetime-wrap[\s\S]*id="taskDueNudgeWeek"[^>]*>\s*&gt;\s*</, "week nudge > sits inside the due date field");
@@ -194,11 +200,14 @@ assert.match(app, /attentionAlarmDueBaseline/, "session baseline detects which r
 assert.match(styles, /\.task-attention-alarm\.reminder-upcoming[\s\S]*background:\s*transparent/, "upcoming uses a bare yellow exclamation");
 assert.match(styles, /\.task-attention-restore[\s\S]*background:\s*#2e7d32/, "session-adjusted reminders use a green restore mark");
 assert.match(styles, /\.task-attention-alarm\.reminder-due_today[\s\S]*background:\s*#f0b429/, "today-due uses a yellow triangle");
-assert.match(app, /\$\{count\} 条待办临近或已到目标完成时间，点击查看/, "banner summarizes the task count instead of joining titles");
+assert.match(app, /点击查看临近或已到目标时间的任务/, "dock subtitle stays short and fixed");
 assert.doesNotMatch(app, /titles\.join\("、"\)/, "reminder popup must not concatenate task titles");
+assert.doesNotMatch(app, /正在查看；处理完的会自动离开/, "dock must not swap in long viewing copy");
 assert.match(app, /kind: "due-reminder"/, "desktop notification click must route back to the same task list");
 assert.match(app, /onNotifyClicked/, "renderer listens for notification clicks");
-assert.match(styles, /\.attention-alarm-banner\.show[\s\S]*pointer-events:\s*auto/, "reminder banner stays clickable until viewed");
+assert.match(styles, /\.due-reminder-dock[\s\S]*background:\s*#3a2a28/, "dock uses the former 关注提醒 dark card");
+assert.match(styles, /\.due-reminder-dock-copy strong[\s\S]*color:\s*#ffd4d0/, "dock title uses the soft pink emphasis");
+assert.doesNotMatch(styles, /\.attention-alarm-banner/, "floating attention banner styles are removed");
 assert.match(app, /返回全部任务/, "attention reminder list must offer a way back to all tasks");
 assert.match(styles, /#taskEditForm \.form-row > label:not\(#taskTitleField\):not\(\.checkbox-setting\)/, "short task fields keep label and control on one row");
 assert.match(

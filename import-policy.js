@@ -1,12 +1,19 @@
 (function (root) {
+  function isPlannerDateKey(key) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(key || ""));
+  }
+
   function countPlannerRecords(data) {
-    return Object.values(data || {}).reduce((sum, day) =>
-      sum + (day?.tasks?.length || 0) + (day?.entries?.length || 0) + (day?.note ? 1 : 0), 0);
+    return Object.entries(data || {}).reduce((sum, [dateKey, day]) => {
+      if (!isPlannerDateKey(dateKey) || !day || typeof day !== "object") return sum;
+      return sum + (day?.tasks?.length || 0) + (day?.entries?.length || 0) + (day?.note ? 1 : 0);
+    }, 0);
   }
 
   function isDayKeyedPlannerData(data) {
     if (!data || typeof data !== "object" || Array.isArray(data)) return false;
-    return Object.values(data).every(day => {
+    return Object.entries(data).every(([dateKey, day]) => {
+      if (String(dateKey || "").startsWith("__")) return true;
       if (!day || typeof day !== "object") return false;
       if (day.tasks != null && !Array.isArray(day.tasks)) return false;
       if (day.entries != null && !Array.isArray(day.entries)) return false;

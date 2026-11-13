@@ -158,16 +158,24 @@
         <div class="task-list" id="taskList"></div>
         <div class="workspace-split-handle" id="workspaceSplitHandle" title="拖动调整待办与日历宽度" aria-hidden="true"></div>
 
-        <div class="task-panel-footer" title="当天计划=工作日可用时长；完成进度=当日已投入时长÷工作日时长">
-          <div>
-            <span>当天计划</span>
-            <strong id="plannedHours">0 小时</strong>
+        <div class="task-panel-bottom">
+          <button type="button" class="due-reminder-dock" id="dueReminderDock" hidden title="关注提醒">
+            <span class="due-reminder-dock-copy">
+              <strong id="dueReminderDockTitle">关注提醒（0）</strong>
+              <small id="dueReminderDockHint">点击查看临近或已到目标时间的任务</small>
+            </span>
+          </button>
+          <div class="task-panel-footer" title="当天计划=工作日可用时长；完成进度=当日已投入时长÷工作日时长">
+            <div>
+              <span>当天计划</span>
+              <strong id="plannedHours">0 小时</strong>
+            </div>
+            <div>
+              <span>完成进度</span>
+              <strong id="progressLabel">0%</strong>
+            </div>
+            <div class="progress-track"><i id="progressBar"></i></div>
           </div>
-          <div>
-            <span>完成进度</span>
-            <strong id="progressLabel">0%</strong>
-          </div>
-          <div class="progress-track"><i id="progressBar"></i></div>
         </div>
       </aside>
 
@@ -1021,10 +1029,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" popover="manual" aria-live="polite"></div>
-  <button type="button" class="attention-alarm-banner" id="attentionAlarmBanner" hidden>
-    <strong>关注提醒</strong>
-    <span id="attentionAlarmBannerText">有任务已到目标完成日期，点击查看</span>
-  </button>
   <div class="update-progress hidden" id="updateProgress" popover="manual" role="status" aria-live="polite">
     <span id="updateProgressText">正在下载更新… 0%</span>
     <i id="updateProgressBar"></i>
