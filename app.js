@@ -7014,9 +7014,13 @@ function deleteTaskById(taskId, { closeDialog = false } = {}) {
     if (task.parentId === found.task.id) task.parentId = "";
   });
   state.data[found.dateKey].tasks = state.data[found.dateKey].tasks.filter(task => task.id !== found.task.id);
-  Object.values(state.data).forEach(day => day.entries.forEach(entry => {
-    if (entry.taskId === found.task.id) entry.taskId = "";
-  }));
+  rememberRemovedTaskIds([found.task.id]);
+  Object.entries(state.data || {}).forEach(([dateKey, day]) => {
+    if (!isPlannerDateKey(dateKey) || !day || typeof day !== "object") return;
+    (day.entries || []).forEach(entry => {
+      if (entry.taskId === found.task.id) entry.taskId = "";
+    });
+  });
   saveData();
   if (closeDialog && el.taskDialog?.open) el.taskDialog.close();
   if (state.editingTaskId === taskId) state.editingTaskId = null;
@@ -9845,8 +9849,15 @@ function ensureGanttContextMenu() {
       const open = listContextMenuOpen;
       const entryId = ganttContextMenuEl?.dataset?.entryId || "";
       hideGanttContextMenu();
-      if (action === "edit" && typeof open === "function") open();
-      else if (action === "delete" && entryId) confirmDeleteCalendarEntry(entryId);
+      if (action === "edit") {
+        if (typeof open === "function") open();
+        else if (entryId) {
+          const found = findEntry(entryId);
+          if (found?.entry) openEntryDialog(found.entry.start, found.entry, found.dateKey);
+        }
+      } else if (action === "delete" && entryId) {
+        confirmDeleteCalendarEntry(entryId);
+      }
       return;
     }
     const button = event.target?.closest?.("[data-gantt-action]");
@@ -10665,6 +10676,7 @@ function createCalendarGanttRow(meeting, buckets, scale = "day", options = {}) {
   };
   labelRow.addEventListener("dblclick", openMeeting);
   labelRow.addEventListener("contextmenu", event => showGanttMeetingContextMenu(event, meeting, rowId));
+  chartRow.addEventListener("contextmenu", event => showGanttMeetingContextMenu(event, meeting, rowId));
   return { labelRow, chartRow };
 }
 
@@ -11925,8 +11937,10 @@ function handleScheduleDropData(dateKey, hour, event) {
 }
 
 function findEntry(entryId) {
-  return Object.entries(state.data).flatMap(([dateKey, day]) => (day.entries || []).map(entry => ({ dateKey, entry })))
-    .find(item => item.entry.id === entryId);
+  return Object.entries(state.data || {}).flatMap(([dateKey, day]) => {
+    if (!isPlannerDateKey(dateKey) || !day || typeof day !== "object") return [];
+    return (day.entries || []).map(entry => ({ dateKey, entry }));
+  }).find(item => item.entry.id === entryId);
 }
 
 function copyEntryToDate(entryId, dateKey, hour) {

@@ -337,6 +337,9 @@ if (app.includes('placeholder = meeting ? "例如：我')) {
 if (!app.includes("appConfirm(") || !app.includes('title: "删除任务"') || !app.includes('title: "合并任务"')) {
   throw new Error("gantt/task delete and merge must use in-app confirm (not native window.confirm under always-on-top)");
 }
+if (!/function deleteTaskById[\s\S]*?rememberRemovedTaskIds\([\s\S]*?isPlannerDateKey/.test(app)) {
+  throw new Error("deleteTaskById must tombstone removed ids and skip __meta when clearing entry links");
+}
 const html = fs.readFileSync("index.html", "utf8");
 if (!html.includes('id="appConfirmDialog"') || !/id="toast"[^>]*popover="manual"/.test(html)) {
   throw new Error("merge/delete confirm dialog and top-layer toast are required");
