@@ -17,8 +17,18 @@ assert.match(
 );
 assert.match(
   app,
-  /persistedCount > 0 && persistedCount === localCount/,
-  "equal-count desktop store must beat stale localStorage"
+  /function chooseFresherPlannerData/,
+  "desktop store must reconcile with localStorage through chooseFresherPlannerData"
+);
+assert.match(
+  app,
+  /localCount < diskCount \? localData : diskData/,
+  "when stamps are missing, prefer the smaller store so merges are not resurrected"
+);
+assert.match(
+  app,
+  /unionPlannerRemovedTaskIds/,
+  "startup must union delete tombstones across local and disk stores"
 );
 assert.match(app, /function isLegacySelfOwner/);
 assert.match(

@@ -203,7 +203,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   requestAnimationFrame(scrollToWorkday);
   maybePromptAttentionAlarms();
   setInterval(() => {
-    if (!document.querySelector("dialog[open]")) render();
+    if (document.querySelector("dialog[open]")) {
+      maybePromptAttentionAlarms();
+      return;
+    }
+    // Full project gantt rebuilds are expensive; keep status soft-sync only while there.
+    if (state.taskView === "project") syncTaskStatusesThrottled(true);
+    else render();
     maybePromptAttentionAlarms();
   }, 60000);
 });
@@ -217,14 +223,10 @@ async function initPersistentStorage() {
   if (!window.desktopAPI?.loadPlannerData) return;
   const persisted = await window.desktopAPI.loadPlannerData();
   if (!persisted || typeof persisted !== "object") return;
-  const chosen = chooseFresherPlannerData(state.data, persisted);
-  // 合并会减少条数；不能再按「条数多的赢」，否则更新后旧磁盘会把已合并任务复活。
-  if (chosen !== state.data) {
-    state.data = chosen;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
-  } else {
-    mergePlannerRemovedTaskIdsFrom(persisted);
-  }
+  // Always reassign: chooseFresher also unions tombstones and purges resurrected tasks.
+  state.data = chooseFresherPlannerData(state.data, persisted);
+  invalidateTaskLookupCaches();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
 }
 
 async function loadDesktopProfileName() {
@@ -308,10 +310,20 @@ function rememberRemovedTaskIds(ids = [], data = state.data) {
   return meta.removedTaskIds;
 }
 
-function mergePlannerRemovedTaskIdsFrom(otherData) {
+function mergePlannerRemovedTaskIdsFrom(otherData, targetData = state.data) {
   const otherIds = getPlannerMeta(otherData).removedTaskIds || [];
   if (!otherIds.length) return;
-  rememberRemovedTaskIds(otherIds);
+  rememberRemovedTaskIds(otherIds, targetData);
+}
+
+function unionPlannerRemovedTaskIds(...stores) {
+  const set = new Set();
+  stores.forEach(data => {
+    (getPlannerMeta(data).removedTaskIds || []).forEach(id => {
+      if (id) set.add(String(id));
+    });
+  });
+  return [...set].slice(-800);
 }
 
 function purgeRememberedRemovedTasks(data = state.data) {
@@ -333,19 +345,29 @@ function purgeRememberedRemovedTasks(data = state.data) {
   return purged;
 }
 
-/** Prefer the store that was saved later; fall back to record count only when both lack stamps. */
+/** Prefer newer savedAt; if missing, prefer more tombstones / fewer records; always union+purge. */
 function chooseFresherPlannerData(localData, diskData) {
-  mergePlannerRemovedTaskIdsFrom(diskData);
-  mergePlannerRemovedTaskIdsFrom(localData);
   const localMs = plannerSavedAtMs(localData);
   const diskMs = plannerSavedAtMs(diskData);
-  if (diskMs && localMs) return diskMs >= localMs ? diskData : localData;
-  if (diskMs && !localMs) return diskData;
-  if (localMs && !diskMs) return localData;
-  const localCount = countPlannerRecords(localData);
-  const diskCount = countPlannerRecords(diskData);
-  if (diskCount > localCount || (diskCount > 0 && diskCount === localCount)) return diskData;
-  return localData;
+  let chosen;
+  if (diskMs && localMs) chosen = diskMs >= localMs ? diskData : localData;
+  else if (diskMs && !localMs) chosen = diskData;
+  else if (localMs && !diskMs) chosen = localData;
+  else {
+    const localRemoved = (getPlannerMeta(localData).removedTaskIds || []).length;
+    const diskRemoved = (getPlannerMeta(diskData).removedTaskIds || []).length;
+    if (localRemoved !== diskRemoved) {
+      chosen = localRemoved > diskRemoved ? localData : diskData;
+    } else {
+      const localCount = countPlannerRecords(localData);
+      const diskCount = countPlannerRecords(diskData);
+      if (localCount !== diskCount) chosen = localCount < diskCount ? localData : diskData;
+      else chosen = diskCount > 0 ? diskData : localData;
+    }
+  }
+  getPlannerMeta(chosen).removedTaskIds = unionPlannerRemovedTaskIds(localData, diskData, chosen);
+  purgeRememberedRemovedTasks(chosen);
+  return chosen;
 }
 
 function migrateData() {
@@ -553,6 +575,7 @@ function saveData() {
   invalidateRecurringCatalogCache();
   invalidateTaskScheduleEntriesIndex();
   invalidateCalendarEntryCaches();
+  invalidateTaskLookupCaches();
   getPlannerMeta(state.data).savedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
   if (persistentWritesEnabled && window.desktopAPI?.savePlannerData) {
@@ -572,15 +595,50 @@ function getDay(key = state.selectedDate) {
   return state.data[key];
 }
 
+let allTaskRecordsCache = null;
+let uniqueTasksCache = null;
+let taskRecordByIdCache = null;
+let childTasksCache = new Map();
+let taskDurationCache = null;
+let taskScheduledHoursCache = null;
+let taskProgressNotesCache = null;
+
+function invalidateTaskLookupCaches() {
+  allTaskRecordsCache = null;
+  uniqueTasksCache = null;
+  taskRecordByIdCache = null;
+  childTasksCache = new Map();
+  taskDurationCache = null;
+  taskScheduledHoursCache = null;
+  taskProgressNotesCache = null;
+}
+
 function getAllTasks() {
-  return Object.entries(state.data).flatMap(([dateKey, day]) => {
+  if (allTaskRecordsCache) return allTaskRecordsCache;
+  allTaskRecordsCache = Object.entries(state.data).flatMap(([dateKey, day]) => {
     if (!isPlannerDateKey(dateKey) || !day || typeof day !== "object") return [];
     return (day.tasks || []).map(task => ({ task, dateKey }));
   });
+  return allTaskRecordsCache;
+}
+
+function getUniqueTasksList() {
+  if (uniqueTasksCache) return uniqueTasksCache;
+  uniqueTasksCache = uniqueTasks(getAllTasks().map(({ task }) => task));
+  return uniqueTasksCache;
 }
 
 function findTask(id) {
-  return getAllTasks().find(item => item.task.id === id);
+  if (!id) return undefined;
+  if (!taskRecordByIdCache) {
+    taskRecordByIdCache = new Map();
+    getAllTasks().forEach(item => {
+      if (item?.task?.id && !taskRecordByIdCache.has(item.task.id)) {
+        taskRecordByIdCache.set(item.task.id, item);
+      }
+    });
+  }
+  return taskRecordByIdCache.get(id);
 }
 
 function findTaskRecords(id) {
@@ -698,7 +756,7 @@ function bindEvents() {
       else renderTasks();
       el.taskListSearch.focus({ preventScroll: true });
       if (selectionStart !== null) el.taskListSearch.setSelectionRange(selectionStart, selectionStart);
-    }, 120);
+    }, state.taskView === "project" ? 280 : 120);
   });
   el.taskListSearch?.addEventListener("keydown", event => {
     if (event.key !== "Escape") return;
@@ -4439,6 +4497,9 @@ let taskScheduleEntriesIndex = null;
 
 function invalidateTaskScheduleEntriesIndex() {
   taskScheduleEntriesIndex = null;
+  taskDurationCache = null;
+  taskScheduledHoursCache = null;
+  taskProgressNotesCache = null;
 }
 
 function buildTaskScheduleEntriesIndex() {
@@ -7236,7 +7297,7 @@ function bindGanttToolbarSearch(toolbar) {
   input.addEventListener("input", () => {
     syncTaskListSearchFromGantt(input.value);
     clearTimeout(ganttSearchTimer);
-    ganttSearchTimer = setTimeout(commitSearchRender, 120);
+    ganttSearchTimer = setTimeout(commitSearchRender, 280);
   });
   input.addEventListener("keydown", event => {
     if (event.key !== "Escape") return;
@@ -7255,7 +7316,6 @@ function renderProjectSurface() {
 }
 
 function renderSchedule() {
-  if (state.taskView === "project") invalidateTaskScheduleEntriesIndex();
   el.timeline.className = "timeline";
   // Week view sets an inline column count; clear it so day/month/project regain CSS layout.
   el.timeline.style.gridTemplateColumns = "";
@@ -8611,6 +8671,7 @@ function applyGanttAxisTrackWidths({
 
 function renderProjectSchedule() {
   clearGanttLabelResizeSession();
+  invalidateTaskLookupCaches();
   const ganttView = getGanttViewConfig();
   const allProjects = getProjectSummaries();
   // Gantt shows every status group by default; left-panel status tabs do not apply here.
@@ -9101,31 +9162,8 @@ function fitGanttProgressLabel(el, fullText) {
     el.remove();
     return;
   }
-  const apply = () => {
-    const width = el.clientWidth || 0;
-    if (width < 12) {
-      el.remove();
-      return;
-    }
-    el.textContent = text;
-    if (el.scrollWidth <= width) return;
-    let lo = 0;
-    let hi = text.length;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi) / 2);
-      el.textContent = `${text.slice(0, mid)}…`;
-      if (el.scrollWidth <= width) lo = mid;
-      else hi = mid - 1;
-    }
-    if (lo < 1) {
-      el.remove();
-      return;
-    }
-    el.textContent = lo < text.length ? `${text.slice(0, lo)}…` : text;
-    if (el.scrollWidth > width) el.remove();
-  };
-  apply();
-  requestAnimationFrame(apply);
+  // Prefer CSS ellipsis over JS layout measurement on large boards.
+  el.textContent = text;
 }
 
 function listSelectionKey(kind, id) {
@@ -9959,7 +9997,7 @@ function confirmDeleteCalendarEntry(entryId) {
     showToast("未找到该会议");
     return;
   }
-  const title = String(found.entry.title || "未命名会议").trim() || "未命名会议";
+  const title = String(found.entry.title || "").trim() || "该会议";
   appConfirm({
     title: "删除会议",
     message: `确定删除「${title}」？此操作不可撤销。`,
@@ -13362,37 +13400,50 @@ function dayHasScheduleActivity(dateKey) {
 }
 
 function getTaskDuration(taskId) {
-  return Object.entries(state.data).reduce((sum, [dateKey, day]) =>
-    sum + (day.entries || [])
-      .filter(entry => entry.taskId === taskId)
-      .reduce((subtotal, entry) => subtotal + getEntryInvestedHours(dateKey, entry), 0), 0);
+  const id = String(taskId || "").trim();
+  if (!id) return 0;
+  if (!taskDurationCache) taskDurationCache = new Map();
+  if (taskDurationCache.has(id)) return taskDurationCache.get(id);
+  const hours = getTaskScheduleEntries(id).reduce(
+    (sum, { dateKey, entry }) => sum + getEntryInvestedHours(dateKey, entry),
+    0
+  );
+  taskDurationCache.set(id, hours);
+  return hours;
 }
 
 function getTaskScheduledHours(taskId) {
-  return Object.values(state.data).reduce((sum, day) =>
-    sum + (day.entries || [])
-      .filter(entry => entry.taskId === taskId)
-      .reduce((subtotal, entry) => subtotal + entry.end - entry.start, 0), 0);
+  const id = String(taskId || "").trim();
+  if (!id) return 0;
+  if (!taskScheduledHoursCache) taskScheduledHoursCache = new Map();
+  if (taskScheduledHoursCache.has(id)) return taskScheduledHoursCache.get(id);
+  const hours = getTaskScheduleEntries(id).reduce((sum, { entry }) => {
+    const span = Number(entry?.end) - Number(entry?.start);
+    return sum + (Number.isFinite(span) ? span : 0);
+  }, 0);
+  taskScheduledHoursCache.set(id, hours);
+  return hours;
 }
 
 function getTaskProgressNotes(taskId) {
-  return Object.entries(state.data).flatMap(([dateKey, day]) =>
-    (day.entries || [])
-      .filter(entry => entry.taskId === taskId)
-      .map(entry => {
-        const note = typeof TaskWorkPolicy?.resolveInvestmentNoteText === "function"
-          ? TaskWorkPolicy.resolveInvestmentNoteText({ note: entry.note, title: entry.title })
-          : String(entry.note || entry.title || "").trim();
-        return {
-          dateKey,
-          start: entry.start,
-          end: entry.end,
-          note,
-          at: scheduledDateTime(dateKey, entry.start)
-        };
-      })
-      .filter(item => item.note)
-  ).sort((a, b) => b.at - a.at);
+  const id = String(taskId || "").trim();
+  if (!id) return [];
+  if (!taskProgressNotesCache) taskProgressNotesCache = new Map();
+  if (taskProgressNotesCache.has(id)) return taskProgressNotesCache.get(id);
+  const notes = getTaskScheduleEntries(id).map(({ dateKey, entry }) => {
+    const note = typeof TaskWorkPolicy?.resolveInvestmentNoteText === "function"
+      ? TaskWorkPolicy.resolveInvestmentNoteText({ note: entry.note, title: entry.title })
+      : String(entry.note || entry.title || "").trim();
+    return {
+      dateKey,
+      start: entry.start,
+      end: entry.end,
+      note,
+      at: scheduledDateTime(dateKey, entry.start)
+    };
+  }).filter(item => item.note).sort((a, b) => b.at - a.at);
+  taskProgressNotesCache.set(id, notes);
+  return notes;
 }
 
 function latestTaskProgressNote(taskId) {
@@ -13699,17 +13750,20 @@ function hasOwnPlanningAnchor(task) {
 
 function getChildTasks(parentId) {
   if (!parentId) return [];
-  const all = uniqueTasks(getAllTasks().map(({ task }) => task));
+  if (childTasksCache.has(parentId)) return childTasksCache.get(parentId);
+  const all = getUniqueTasksList();
   const parent = all.find(task => task.id === parentId) || findTask(parentId)?.task || null;
   const relatedParentIds = RecurringPolicy?.relatedRecurringParentIds?.(all, parentId)
     || new Set([parentId]);
-  return all.filter(task => RecurringPolicy?.childBelongsToParentInstance
+  const children = all.filter(task => RecurringPolicy?.childBelongsToParentInstance
     ? RecurringPolicy.childBelongsToParentInstance({
       child: task,
       parent,
       relatedParentIds
     })
     : (task.parentId || task.parentTaskId || task.parentTask || task.parent || "") === parentId);
+  childTasksCache.set(parentId, children);
+  return children;
 }
 
 function retargetChildrenToMonthlyParentInstance(newParent, groupId) {
@@ -14277,6 +14331,7 @@ async function exportAllData(format = "json") {
 
 async function applyImportedPlannerData(data, recordCount) {
   state.data = data || {};
+  invalidateTaskLookupCaches();
   migrateData();
   ensureEntryTaskLinks();
   ensureRecurringTasksForVisibleRange();

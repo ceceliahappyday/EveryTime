@@ -362,6 +362,25 @@ if (!styles.includes("text-align: center") || !styles.includes(".gantt-progress-
 if (!app.includes("parentPlanProgressPercent") || !app.includes("workdayPlanHoursBetween")) {
   throw new Error("parent gantt progress must use workday plan hours");
 }
+{
+  const fitStart = app.indexOf("function fitGanttProgressLabel");
+  const fitFn = fitStart >= 0
+    ? app.slice(fitStart, app.indexOf("\nfunction ", fitStart + 1))
+    : "";
+  if (/scrollWidth|requestAnimationFrame/.test(fitFn)) {
+    throw new Error("fitGanttProgressLabel must not measure layout per label (gantt jank)");
+  }
+  if (!app.includes("invalidateTaskLookupCaches") || !app.includes("getUniqueTasksList")) {
+    throw new Error("gantt/task tree lookups must use cached task indexes");
+  }
+  const durationStart = app.indexOf("function getTaskDuration");
+  const durationFn = durationStart >= 0
+    ? app.slice(durationStart, app.indexOf("\nfunction ", durationStart + 1))
+    : "";
+  if (!durationFn.includes("getTaskScheduleEntries") || durationFn.includes("Object.entries(state.data)")) {
+    throw new Error("getTaskDuration must use the schedule-entry index (full-data scans freeze gantt)");
+  }
+}
 if (!app.includes("getTaskProgressNotes")) {
   throw new Error("leaf gantt bars should surface schedule progress notes");
 }

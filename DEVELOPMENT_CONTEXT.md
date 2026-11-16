@@ -54,6 +54,7 @@ DailyPlanner（中文名「今日日程」）是桌面浮窗式的任务、日�
 
 - 不删除既有 localStorage、planner-data.json、历史任务、日程和工时。
 - 数据升级只迁移和补字段，不重置 STORAGE_KEY。
+- 启动时 localStorage 与磁盘以较新 `savedAt` 为准；无时间戳时取删除记录更多或条数更少的一侧，并合并 `__meta.removedTaskIds` 后清理，禁止用「条数多的赢」把已合并/已删任务复活。
 - 发布：`ceceliahappyday/EveryTime` + GitHub Releases / `latest.yml`；用户数据不上传。发版递增 `package.json` 并推送新 `vX.Y.Z`，禁止对同一 tag force-push。
 - 换电脑用 JSON「导出 / 导入」；导入前本地备份。Excel 导出仅供查看。
 - API Key 在设置中填写，主进程尽量用 Windows safeStorage；AI 默认可查未完成任务、定位与期间总结。仅用户主动附截图时 `ai:extract-task` 可建本地待办；图片不落盘、不进 Git。
