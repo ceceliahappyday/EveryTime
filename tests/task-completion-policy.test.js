@@ -1,5 +1,6 @@
 const fs = require("fs");
 const app = fs.readFileSync("app.js", "utf8").replace(/\r\n/g, "\n");
+const html = fs.readFileSync("index.html", "utf8").replace(/\r\n/g, "\n");
 const scheduleDay = fs.readFileSync("schedule-day-policy.js", "utf8").replace(/\r\n/g, "\n");
 
 for (const marker of [
@@ -8,11 +9,15 @@ for (const marker of [
   "toggleTaskCompletion(task",
   "completedAt = closing",
   "completionNote",
-  "getRichNoteEditorValue",
+  "appendProgressUpdateNote",
+  "fillTaskCloseHistoryPreview",
   "RichNotePolicy.normalizeNoteForStorage",
   "saveData();\n  render();"
 ]) {
   if (!app.includes(marker)) throw new Error(`missing completion persistence marker: ${marker}`);
+}
+if (!html.includes("本次完成说明（选填）") || !html.includes('id="taskCloseHistory"')) {
+  throw new Error("close dialog must collect this-update note and show read-only history");
 }
 for (const marker of [
   "if (payload.completedAt) {",

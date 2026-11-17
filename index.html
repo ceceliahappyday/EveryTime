@@ -250,7 +250,7 @@
     </form>
   </dialog>
 
-  <dialog class="modal small-modal" id="taskCloseConfirmDialog">
+  <dialog class="modal small-modal task-close-confirm-modal" id="taskCloseConfirmDialog">
     <div class="modal-header">
       <div>
         <span class="eyebrow">CLOSE TASK</span>
@@ -275,18 +275,11 @@
           </div>
         </div>
       </label>
-      <label>
-        <span>完成情况说明（选填）</span>
-        <div
-          id="taskCloseCompletionNote"
-          class="rich-note-editor"
-          contenteditable="true"
-          role="textbox"
-          aria-multiline="true"
-          aria-label="完成情况说明"
-          data-placeholder="已完成什么、结果如何、还有哪些遗留；可直接粘贴图片"
-        ></div>
+      <label class="task-close-note-field">
+        <span>本次完成说明（选填）</span>
+        <textarea id="taskCloseCompletionNote" rows="4" maxlength="800" placeholder="只写本次完成情况；系统会按进度格式追加到历史说明" aria-label="本次完成说明"></textarea>
       </label>
+      <div class="task-close-history" id="taskCloseHistory" hidden></div>
     </div>
     <div class="modal-actions task-close-confirm-actions">
       <button type="button" class="soft-button" data-close-dialog="taskCloseConfirmDialog">取消</button>

@@ -5824,29 +5824,81 @@ body.in-desktop.glass-mode #taskEditForm .entry-task-trigger {
   padding: 0 14px;
   box-sizing: border-box;
 }
+.task-close-confirm-modal {
+  width: min(440px, calc(100% - 40px));
+  padding: 18px 18px 14px;
+}
+.task-close-confirm-modal .modal-header {
+  margin-bottom: 10px;
+}
+.task-close-confirm-modal .modal-header h3,
+#taskCloseConfirmDialog .modal-header h3 {
+  margin: 0;
+  font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.task-close-confirm-modal .eyebrow {
+  font-size: 10px;
+  letter-spacing: .08em;
+}
 #taskCloseConfirmDialog .entry-link-confirm-message {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--muted);
 }
 .task-close-confirm-fields {
   display: grid;
   gap: 12px;
-  margin: 14px 0 4px;
+  margin: 12px 0 4px;
 }
 .task-close-confirm-fields label {
   display: grid;
   gap: 6px;
 }
-.task-close-confirm-fields span {
-  font-size: 12px;
+.task-close-confirm-fields > label > span,
+.task-close-note-field > span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
   color: var(--muted);
 }
-.task-close-confirm-fields textarea,
-.task-close-confirm-fields .rich-note-editor {
-  min-height: 96px;
+.task-close-confirm-fields input,
+.task-close-confirm-fields textarea {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.task-close-confirm-fields textarea {
+  min-height: 88px;
   resize: vertical;
+}
+.task-close-history {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft, var(--line));
+}
+.task-close-history > span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.task-close-history pre {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 11px/1.45 "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+body.in-desktop.glass-mode .task-close-history pre {
+  color: #a8b8c4;
 }
 .rich-note-editor {
   max-height: 280px;

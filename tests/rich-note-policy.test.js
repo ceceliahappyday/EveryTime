@@ -29,13 +29,15 @@ assert.equal(RichNotePolicy.isAllowedDataImageSrc("https://example.com/a.png"), 
 const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 assert.match(html, /id="taskCloseCompletionNote"/);
+assert.match(html, /<textarea id="taskCloseCompletionNote"/, "close dialog only accepts this-update plain note");
+assert.match(html, /id="taskCloseHistory"/, "close dialog shows recent progress history read-only");
 assert.match(html, /contenteditable="true"/);
 assert.match(html, /rich-note-policy\.js/);
-assert.match(app, /bindRichNoteEditor\(el\.taskCloseCompletionNote\)/);
+assert.doesNotMatch(app, /bindRichNoteEditor\(el\.taskCloseCompletionNote\)/);
 assert.match(app, /bindRichNoteEditor\(el\.taskBusinessBackground\)/);
+assert.match(app, /appendProgressUpdateNote/, "close note must append via progress formatter");
 assert.match(app, /insertCompressedImageIntoRichNote/);
 assert.match(app, /getRichNoteEditorValue/);
-assert.doesNotMatch(html, /<textarea id="taskCloseCompletionNote"/);
 assert.doesNotMatch(html, /<textarea id="taskBusinessBackground"/);
 assert.match(html, /id="taskBusinessBackground"[\s\S]*contenteditable="true"/);
 

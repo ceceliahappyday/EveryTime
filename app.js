@@ -150,7 +150,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "taskSubtaskList", "taskSubtaskDraftInput", "taskSubtasksSection",
     "deleteTaskButton", "closeTaskButton", "mergeTaskButton", "entryDialog", "entryForm", "entryEyebrow", "entryDialogTitle", "entryTitle", "entryType",
     "entryLinkConfirmDialog", "entryLinkConfirmTitle", "entryLinkConfirmMessage", "entryLinkConfirmOptions", "entryLinkConfirmCancel", "entryLinkConfirmCreate",
-    "taskCloseConfirmDialog", "taskCloseConfirmTitle", "taskCloseConfirmMessage", "taskCloseCompletedAt", "taskCloseCompletionNote", "taskCloseOnlyButton", "taskCloseSuccessorButton",
+    "taskCloseConfirmDialog", "taskCloseConfirmTitle", "taskCloseConfirmMessage", "taskCloseCompletedAt", "taskCloseCompletionNote", "taskCloseHistory", "taskCloseOnlyButton", "taskCloseSuccessorButton",
     "taskMergeDialog", "taskMergeForm", "taskMergeMessage", "taskMergeTarget", "taskMergeSearch", "taskMergeOptions",
     "appConfirmDialog", "appConfirmForm", "appConfirmTitle", "appConfirmMessage", "appConfirmCancel", "appConfirmOk",
     "entryTaskLink", "entryTaskCombobox", "entryTaskTrigger", "entryTaskPopup", "entryTaskSearch", "entryTaskOptions", "entryStart", "entryEnd", "entryOwner", "entryNote", "entryCategoryField", "entryCategory", "colorPicker", "deleteEntryButton", "dayNoteButton",
@@ -998,7 +998,6 @@ function bindEvents() {
       applyDateTimeNudge(target, button.dataset.datetimeNudge === "month" ? "month" : "week");
     });
   });
-  bindRichNoteEditor(el.taskCloseCompletionNote);
   bindRichNoteEditor(el.taskBusinessBackground);
   bindWorkHourDateTimeDefault(el.taskActualStart, "start");
   bindWorkHourDateTimeDefault(el.taskActualEnd, "end");
@@ -5260,11 +5259,26 @@ function promptCompletionTimelineConfirm(timeline, { title = "完成时间确认
   });
 }
 
+function fillTaskCloseHistoryPreview(task) {
+  const preview = typeof TaskWorkPolicy?.recentProgressPreview === "function"
+    ? TaskWorkPolicy.recentProgressPreview(plainTextFromDeliveryNote(task?.deliveryNote || ""), 3)
+    : [];
+  if (!el.taskCloseHistory) return;
+  if (preview.length) {
+    el.taskCloseHistory.hidden = false;
+    el.taskCloseHistory.innerHTML = `<span>最近进度</span><pre>${escapeHtml(preview.join("\n"))}</pre>`;
+  } else {
+    el.taskCloseHistory.hidden = true;
+    el.taskCloseHistory.innerHTML = "";
+  }
+}
+
 function reopenCloseConfirmWithTimeError(task, message, completionNote = "", resumeAfterClose = false) {
   showToast(message, 3600);
   pendingCloseTaskId = task?.id || "";
   if (resumeAfterClose && task?.id) parentReviewResumeTaskId = task.id;
-  if (completionNote) setRichNoteEditorValue(el.taskCloseCompletionNote, completionNote);
+  if (el.taskCloseCompletionNote) el.taskCloseCompletionNote.value = String(completionNote || "");
+  fillTaskCloseHistoryPreview(task);
   if (el.taskCloseCompletedAt) {
     el.taskCloseCompletedAt.classList.add("field-error");
     el.taskCloseCompletedAt.focus();
@@ -10811,26 +10825,22 @@ function requestTaskCompletion(task) {
     el.taskCloseCompletedAt.classList.remove("field-error");
     el.taskCloseCompletedAt.value = suggestTaskCloseCompletedAtInput(task);
   }
-  setRichNoteEditorValue(el.taskCloseCompletionNote, task.deliveryNote || "");
+  if (el.taskCloseCompletionNote) el.taskCloseCompletionNote.value = "";
+  fillTaskCloseHistoryPreview(task);
   el.taskCloseConfirmDialog?.showModal();
+  setTimeout(() => el.taskCloseCompletionNote?.focus?.(), 40);
 }
 
 function confirmCloseTaskChoice(mode = "only") {
   const closeMode = mode === true ? "tracking" : mode === false ? "only" : String(mode || "only");
   const task = pendingCloseTaskId ? findTask(pendingCloseTaskId)?.task : null;
-  let completionNote = "";
-  try {
-    completionNote = getRichNoteEditorValue(el.taskCloseCompletionNote);
-  } catch (error) {
-    showToast(error?.message || "完成情况说明过大，请减少图片后再保存");
-    return;
-  }
+  const thisNote = String(el.taskCloseCompletionNote?.value || "").trim();
   const resumeAfterClose = parentReviewResumeTaskId && task && parentReviewResumeTaskId === task.id;
   const closeRaw = String(el.taskCloseCompletedAt?.value || "").trim();
   const completedAt = fromLocalDateTimeInput(closeRaw);
   const timeline = taskTimelineValidationContext(task, { completedAtIso: completedAt, rawInput: closeRaw });
   if (!timeline.ok) {
-    reopenCloseConfirmWithTimeError(task, timeline.message, completionNote, resumeAfterClose);
+    reopenCloseConfirmWithTimeError(task, timeline.message, thisNote, resumeAfterClose);
     return;
   }
   const finishClose = () => {
@@ -10838,11 +10848,24 @@ function confirmCloseTaskChoice(mode = "only") {
     parentReviewResumeTaskId = null;
     el.taskCloseConfirmDialog?.close();
     if (!task) return;
+    let completionNote;
+    if (thisNote) {
+      const previousPlain = plainTextFromDeliveryNote(task.deliveryNote || "");
+      const appended = typeof TaskWorkPolicy?.appendProgressUpdateNote === "function"
+        ? TaskWorkPolicy.appendProgressUpdateNote({
+          deliveryNote: previousPlain,
+          note: thisNote,
+          now: completedAt ? new Date(completedAt) : new Date(),
+          maxChars: RichNotePolicy?.MAX_TEXT_CHARS || 4000
+        })
+        : { changed: true, deliveryNote: previousPlain ? `${previousPlain}\n${thisNote}` : thisNote };
+      completionNote = appended.changed ? appended.deliveryNote : previousPlain;
+    }
     toggleTaskCompletion(task, {
       createFollowUp: closeMode === "tracking",
       createSuccessor: closeMode === "successor",
       completedAt,
-      completionNote
+      ...(thisNote ? { completionNote } : {})
     });
     if (closeMode === "only" && (resumeAfterClose || pendingParentReviewQueue.length)) {
       scheduleParentReviewAdvance();
