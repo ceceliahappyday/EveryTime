@@ -5209,24 +5209,37 @@ function dueDateTimeToIso(task) {
   return fromLocalDateTimeInput(merged);
 }
 
-function lastTaskScheduleEndIso(taskId) {
+/** 末次已开始（实际投入）结束时刻；未开始的未来排期不计，进行中时段封顶到 now。 */
+function lastTaskScheduleEndIso(taskId, now = new Date()) {
   let best = "";
+  const nowIso = now instanceof Date ? now.toISOString() : new Date().toISOString();
   getTaskScheduleEntries(taskId).forEach(({ dateKey, entry }) => {
+    const startAt = scheduledDateTime(dateKey, entry.start);
+    if (!(startAt instanceof Date) || Number.isNaN(startAt.getTime()) || startAt > now) return;
     const end = Number(entry.end);
     const start = Number(entry.start);
     const hour = Number.isFinite(end) ? end : start;
     if (!Number.isFinite(hour)) return;
-    const iso = scheduledDateTimeIso(dateKey, hour);
+    let iso = scheduledDateTimeIso(dateKey, hour);
+    if (iso > nowIso) iso = nowIso;
     if (!best || iso > best) best = iso;
   });
   return best;
 }
 
-function suggestTaskCloseCompletedAtInput(task) {
+function suggestTaskCloseCompletedAtInput(task, now = new Date()) {
+  if (!task) return "";
+  const schedule = task.id ? getTaskScheduleInfo(task.id, now) : null;
+  const startedAtIso = typeof TaskActualStartPolicy?.resolveActualStartIso === "function"
+    ? TaskActualStartPolicy.resolveActualStartIso(task, { firstInvestIso: schedule?.firstStartIso || "" })
+    : (task.startOverrideAt || task.startedAt || schedule?.firstStartIso || "");
   const iso = typeof ScheduleDayPolicy?.pickDefaultCompletionIso === "function"
     ? ScheduleDayPolicy.pickDefaultCompletionIso(task, {
-      lastInvestEndIso: lastTaskScheduleEndIso(task?.id),
-      dueDateTimeIso: dueDateTimeToIso
+      lastInvestEndIso: lastTaskScheduleEndIso(task.id, now),
+      startedAtIso,
+      dueDateTimeIso: dueDateTimeToIso,
+      createdAtIso: task.createdAtIso || "",
+      nowIso: now.toISOString()
     })
     : "";
   return iso ? toLocalDateTimeInput(iso) : "";

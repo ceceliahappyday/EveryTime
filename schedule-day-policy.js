@@ -132,17 +132,53 @@
     return { ok: true, message: "" };
   }
 
-  /** Prefer historical anchors; never assume「today」when closing backlog tasks. */
+  function earlierIso(a, b) {
+    const left = parseIso(a);
+    const right = parseIso(b);
+    if (!left) return String(b || "").trim();
+    if (!right) return String(a || "").trim();
+    return left.getTime() <= right.getTime() ? String(a).trim() : String(b).trim();
+  }
+
+  function resolveDueIso(task = {}, hints = {}) {
+    if (typeof hints.dueDateTimeIso === "function") {
+      return String(hints.dueDateTimeIso(task) || "").trim();
+    }
+    if (hints.dueDateTimeIso) return String(hints.dueDateTimeIso || "").trim();
+    if (hints.dueAtIso) return String(hints.dueAtIso || "").trim();
+    return "";
+  }
+
+  /**
+   * 关闭确认 / 回填用的默认完成时间：
+   * 1. 已有 completedAt
+   * 2. 末次实际投入结束（hints.lastInvestEndIso）
+   * 3. 实际开始（hints.startedAtIso / startOverrideAt / startedAt）
+   * 4. 有目标完成：取目标与 now 的较早者（无 now 时用目标，供历史回填）
+   * 5. 显式传入的创建时间（关闭对话框）；回填不传，避免用录入时间冒充关闭时间
+   * 6. 交互关闭可再退到 nowIso；否则空
+   */
   function pickDefaultCompletionIso(task = {}, hints = {}) {
     if (task.completedAt) return task.completedAt;
-    if (hints.lastInvestEndIso) return hints.lastInvestEndIso;
-    if (task.dueDate && typeof hints.dueDateTimeIso === "function") {
-      const dueIso = hints.dueDateTimeIso(task);
-      if (dueIso) return dueIso;
-    }
-    if (task.startOverrideAt) return task.startOverrideAt;
-    if (task.startedAt) return task.startedAt;
-    return "";
+
+    const nowIso = String(hints.nowIso || "").trim();
+    const clamp = iso => (nowIso ? earlierIso(iso, nowIso) : String(iso || "").trim());
+
+    const lastInvest = String(hints.lastInvestEndIso || "").trim();
+    if (lastInvest) return clamp(lastInvest);
+
+    const started = String(
+      hints.startedAtIso || task.startOverrideAt || task.startedAt || ""
+    ).trim();
+    if (started) return clamp(started);
+
+    const dueIso = resolveDueIso(task, hints);
+    if (dueIso) return nowIso ? earlierIso(dueIso, nowIso) : dueIso;
+
+    const created = String(hints.createdAtIso || "").trim();
+    if (created) return clamp(created);
+
+    return nowIso;
   }
 
   return {

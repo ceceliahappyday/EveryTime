@@ -141,6 +141,20 @@
   }
 
   /**
+   * Only promote invests off:
+   * - top-level tasks (may become containers), or
+   * - tasks that already have children (confirmed non-leaves).
+   * Never nest a new auto-split child under an existing child leaf — that undoes
+   * merges when the survivor keeps differently titled schedule entries.
+   */
+  function shouldAutoSplitTask(task, childrenMap) {
+    if (!task?.id) return false;
+    const kids = childrenMap.get(task.id) || [];
+    if (kids.length) return true;
+    return !parentIdOf(task);
+  }
+
+  /**
    * Promote mismatched task_work titles into leaf children and retarget entries.
    * calendar entries are left untouched. Idempotent by parentId + title.
    * Meeting-event same-title blocks are demoted to calendar instead of becoming todos.
@@ -186,7 +200,8 @@
           return;
         }
         // Work on a non-leaf with the parent's own title still needs a leaf.
-        if ((index.childrenMap.get(parentRow.task.id) || []).length) {
+        if (shouldAutoSplitTask(parentRow.task, index.childrenMap)
+          && (index.childrenMap.get(parentRow.task.id) || []).length) {
           const key = `${parentRow.task.id}\0${parentTitle}`;
           if (!groups.has(key)) {
             groups.set(key, {
@@ -205,6 +220,8 @@
         demotedMeetingEntries += 1;
         return;
       }
+      // Child leaves keep differently titled invests after merge; do not re-split them.
+      if (!shouldAutoSplitTask(parentRow.task, index.childrenMap)) return;
       const key = `${parentRow.task.id}\0${entryTitle}`;
       if (!groups.has(key)) {
         groups.set(key, {
@@ -278,6 +295,7 @@
       if (!isTaskWorkEntry(entry) || !entry.taskId) return;
       const parentRow = index.byId.get(entry.taskId);
       if (!parentRow) return;
+      if (!shouldAutoSplitTask(parentRow.task, index.childrenMap)) return;
       const kids = index.childrenMap.get(entry.taskId) || [];
       if (!kids.length) return;
       const entryTitle = normalizeTitle(entry.title) || normalizeTitle(parentRow.task.title);
@@ -329,6 +347,7 @@
     normalizeTitle,
     isTaskWorkEntry,
     isMeetingEventTitle,
+    shouldAutoSplitTask,
     repairPlannerData
   };
 });

@@ -79,4 +79,72 @@ const second = repairPlannerData(data, { createId, now: new Date("2026-09-08T12:
 assert.equal(second.changed, false, "repair must be idempotent");
 assert.equal(tasks.filter(task => task.parentId === "close").length, 2);
 
+// Merge survivor leaf under a parent keeps differently titled invests; do not re-split.
+const mergeSurvivor = {
+  "2026-11-09": {
+    note: "",
+    tasks: [
+      {
+        id: "parent-feedback",
+        title: "产业公司贡献值业务规则方案评估意见反馈",
+        parentId: "root-plan",
+        status: "in_progress",
+        dueDate: "2026-12-09",
+        owner: "黄湾湾"
+      },
+      {
+        id: "leaf-feedback",
+        title: "产业公司贡献值业务规则方案评估意见反馈",
+        parentId: "parent-feedback",
+        status: "in_progress",
+        dueDate: "2026-10-26",
+        owner: "黄湾湾"
+      }
+    ],
+    entries: [
+      {
+        id: "inv-1",
+        title: "产业公司贡献值业务规则方案评估意见反馈",
+        entryType: "task_work",
+        taskId: "leaf-feedback",
+        start: 11.5,
+        end: 14
+      },
+      {
+        id: "inv-2",
+        title: "产业公司贡献值业务规则方案第二轮评估",
+        entryType: "task_work",
+        taskId: "leaf-feedback",
+        start: 8.75,
+        end: 9.75
+      }
+    ]
+  },
+  "2026-12-26": {
+    note: "",
+    tasks: [
+      {
+        id: "root-plan",
+        title: "产业公司贡献值业务规则方案",
+        parentId: "",
+        status: "in_progress",
+        dueDate: "2026-12-26",
+        owner: "黄湾湾"
+      }
+    ],
+    entries: []
+  }
+};
+const afterMerge = repairPlannerData(mergeSurvivor, {
+  createId: () => "should-not-create",
+  now: new Date("2026-11-19T12:00:00")
+});
+assert.equal(afterMerge.changed, false, "merged child leaf must not be re-split by entry title");
+assert.equal(
+  mergeSurvivor["2026-11-09"].tasks.filter(task => task.parentId === "leaf-feedback").length,
+  0,
+  "no grandchild under merge survivor"
+);
+assert.equal(mergeSurvivor["2026-11-09"].entries[1].taskId, "leaf-feedback");
+
 console.log("schedule hierarchy repair policy tests passed");

@@ -35,7 +35,69 @@ assert.equal(
     { dueDateTimeIso: () => "2026-10-12T09:00:00.000Z" }
   ),
   "2026-10-12T09:00:00.000Z",
-  "close dialog should default to due date/time before today"
+  "without now, backfill may use due as historical completion"
+);
+
+assert.equal(
+  policy.pickDefaultCompletionIso(
+    { dueDate: "2026-11-20", startedAt: "2026-11-10T09:00:00.000Z" },
+    {
+      lastInvestEndIso: "2026-11-15T11:30:00.000Z",
+      dueDateTimeIso: () => "2026-11-20T10:00:00.000Z",
+      nowIso: "2026-11-17T03:00:00.000Z"
+    }
+  ),
+  "2026-11-15T11:30:00.000Z",
+  "last actual invest wins over start/due/now"
+);
+
+assert.equal(
+  policy.pickDefaultCompletionIso(
+    { dueDate: "2026-11-20", startOverrideAt: "2026-11-12T08:00:00.000Z" },
+    {
+      dueDateTimeIso: () => "2026-11-20T10:00:00.000Z",
+      nowIso: "2026-11-17T03:00:00.000Z"
+    }
+  ),
+  "2026-11-12T08:00:00.000Z",
+  "without invest, actual start beats due"
+);
+
+assert.equal(
+  policy.pickDefaultCompletionIso(
+    { dueDate: "2026-11-20" },
+    {
+      dueDateTimeIso: () => "2026-11-20T10:00:00.000Z",
+      createdAtIso: "2026-11-01T02:00:00.000Z",
+      nowIso: "2026-11-17T03:00:00.000Z"
+    }
+  ),
+  "2026-11-17T03:00:00.000Z",
+  "without start/invest, earlier of due and now"
+);
+
+assert.equal(
+  policy.pickDefaultCompletionIso(
+    { dueDate: "2026-11-10" },
+    {
+      dueDateTimeIso: () => "2026-11-10T10:00:00.000Z",
+      nowIso: "2026-11-17T03:00:00.000Z"
+    }
+  ),
+  "2026-11-10T10:00:00.000Z",
+  "past due is kept when earlier than now"
+);
+
+assert.equal(
+  policy.pickDefaultCompletionIso(
+    {},
+    {
+      createdAtIso: "2026-11-01T02:00:00.000Z",
+      nowIso: "2026-11-17T03:00:00.000Z"
+    }
+  ),
+  "2026-11-01T02:00:00.000Z",
+  "no due/start/invest falls back to createdAt"
 );
 
 assert.equal(
