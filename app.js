@@ -12209,8 +12209,7 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
 
 function saveEntry() {
   const locks = getEntryFieldLockState();
-  // 已挂接任务处理：禁止改挂接/类型；标题强制跟叶子任务名。
-  if (locks.lockType) el.entryType.value = "task_work";
+  // 仍为任务处理且原已挂接：挂接锁死。已改成会议日程时允许改/清空挂接。
   if (locks.lockLink && locks.linkedTaskId) el.entryTaskLink.value = locks.linkedTaskId;
   const entryType = el.entryType.value === "task_work" ? "task_work" : "calendar";
   const linkSelected = String(el.entryTaskLink?.value || "").trim();
@@ -12221,6 +12220,9 @@ function saveEntry() {
   if (entryType === "task_work") {
     if (!linkedTask) return showToast("任务处理须选择已有叶子任务，或从左侧拖入");
     el.entryTitle.value = linkedTask.title || "";
+  } else if (!String(el.entryTitle?.value || "").trim() && linkedTask?.title) {
+    // 任务处理改会议时，若未手填会议名，沿用原叶子名，避免空标题保存失败。
+    el.entryTitle.value = linkedTask.title;
   }
   // 有挂接任务时分类/颜色跟随任务，日程表单不可改。
   let category;
@@ -12266,9 +12268,31 @@ function saveEntry() {
     return;
   }
   const previousTaskId = existingEntry?.taskId || "";
+  const wasTaskWork = existingEntry?.entryType === "task_work";
   // Meetings stay in the meeting list, but may optionally link a todo so hours count as task investment.
-  if (payload.entryType === "calendar" && !linkedId) {
-    finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId: "", dateKey });
+  // 会议保存必须走独立分支：不可再进 ensureTaskReadyForSchedule / 挂接锁，
+  // 否则「任务处理 → 会议」时仍挂着原叶子会被任务校验拦掉，看起来像保存失效。
+  if (payload.entryType === "calendar") {
+    // 从任务处理改成会议：默认卸掉挂接，避免仍算任务投入；需要计工时可再挂叶子。
+    // 本来就是会议、仅改其它字段：保留可选挂接。
+    const keepOptionalLink = !wasTaskWork && linkedId;
+    const meetingTaskId = keepOptionalLink ? linkedId : "";
+    if (!meetingTaskId) {
+      payload.category = typeof TaskCategoryPolicy?.normalizeCategory === "function"
+        ? TaskCategoryPolicy.normalizeCategory(el.entryCategory?.value || payload.category || "meeting", { meeting: true })
+        : "meeting";
+      payload.color = typeof TaskCategoryPolicy?.colorForCategory === "function"
+        ? TaskCategoryPolicy.colorForCategory(payload.category)
+        : (payload.color || "amber");
+      if (el.entryTaskLink) el.entryTaskLink.value = "";
+    }
+    finalizeEntrySave({
+      payload,
+      existingEntry,
+      previousTaskId,
+      taskId: meetingTaskId,
+      dateKey
+    });
     return;
   }
   if (locks.lockLink && locks.linkedTaskId) {
@@ -12798,13 +12822,15 @@ function getEntryFieldLockState() {
   const linkedTaskId = existing?.taskId
     || (selected && !selected.startsWith("__") ? selected : "");
   const editingLinked = Boolean(existing?.taskId);
-  const editingTaskWork = Boolean(existing?.taskId && existing?.entryType === "task_work");
+  const currentIsTaskWork = el.entryType?.value === "task_work";
+  const wasTaskWork = Boolean(existing?.entryType === "task_work" && existing?.taskId);
   return {
-    // 已保存且已挂接：关联锁死，避免误改把工时挪走。
-    lockLink: editingLinked,
+    // 仅在「仍为任务处理」时锁挂接，避免误把工时挪到别的叶子。
+    // 改成会议后允许改挂接或清空；也允许会议改回任务处理。
+    lockLink: editingLinked && currentIsTaskWork && wasTaskWork,
     // 任务处理标题由叶子决定，界面上隐藏，不提供手填。
-    lockTitle: el.entryType.value === "task_work",
-    lockType: editingTaskWork,
+    lockTitle: currentIsTaskWork,
+    lockType: false,
     linkedTaskId
   };
 }
@@ -12812,9 +12838,11 @@ function getEntryFieldLockState() {
 function updateEntryFieldLocks() {
   const locks = getEntryFieldLockState();
   const isMeeting = el.entryType.value === "calendar";
-  if (locks.lockType) el.entryType.value = "task_work";
   if (!isMeeting && locks.linkedTaskId) {
     syncEntryTitleFromLinkedSelection(locks.linkedTaskId);
+  } else if (isMeeting && !String(el.entryTitle?.value || "").trim() && locks.linkedTaskId) {
+    const linked = findTask(locks.linkedTaskId)?.task;
+    if (linked?.title) el.entryTitle.value = linked.title;
   }
   if (locks.linkedTaskId) {
     const linked = findTask(locks.linkedTaskId)?.task;
@@ -12824,11 +12852,13 @@ function updateEntryFieldLocks() {
   document.getElementById("entryTitleField")?.classList.toggle("hidden", !isMeeting);
   document.getElementById("entryOwnerField")?.classList.toggle("hidden", !isMeeting);
   // 分类跟随任务：任务处理，或会议已挂接时，不在日程里改分类。
-  const categoryFollowsTask = !isMeeting || Boolean(locks.linkedTaskId);
-  el.entryCategoryField?.classList.toggle("hidden", categoryFollowsTask);
+  const linkedNow = String(el.entryTaskLink?.value || "").trim();
+  const hasActiveLink = Boolean(linkedNow && !linkedNow.startsWith("__"));
+  const categoryLocked = !isMeeting || hasActiveLink;
+  el.entryCategoryField?.classList.toggle("hidden", categoryLocked);
   if (el.entryCategory) {
-    el.entryCategory.disabled = categoryFollowsTask;
-    el.entryCategory.title = categoryFollowsTask ? "分类跟随任务，请在任务详情中修改" : "";
+    el.entryCategory.disabled = categoryLocked;
+    el.entryCategory.title = categoryLocked ? "分类跟随任务，请在任务详情中修改" : "";
   }
   const linkLabel = document.getElementById("entryTaskLinkLabel");
   if (linkLabel) {
@@ -12846,9 +12876,9 @@ function updateEntryFieldLocks() {
 
   el.entryTitle.readOnly = false;
   el.entryTitle.removeAttribute("required");
-  el.entryType.disabled = locks.lockType;
-  el.entryType.closest("label")?.classList.toggle("disabled-field", locks.lockType);
-  el.entryType.title = locks.lockType ? "已挂接投入固定为任务处理" : "";
+  el.entryType.disabled = false;
+  el.entryType.closest("label")?.classList.remove("disabled-field");
+  el.entryType.title = "可在「任务处理」与「会议日程」之间切换后保存";
   const lockLinkUi = locks.lockLink;
   el.entryTaskLink.disabled = lockLinkUi;
   el.entryTaskLink.closest("label")?.classList.toggle("disabled-field", lockLinkUi);
@@ -12858,7 +12888,7 @@ function updateEntryFieldLocks() {
     el.entryTaskTrigger.disabled = lockLinkUi;
     el.entryTaskTrigger.setAttribute("aria-disabled", lockLinkUi ? "true" : "false");
     el.entryTaskTrigger.title = lockLinkUi
-      ? "已挂接投入不能改关联；可改时间与本时段投入内容"
+      ? "任务处理已挂接时不能改关联；可改成会议日程后再调整，或只改时间与投入内容"
       : (isMeeting
         ? "会议可可选挂叶子以计入工时；新建任务请用待办"
         : "选择已有叶子记工时，或从左侧拖入；日程不新建任务");

@@ -7,7 +7,8 @@ const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 
 assert.match(html, /id="entryType"/, "entry dialog should expose an explicit schedule type");
 assert.match(app, /entry\.entryType \|\|= entry\.taskId \? "task_work" : "calendar"/, "existing entries should migrate without losing records");
-assert.match(app, /entryType === "calendar" && !linkedId/, "meetings may save without a todo link");
+assert.match(app, /payload\.entryType === "calendar"/, "meetings save on a dedicated calendar branch");
+assert.match(app, /taskId: meetingTaskId/, "meetings may save without a todo link");
 assert.match(html, /data-list-kind="meeting"/, "meeting should be a parallel list-kind switch beside todos");
 assert.doesNotMatch(html, /data-filter="meeting"/, "meeting should not remain a status tab");
 assert.match(app, /function getMeetingListItems/, "meetings must surface as list items with invested hours");
@@ -35,7 +36,21 @@ assert.doesNotMatch(
   /if \(id === payload\.taskId\) \{\s*task\.category = category/s,
   "saving schedule must not rewrite the task category"
 );
-assert.match(app, /lockLink: editingLinked/, "saved linked entries lock the task association");
+assert.match(app, /lockLink: editingLinked && currentIsTaskWork && wasTaskWork/, "task_work keeps link lock; meeting conversion can retarget");
+assert.match(app, /lockType: false/, "entry type must stay switchable between task_work and calendar");
+assert.match(app, /可在「任务处理」与「会议日程」之间切换后保存/, "type field explains meeting↔task conversion");
+assert.doesNotMatch(app, /已挂接投入固定为任务处理/, "must not freeze saved task_work as unconvertible");
+assert.match(
+  app,
+  /payload\.entryType === "calendar"[\s\S]*finalizeEntrySave\([\s\S]*taskId: meetingTaskId/,
+  "saving as meeting must bypass task-ready guards that blocked conversion"
+);
+assert.match(
+  app,
+  /从任务处理改成会议：默认卸掉挂接/,
+  "task_work → calendar clears the leaf link so it becomes a real meeting"
+);
+assert.match(app, /wasTaskWork = existingEntry\?\.entryType === "task_work"/, "conversion detects prior task_work");
 assert.match(app, /computeScheduleDerivedProgress/, "parent and leaf progress share one schedule-derived helper");
 assert.match(app, /taskHasActiveChildWork/, "parents become in_progress from active child work");
 assert.match(

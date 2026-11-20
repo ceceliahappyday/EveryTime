@@ -80,6 +80,8 @@
     );
 
     // 1) Same-titled task_work on a meeting task (or entry titled as a meeting event) → calendar.
+    // Do not demote intentional task_work hung on a normal (non-meeting) leaf — that undoes
+    // user edits that convert a meeting block into task investment.
     collectEntries(next).forEach(({ entry }) => {
       const entryTitle = normalizeTitle(entry.title);
       const linked = entry.taskId ? byId.get(entry.taskId) : null;
@@ -87,6 +89,7 @@
       const linkedIsMeeting = linked && isMeetingEventTitle(linked.title);
       const sameTitleAsMeetingTask = linkedIsMeeting && entryTitle === normalizeTitle(linked.title);
       if (!entryIsMeeting && !sameTitleAsMeetingTask) return;
+      if (entry.entryType === "task_work" && linked && !linkedIsMeeting) return;
       if (demoteEntryToCalendar(entry)) convertedEntries += 1;
     });
 

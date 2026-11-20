@@ -48,4 +48,42 @@ assert.equal(data["2026-07-22"].entries[1].entryType, "task_work");
 const again = demoteMeetingEventTasks(data);
 assert.equal(again.changed, false, "demote must be idempotent");
 
+// Meeting block converted to task_work on a normal leaf must stay task investment.
+const converted = {
+  "2026-11-20": {
+    note: "",
+    tasks: [
+      { id: "work-leaf", title: "产业公司贡献值方案评估", parentId: "", status: "in_progress", dueDate: "2026-11-20" }
+    ],
+    entries: [
+      {
+        id: "was-meeting",
+        title: "产业公司贡献值方案评估",
+        entryType: "task_work",
+        taskId: "work-leaf",
+        start: 9,
+        end: 10
+      },
+      {
+        id: "still-meeting-title",
+        title: "2026年11月预算沟通会",
+        entryType: "task_work",
+        taskId: "work-leaf",
+        start: 14,
+        end: 15
+      }
+    ]
+  }
+};
+const keep = demoteMeetingEventTasks(converted);
+assert.equal(converted["2026-11-20"].entries[0].entryType, "task_work");
+assert.equal(converted["2026-11-20"].entries[0].taskId, "work-leaf");
+assert.equal(
+  converted["2026-11-20"].entries[1].entryType,
+  "task_work",
+  "intentional invest on normal leaf must not be demoted by meeting-like title"
+);
+assert.equal(converted["2026-11-20"].entries[1].taskId, "work-leaf");
+assert.equal(keep.report.convertedEntries, 0);
+
 console.log("schedule meeting demote policy tests passed");
