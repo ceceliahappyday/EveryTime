@@ -160,7 +160,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "aiChatLog", "aiAttachment", "aiAttachmentPreview", "aiAttachmentClear", "aiImageInput", "aiAttachImageButton", "aiSubmitButton", "aiScreenshotHintButton",
     "taskAiDropzone", "taskAiDropzoneBody", "taskAiDropzoneStatus", "taskAiImageInput", "taskAiPickImageButton",
     "aiBatchDraftDialog", "aiBatchDraftForm", "aiBatchDraftTitle", "aiBatchDraftHint", "aiBatchDraftList", "aiBatchSelectAllButton", "aiBatchCreateButton",
-    "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewSearch", "progressReviewCount", "progressReviewList",
+    "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewSearch", "progressReviewCount", "progressReviewList", "progressReviewApplyButton",
     "progressQuickDialog", "progressQuickForm", "progressQuickTitle", "progressQuickStats", "progressQuickNote", "progressQuickHistory",
     "taskPanelToggle",
     "focusViewChrome", "focusViewButton", "focusViewMenu",
@@ -656,9 +656,12 @@ function bindEvents() {
   el.importButton?.addEventListener("click", () => importAllData());
   el.progressReviewButton.addEventListener("click", openProgressReview);
   el.progressReviewSearch?.addEventListener("input", () => filterProgressReviewCards());
+  el.progressReviewApplyButton?.addEventListener("click", () => {
+    saveProgressReview({ closeDialog: false });
+  });
   el.progressReviewForm.addEventListener("submit", event => {
     event.preventDefault();
-    saveProgressReview();
+    saveProgressReview({ closeDialog: true });
   });
   el.progressQuickForm?.addEventListener("submit", event => {
     event.preventDefault();
@@ -6944,10 +6947,10 @@ function openProgressReview() {
   el.progressReviewList.innerHTML = "";
   if (!activeTasks.length) {
     el.progressReviewList.innerHTML = `<div class="empty-state">当前没有可更新的叶子任务<br>可更新：进行中、待跟踪/仅关注、计划中（含无投入）<br>父计划不在此列表</div>`;
-    el.progressReviewForm.querySelector('button[type="submit"]').disabled = true;
+    setProgressReviewActionsDisabled(true);
     if (el.progressReviewCount) el.progressReviewCount.textContent = "0";
   } else {
-    el.progressReviewForm.querySelector('button[type="submit"]').disabled = false;
+    setProgressReviewActionsDisabled(false);
     activeTasks.forEach(task => {
       refreshTaskStatusForId(task.id);
       const live = findTask(task.id)?.task || task;
@@ -7027,34 +7030,69 @@ function filterProgressReviewCards() {
     tip.textContent = "没有匹配的任务，试试改关键词";
     el.progressReviewList.appendChild(tip);
   }
-  el.progressReviewForm.querySelector('button[type="submit"]').disabled = cards.length === 0;
+  setProgressReviewActionsDisabled(cards.length === 0);
 }
 
-function saveProgressReview() {
-  const now = new Date().toISOString();
-  let updated = 0;
+function setProgressReviewActionsDisabled(disabled) {
+  const submit = el.progressReviewForm?.querySelector('button[type="submit"]');
+  if (submit) submit.disabled = disabled;
+  if (el.progressReviewApplyButton) el.progressReviewApplyButton.disabled = disabled;
+}
+
+function saveProgressReview({ closeDialog = true } = {}) {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const savedCards = [];
   el.progressReviewList.querySelectorAll(".progress-review-card").forEach(card => {
     const found = findTask(card.dataset.taskId);
     if (!found) return;
     const noteField = card.querySelector(".review-delivery-note");
     const note = String(noteField?.value || "").trim();
-    if (note && typeof TaskWorkPolicy?.appendProgressUpdateNote === "function") {
+    if (!note) return;
+    if (typeof TaskWorkPolicy?.appendProgressUpdateNote === "function") {
       const appended = TaskWorkPolicy.appendProgressUpdateNote({
         deliveryNote: plainTextFromDeliveryNote(found.task.deliveryNote || ""),
         note,
-        now: new Date(),
+        now,
         maxChars: RichNotePolicy?.MAX_TEXT_CHARS || 4000
       });
       if (appended.changed) found.task.deliveryNote = appended.deliveryNote;
     }
     refreshTaskStatusForId(found.task.id);
-    found.task.updatedAt = now;
-    updated += 1;
+    found.task.updatedAt = nowIso;
+    savedCards.push(card);
   });
+  if (!savedCards.length) {
+    showToast("请先填写至少一条本次说明");
+    const firstNote = el.progressReviewList?.querySelector(
+      ".progress-review-card:not(.is-filtered-out) .review-delivery-note"
+    );
+    try { firstNote?.focus?.(); } catch { /* ignore */ }
+    return;
+  }
   saveData();
-  el.progressReviewDialog.close();
+  if (closeDialog) {
+    el.progressReviewDialog.close();
+    render();
+    showToast(`已保存 ${savedCards.length} 条并关闭：说明已追加，进度按投入/计划自动计算`);
+    return;
+  }
+  // 不关闭：本次已写说明的条目从当前列表移除；下次打开更新进度再全量列出。
+  savedCards.forEach(card => card.remove());
+  const remaining = el.progressReviewList?.querySelectorAll(".progress-review-card") || [];
+  if (!remaining.length) {
+    el.progressReviewList.innerHTML = `<div class="empty-state">本轮已全部更新完<br>关闭后再次打开「更新进度」可继续批量填写</div>`;
+  }
+  filterProgressReviewCards();
   render();
-  showToast(updated ? `已保存 ${updated} 条：说明追加，进度按投入/计划自动计算` : "没有可保存的任务");
+  if (el.progressReviewDialog && !el.progressReviewDialog.open) {
+    try { el.progressReviewDialog.showModal(); } catch { /* ignore */ }
+  }
+  showToast(
+    remaining.length
+      ? `已更新 ${savedCards.length} 条，本轮列表还剩 ${remaining.length} 条可继续写`
+      : `已更新 ${savedCards.length} 条，本轮列表已清空`
+  );
 }
 
 function formatDateTime(iso) {

@@ -112,7 +112,29 @@ assert.match(
 );
 assert.match(html, /id="progressReviewScroll"/, "progress review list scrolls inside the dialog");
 assert.match(html, /id="progressReviewSearch"/, "progress review dialog exposes a search box");
+assert.match(html, /id="progressReviewApplyButton"/, "progress review can apply updates without closing");
+assert.match(html, />更新</, "progress review apply button is labeled 更新");
 assert.match(html, /progress-review-toolbar[\s\S]*progressReviewSearch[\s\S]*progressReviewScroll/, "search stays above the scrollable list");
+assert.match(
+  fs.readFileSync(require("path").join(__dirname, "..", "app.js"), "utf8"),
+  /saveProgressReview\(\{\s*closeDialog:\s*false\s*\}\)/,
+  "更新 button saves progress without closing the dialog"
+);
+assert.match(
+  fs.readFileSync(require("path").join(__dirname, "..", "app.js"), "utf8"),
+  /savedCards\.forEach\(card => card\.remove\(\)\)/,
+  "更新 removes saved cards from the current session list"
+);
+assert.match(
+  fs.readFileSync(require("path").join(__dirname, "..", "app.js"), "utf8"),
+  /本轮已全部更新完/,
+  "empty session list hints to reopen for a fresh full batch"
+);
+assert.doesNotMatch(
+  fs.readFileSync(require("path").join(__dirname, "..", "app.js"), "utf8"),
+  /function refreshProgressReviewCardAfterSave/,
+  "progress review must not live-refresh card fields after 更新"
+);
 assert.match(styles, /\.progress-review-toolbar[\s\S]*flex:\s*0\s+0\s+auto/s, "progress review search toolbar does not scroll away");
 assert.match(app, /本次说明/, "progress review asks for this-update notes instead of editing full history");
 assert.match(app, /filterProgressReviewCards/, "progress review filters cards by search without destroying edits");
