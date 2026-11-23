@@ -6570,11 +6570,14 @@ function saveMeetingFromCreateDialog() {
   if (endParts.minute > 0 && end < 22) end = Math.min(22, end + 1);
   if (end <= start) return showTaskFieldError(el.taskMeetingEndDateTime, "结束时间必须晚于开始时间");
   const dateKey = startParts.dateKey || state.selectedDate;
-  const taskId = String(el.taskParent?.value || "").trim();
-  if (taskId) {
-    const linked = findTask(taskId)?.task;
-    if (!linked || !TodoListPolicy.canLinkEntryToTask(linked, hasChildTasks)) {
-      return showTaskFieldError(el.taskParentTrigger || el.taskParent, "只能关联叶子待办");
+  const hangTaskId = String(el.taskParent?.value || "").trim();
+  if (hangTaskId) {
+    const linked = findTask(hangTaskId)?.task;
+    if (!linked) {
+      return showTaskFieldError(el.taskParentTrigger || el.taskParent, "请选择有效任务");
+    }
+    if (TaskStatusPolicy.isEndedStatus?.(linked.status)) {
+      return showTaskFieldError(el.taskParentTrigger || el.taskParent, "已结束任务不能挂接");
     }
   }
   const entry = {
@@ -6586,8 +6589,13 @@ function saveMeetingFromCreateDialog() {
     owner: (el.taskOwner?.value || "").trim().slice(0, 80),
     note: plainTextFromDeliveryNote(safeReadRichNote(el.taskBusinessBackground)).slice(0, 800),
     color: "amber",
-    taskId
+    taskId: ""
   };
+  const taskId = hangTaskId
+    ? ensureScheduleLinkedLeafTask(hangTaskId, entry, dateKey)
+    : "";
+  if (hangTaskId && !taskId) return;
+  entry.taskId = taskId;
   getDay(dateKey).entries.push(entry);
   if (taskId) {
     refreshTaskStatusForId(taskId);
@@ -12070,8 +12078,8 @@ function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
   const category = typeof TaskCategoryPolicy?.resolveTaskCategory === "function"
     ? TaskCategoryPolicy.resolveTaskCategory(workTask)
     : (workTask.category || "work");
-  const entry = {
-    id: crypto.randomUUID(),
+  // 不预写入空日程：取消不会留下空块；保存时连同投入内容一次写入任务进度说明。
+  openEntryDialog(placement.start, {
     entryType: "task_work",
     taskId: workTask.id,
     title: workTask.title,
@@ -12079,14 +12087,8 @@ function createEntryFromTask(task, hour, dateKey = state.selectedDate) {
     note: "",
     color: entryColor,
     category
-  };
-  getDay(dateKey).entries.push(entry);
-  // 进度说明等保存日程时写入；拖入后先打开表单填写本时段投入内容。
-  refreshTaskStatusForId(workTask.id);
-  saveData();
-  render();
-  openEntryDialog(placement.start, entry, dateKey);
-  showToast(`已安排到 ${dateKey.slice(5)} ${formatTime(hour)}，请填写本时段投入`);
+  }, dateKey);
+  showToast(`将安排到 ${dateKey.slice(5)} ${formatTime(hour)}，请填写本时段投入后保存`);
   return true;
 }
 
@@ -12154,10 +12156,11 @@ function syncEntryCategoryFromColor(color) {
 }
 
 function openEntryDialog(hour, entry = null, dateKey = null) {
-  const resolvedDateKey = entry
-    ? (dateKey || findEntry(entry.id)?.dateKey || state.selectedDate)
-    : (dateKey || state.selectedDate);
-  state.editingEntryId = entry?.id || null;
+  const isEditing = Boolean(entry?.id);
+  const resolvedDateKey = dateKey
+    || (isEditing ? findEntry(entry.id)?.dateKey : null)
+    || state.selectedDate;
+  state.editingEntryId = isEditing ? entry.id : null;
   state.editingEntryDateKey = resolvedDateKey;
   entryTitleAutoFilledFromTaskId = "";
   const linkedTask = entry?.taskId ? findTask(entry.taskId)?.task : null;
@@ -12171,8 +12174,8 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
       ? (entry.category || categoryIdFromColor(entry.color || "sage"))
       : (isTaskWork ? "work" : "meeting"));
   state.selectedColor = TaskCategoryPolicy?.colorForCategory?.(category) || entry?.color || "sage";
-  el.entryEyebrow.textContent = entry ? "EDIT ENTRY" : "NEW ENTRY";
-  el.entryDialogTitle.textContent = entry ? "编辑日程" : "添加日程";
+  el.entryEyebrow.textContent = isEditing ? "EDIT ENTRY" : "NEW ENTRY";
+  el.entryDialogTitle.textContent = isEditing ? "编辑日程" : "添加日程";
   el.entryType.value = resolvedType;
   // 任务处理：标题只作存储字段，跟已选叶子；会议才手填名称。
   el.entryTitle.value = isTaskWork
@@ -12194,7 +12197,7 @@ function openEntryDialog(hour, entry = null, dateKey = null) {
     : (entry?.note && entry.note !== (linkedTask?.title || entry.title) ? entry.note : "") || "";
   fillCategorySelect(el.entryCategory, { selected: category, includeMeeting: true });
   updateEntryTypeControls();
-  el.deleteEntryButton.classList.toggle("hidden", !entry);
+  el.deleteEntryButton.classList.toggle("hidden", !isEditing);
   el.colorPicker?.querySelectorAll("button").forEach(item => item.classList.toggle("selected", item.dataset.color === state.selectedColor));
   el.entryDialog.showModal();
   el.entryDialogScroll?.scrollTo?.(0, 0);
@@ -12217,9 +12220,39 @@ function saveEntry() {
     ? locks.linkedTaskId
     : (linkSelected && !linkSelected.startsWith("__") ? linkSelected : "");
   const linkedTask = linkedId ? findTask(linkedId)?.task : null;
+  const createStandalone = entryType === "task_work" && linkSelected === "__create__";
   if (entryType === "task_work") {
-    if (!linkedTask) return showToast("任务处理须选择已有叶子任务，或从左侧拖入");
-    el.entryTitle.value = linkedTask.title || "";
+    if (!linkedTask && !createStandalone) {
+      return showToast("任务处理须选择挂接任务、新建独立任务，或从左侧拖入");
+    }
+    if (createStandalone) {
+      // 本日程即任务：任务名称栏优先，工时记在自身。
+      const leafTitle = resolveScheduleChildTitleFromEntry({
+        note: el.entryNote?.value || "",
+        title: el.entryTitle?.value || "",
+        parentTitle: ""
+      });
+      if (!leafTitle) {
+        return showToast("新建独立任务请填写任务名称");
+      }
+      el.entryTitle.value = leafTitle;
+    } else if (!hasChildTasks(linkedTask.id)) {
+      el.entryTitle.value = linkedTask.title || "";
+    } else {
+      // 挂父级：任务名称栏成为新建子任务名称，工时记在子任务上。
+      const childTitle = resolveScheduleChildTitleFromEntry({
+        note: el.entryNote?.value || "",
+        title: el.entryTitle?.value || "",
+        parentTitle: linkedTask.title || ""
+      });
+      if (!childTitle) {
+        return showToast("挂到父级时请填写子任务名称");
+      }
+      if (TodoListPolicy.normalizeTitle(childTitle) === TodoListPolicy.normalizeTitle(linkedTask.title)) {
+        return showToast("子任务名称不能与父级相同");
+      }
+      el.entryTitle.value = childTitle;
+    }
   } else if (!String(el.entryTitle?.value || "").trim() && linkedTask?.title) {
     // 任务处理改会议时，若未手填会议名，沿用原叶子名，避免空标题保存失败。
     el.entryTitle.value = linkedTask.title;
@@ -12306,13 +12339,16 @@ function saveEntry() {
     if (!taskId) return;
     const linked = findTask(taskId)?.task;
     if (linked && !ensureTaskReadyForSchedule(linked)) return;
-    if (payload.entryType === "task_work" && linked?.title) payload.title = linked.title;
+    // 叶子：标题镜像任务名；父级：保留投入内容作为即将新建的子任务名。
+    if (payload.entryType === "task_work" && linked && !hasChildTasks(linked.id) && linked.title) {
+      payload.title = linked.title;
+    }
     finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dateKey });
   });
 }
 
 function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dateKey = state.editingEntryDateKey || state.selectedDate }) {
-  // Hours must land on an existing leaf. Parents are refused (no create-from-schedule).
+  // 工时只落叶子：若选的是父级，自动在其下新建/复用同名子任务再记投入。
   const linkedTaskId = taskId
     ? ensureScheduleLinkedLeafTask(taskId, payload, dateKey)
     : "";
@@ -12360,6 +12396,8 @@ function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dat
       note: payload.note || "",
       title: payload.title || ""
     });
+    // 投入写入后再重算进度百分比，避免仍用旧排期缓存。
+    refreshTaskStatusForId(payload.taskId);
   }
   focusLinkedTaskFilter(payload.taskId);
   const wasEditing = Boolean(state.editingEntryId);
@@ -12373,18 +12411,67 @@ function finalizeEntrySave({ payload, existingEntry, previousTaskId, taskId, dat
   showToast(wasEditing ? "日程已更新" : "日程已添加");
 }
 
-/** If taskId is a parent/container, retarget an existing same-title leaf; never create from schedule. */
+/** 工时只落叶子：选父级时按日程标题在其下复用或新建子任务。 */
 function ensureScheduleLinkedLeafTask(taskId, entryPayload, dateKey = state.selectedDate) {
-  const task = findTask(taskId)?.task;
+  let task = findTask(taskId)?.task;
+  if (!task) {
+    invalidateTaskLookupCaches();
+    task = findTask(taskId)?.task;
+  }
   if (!task) return "";
   if (!hasChildTasks(task.id)) return taskId;
-  const existingLeaf = findLeafUnderParentByTitle(task.id, entryPayload?.title || "");
+  const leafTitle = resolveScheduleChildTitleFromEntry({
+    note: entryPayload?.note || "",
+    title: entryPayload?.title || "",
+    parentTitle: task.title || ""
+  });
+  if (!leafTitle) {
+    showToast(`「${task.title}」是父级，请填写子任务名称`);
+    return "";
+  }
+  if (TodoListPolicy.normalizeTitle(leafTitle) === TodoListPolicy.normalizeTitle(task.title)) {
+    showToast("子任务名称不能与父级相同");
+    return "";
+  }
+  const existingLeaf = findLeafUnderParentByTitle(task.id, leafTitle);
   if (existingLeaf) {
-    showToast(`工时已记在「${existingLeaf.title}」（父级「${task.title}」不可直接记投入）`);
+    showToast(`工时已记在「${existingLeaf.title}」`);
     return existingLeaf.id;
   }
-  showToast(`「${task.title}」是父级，请选择其下已有叶子记工时`);
+  const leaf = createTaskFromEntryPayload(
+    {
+      ...entryPayload,
+      title: leafTitle,
+      category: task.category || entryPayload?.category,
+      color: task.color || entryPayload?.color,
+      entryType: "task_work"
+    },
+    dateKey,
+    `从日程挂接父级「${task.title}」自动创建的子任务。`
+  );
+  leaf.parentId = task.id;
+  if (task.owner) leaf.owner = task.owner;
+  showToast(`已在「${task.title}」下新建「${leaf.title}」并记入投入`);
+  return leaf.id;
+}
+
+/** 新建独立任务 / 挂父级：优先用手填任务名，其次用投入内容首行。 */
+function resolveScheduleChildTitleFromEntry({ note = "", title = "", parentTitle = "" } = {}) {
+  const parentNorm = TodoListPolicy.normalizeTitle(parentTitle);
+  const fromTitle = String(title || "").trim().slice(0, 80);
+  if (fromTitle && TodoListPolicy.normalizeTitle(fromTitle) !== parentNorm) return fromTitle;
+  const fromNote = String(note || "").trim().split(/\r?\n/)[0].trim().slice(0, 80);
+  if (fromNote && TodoListPolicy.normalizeTitle(fromNote) !== parentNorm) return fromNote;
   return "";
+}
+
+/** 任务处理下需要手填名称：新建独立任务，或挂到父级自动建子任务。 */
+function isEntryCreatingNamedLeaf(linkValue = el.entryTaskLink?.value) {
+  const selected = String(linkValue || "").trim();
+  if (selected === "__create__") return true;
+  if (!selected || selected.startsWith("__")) return false;
+  const linked = findTask(selected)?.task;
+  return Boolean(linked && hasChildTasks(linked.id));
 }
 
 function resolveCreateUnderExistingParent(entryPayload, parentTitle) {
@@ -12426,16 +12513,47 @@ function cancelPendingEntryLinkConfirm({ closingDialog = null } = {}) {
 
 function resolveEntryTaskLinkWithGuard(entryPayload, existingEntry = null) {
   const selected = String(el.entryTaskLink.value || "").trim();
-  if (selected && !selected.startsWith("__")) {
-    const linked = findTask(selected)?.task;
-    if (!linked || !TodoListPolicy.canLinkEntryToTask(linked, hasChildTasks)) {
-      showToast("工时只能记在已有叶子上；请选择叶子或从左侧拖入");
+  if (selected === "__create__") {
+    const dateKey = state.editingEntryDateKey || state.selectedDate;
+    const leafTitle = resolveScheduleChildTitleFromEntry({
+      note: entryPayload?.note || "",
+      title: entryPayload?.title || "",
+      parentTitle: ""
+    });
+    if (!leafTitle) {
+      showToast("新建独立任务请填写任务名称");
       return Promise.resolve(null);
     }
+    entryPayload.title = leafTitle;
+    const similar = typeof TodoListPolicy.findSimilarTasks === "function"
+      ? TodoListPolicy.findSimilarTasks({
+        title: leafTitle,
+        tasks: getAllTasks().map(({ task }) => task),
+        hasChildTasks,
+        limit: 5
+      })
+      : [];
+    if (similar.length) {
+      return promptEntryLinkChoice(entryPayload, similar, { createMode: "top_level" });
+    }
+    const leaf = createStandaloneLeafFromEntry(entryPayload, dateKey);
+    return Promise.resolve(leaf.id);
+  }
+  if (selected && !selected.startsWith("__")) {
+    const linked = findTask(selected)?.task;
+    if (!linked) {
+      showToast("请选择有效的挂接任务");
+      return Promise.resolve(null);
+    }
+    if (TaskStatusPolicy.isEndedStatus?.(linked.status)) {
+      showToast("已结束任务不能挂接投入");
+      return Promise.resolve(null);
+    }
+    // 允许父级：保存时由 ensureScheduleLinkedLeafTask 自动建/复用子任务记工时。
     return Promise.resolve(selected);
   }
   if (existingEntry?.taskId) return Promise.resolve(existingEntry.taskId);
-  showToast("任务处理须挂接已有叶子；请选择或从左侧拖入（新建任务请用待办）");
+  showToast("任务处理须挂接任务或新建独立任务；请选择叶子、父级，或「新建独立任务」");
   return Promise.resolve(null);
 }
 
@@ -12672,18 +12790,21 @@ function focusLinkedTaskFilter(taskId) {
 
 function fillEntryTaskOptions(entry = null) {
   el.entryTaskLink.innerHTML = "";
-  el.entryTaskLink.add(new Option("选择已有叶子任务", ""));
-  getLeafTasksForEntryLink(entry).forEach(task => {
-    el.entryTaskLink.add(new Option(task.title, task.id));
+  el.entryTaskLink.add(new Option("选择挂接任务（叶子或父级）", ""));
+  el.entryTaskLink.add(new Option("新建独立任务（本日程即任务）", "__create__"));
+  getHangTargetsForEntryLink(entry).forEach(task => {
+    const suffix = hasChildTasks(task.id) ? "（父级）" : "";
+    el.entryTaskLink.add(new Option(`${task.title}${suffix}`, task.id));
   });
   el.entryTaskLink.value = entry?.taskId || "";
   renderEntryTaskOptions("");
   syncEntryTaskTrigger();
 }
 
-function getLeafTasksForEntryLink(entry = null) {
+/** 日程挂接可选叶子或父级；父级保存时自动建子任务记工时。 */
+function getHangTargetsForEntryLink(entry = null) {
   return getAllTasks().map(({ task }) => task).filter(task =>
-    isWorkLeafTask(task) &&
+    task &&
     TaskOptionPolicy.shouldIncludeEntryTaskOption({
       task,
       isHiddenFutureRecurringInstance: isHiddenRecurringCatalogInstance(task, {
@@ -12693,6 +12814,10 @@ function getLeafTasksForEntryLink(entry = null) {
       isCurrentLinkedTask: entry?.taskId === task.id
     })
   );
+}
+
+function getLeafTasksForEntryLink(entry = null) {
+  return getHangTargetsForEntryLink(entry).filter(task => !hasChildTasks(task.id));
 }
 
 let entryTaskActiveIndex = 0;
@@ -12724,7 +12849,7 @@ function renderEntryTaskOptions(query) {
     tasks,
     query,
     selectedId: el.entryTaskLink.value,
-    leafOnly: true,
+    leafOnly: false,
     hasChildTasks,
     isHiddenFutureRecurringInstance: task => isHiddenRecurringCatalogInstance(task, {
       keepCurrentLinked: true,
@@ -12733,16 +12858,19 @@ function renderEntryTaskOptions(query) {
     statusText: task => statusLabel(task.status),
     dateText: task => task.dueDate || "未计划"
   });
+  const createSelected = el.entryTaskLink.value === "__create__";
+  const createAction = `<button type="button" class="entry-task-option entry-task-create" role="option" aria-selected="${createSelected}" data-value="__create__" title="本日程成为无父级叶子任务，工时记在自身"><strong>新建独立任务</strong><span><b>本日程即任务</b> · 无父级，工时记在自身</span><small>填写任务名称后保存</small></button>`;
   const items = results.map(({ task, meta }) => {
     const primary = meta.parentPath ? meta.path : task.title;
-    return `<button type="button" class="entry-task-option" role="option" aria-selected="${el.entryTaskLink.value === task.id}" data-value="${escapeHtml(task.id)}" title="${escapeHtml(meta.path)}"><strong>${escapeHtml(primary)}</strong><span><b>第${meta.depth}层叶子</b>${meta.parentPath ? ` · 归属 ${escapeHtml(meta.parentPath)}` : ""}</span><small>${escapeHtml(statusLabel(task.status))} · ${task.dueDate ? escapeHtml(task.dueDate.slice(5)) : "未计划"}${el.entryTaskLink.value === task.id ? " · ✓ 已关联" : ""}</small></button>`;
+    const layerKind = meta.hasChildren ? "父级 · 保存时自动建子任务" : "叶子";
+    return `<button type="button" class="entry-task-option" role="option" aria-selected="${el.entryTaskLink.value === task.id}" data-value="${escapeHtml(task.id)}" title="${escapeHtml(meta.path)}"><strong>${escapeHtml(primary)}</strong><span><b>第${meta.depth}层${layerKind}</b>${meta.parentPath ? ` · 归属 ${escapeHtml(meta.parentPath)}` : ""}</span><small>${escapeHtml(statusLabel(task.status))} · ${task.dueDate ? escapeHtml(task.dueDate.slice(5)) : "未计划"}${el.entryTaskLink.value === task.id ? " · ✓ 已关联" : ""}</small></button>`;
   }).join("");
   const empty = items
     ? ""
     : `<div class="entry-task-no-results">${String(query || "").trim()
-      ? "没有匹配的叶子任务"
-      : "请选择已有叶子，或从左侧拖入；新建任务请用待办 / 周月历 / 甘特"}</div>`;
-  el.entryTaskOptions.innerHTML = items || empty;
+      ? "没有匹配的任务；仍可选上方「新建独立任务」"
+      : "可选择叶子、父级，或「新建独立任务」；挂父级/新建时按投入内容生成任务"}</div>`;
+  el.entryTaskOptions.innerHTML = createAction + (items || empty);
   const current = [...el.entryTaskOptions.querySelectorAll('[role="option"]')].findIndex(option => option.getAttribute("aria-selected") === "true");
   entryTaskActiveIndex = current >= 0 ? current : 0;
   el.entryTaskOptions.querySelectorAll('[role="option"]').forEach(option => {
@@ -12763,21 +12891,29 @@ function chooseEntryTaskOption(value) {
   }
   el.entryTaskLink.value = value || "";
   el.entryTaskCombobox.dataset.parentTitle = "";
-  // 选叶子只同步任务处理的存储标题与分类，不改本时段投入内容，也不强行改会议类型。
+  // 选叶子镜像任务名；选父级/新建独立任务不写名（来自投入内容）；不改投入内容与会议类型。
   if (el.entryType.value === "task_work") syncEntryTitleFromLinkedSelection(value);
   if (value && !String(value).startsWith("__")) {
     const linked = findTask(value)?.task;
     if (linked) syncEntryCategoryFromTask(linked);
+    if (linked && hasChildTasks(linked.id) && el.entryType.value === "task_work") {
+      showToast("已选父级：填写本时段投入内容后保存，将自动建子任务并记工时", 2200);
+    }
+  } else if (value === "__create__" && el.entryType.value === "task_work") {
+    showToast("已选新建独立任务：填写任务名称后保存，本日程即成为该任务", 2200);
   }
   syncEntryTaskTrigger();
   updateEntryFieldLocks();
   closeEntryTaskPopup();
-  if (value && !String(value).startsWith("__") && el.entryType.value === "task_work") {
-    try { el.entryNote?.focus?.(); } catch { /* ignore */ }
+  if (value && el.entryType.value === "task_work") {
+    try {
+      if (isEntryCreatingNamedLeaf(value)) el.entryTitle?.focus?.();
+      else el.entryNote?.focus?.();
+    } catch { /* ignore */ }
   }
 }
 
-/** 任务处理：标题只镜像已选叶子，绝不改写本时段投入内容。 */
+/** 任务处理：叶子标题镜像任务名；父级不镜像（子任务名由投入内容决定）。 */
 function syncEntryTitleFromLinkedSelection(taskId = "") {
   if (el.entryType.value === "calendar") return;
   const selected = String(taskId || "").trim();
@@ -12788,6 +12924,11 @@ function syncEntryTitleFromLinkedSelection(taskId = "") {
   }
   const linked = findTask(selected)?.task;
   if (!linked) return;
+  if (hasChildTasks(linked.id)) {
+    el.entryTitle.value = "";
+    entryTitleAutoFilledFromTaskId = "";
+    return;
+  }
   el.entryTitle.value = String(linked.title || "").trim();
   entryTitleAutoFilledFromTaskId = linked.id;
 }
@@ -12824,12 +12965,14 @@ function getEntryFieldLockState() {
   const editingLinked = Boolean(existing?.taskId);
   const currentIsTaskWork = el.entryType?.value === "task_work";
   const wasTaskWork = Boolean(existing?.entryType === "task_work" && existing?.taskId);
+  const creatingNamedLeaf = currentIsTaskWork && isEntryCreatingNamedLeaf(selected);
   return {
     // 仅在「仍为任务处理」时锁挂接，避免误把工时挪到别的叶子。
     // 改成会议后允许改挂接或清空；也允许会议改回任务处理。
     lockLink: editingLinked && currentIsTaskWork && wasTaskWork,
-    // 任务处理标题由叶子决定，界面上隐藏，不提供手填。
-    lockTitle: currentIsTaskWork,
+    // 挂已有叶子时标题镜像隐藏；新建独立任务 / 挂父级时需手填名称。
+    lockTitle: currentIsTaskWork && !creatingNamedLeaf,
+    creatingNamedLeaf,
     lockType: false,
     linkedTaskId
   };
@@ -12838,7 +12981,8 @@ function getEntryFieldLockState() {
 function updateEntryFieldLocks() {
   const locks = getEntryFieldLockState();
   const isMeeting = el.entryType.value === "calendar";
-  if (!isMeeting && locks.linkedTaskId) {
+  const showTitleField = isMeeting || locks.creatingNamedLeaf;
+  if (!isMeeting && locks.linkedTaskId && !locks.creatingNamedLeaf) {
     syncEntryTitleFromLinkedSelection(locks.linkedTaskId);
   } else if (isMeeting && !String(el.entryTitle?.value || "").trim() && locks.linkedTaskId) {
     const linked = findTask(locks.linkedTaskId)?.task;
@@ -12849,12 +12993,27 @@ function updateEntryFieldLocks() {
     if (linked) syncEntryCategoryFromTask(linked);
   }
 
-  document.getElementById("entryTitleField")?.classList.toggle("hidden", !isMeeting);
+  document.getElementById("entryTitleField")?.classList.toggle("hidden", !showTitleField);
   document.getElementById("entryOwnerField")?.classList.toggle("hidden", !isMeeting);
-  // 分类跟随任务：任务处理，或会议已挂接时，不在日程里改分类。
+  const titleLabel = document.getElementById("entryTitleLabel");
+  if (titleLabel) {
+    const linkSelected = String(el.entryTaskLink?.value || "").trim();
+    titleLabel.textContent = isMeeting
+      ? "会议名称"
+      : (linkSelected === "__create__" ? "任务名称" : "子任务名称");
+  }
+  if (el.entryTitle) {
+    el.entryTitle.placeholder = isMeeting
+      ? "填写会议名称"
+      : (String(el.entryTaskLink?.value || "").trim() === "__create__"
+        ? "填写任务名称（本日程即此任务）"
+        : "填写子任务名称（保存后挂在所选父级下）");
+  }
+  // 分类跟随任务：任务处理挂已有任务，或会议已挂接时，不在日程里改分类。
+  // 新建独立任务时可选手选分类。
   const linkedNow = String(el.entryTaskLink?.value || "").trim();
   const hasActiveLink = Boolean(linkedNow && !linkedNow.startsWith("__"));
-  const categoryLocked = !isMeeting || hasActiveLink;
+  const categoryLocked = (!isMeeting && linkedNow !== "__create__") || (isMeeting && hasActiveLink);
   el.entryCategoryField?.classList.toggle("hidden", categoryLocked);
   if (el.entryCategory) {
     el.entryCategory.disabled = categoryLocked;
@@ -12871,7 +13030,9 @@ function updateEntryFieldLocks() {
   if (el.entryNote) {
     el.entryNote.placeholder = isMeeting
       ? "可选；会显示在日程块主行"
-      : "写这次做了什么；显示在日程块，并记入任务进度";
+      : (locks.creatingNamedLeaf
+        ? "可选；写这次做了什么，显示在日程块并记入进度"
+        : "写这次做了什么；显示在日程块，并记入任务进度");
   }
 
   el.entryTitle.readOnly = false;
@@ -12890,8 +13051,8 @@ function updateEntryFieldLocks() {
     el.entryTaskTrigger.title = lockLinkUi
       ? "任务处理已挂接时不能改关联；可改成会议日程后再调整，或只改时间与投入内容"
       : (isMeeting
-        ? "会议可可选挂叶子以计入工时；新建任务请用待办"
-        : "选择已有叶子记工时，或从左侧拖入；日程不新建任务");
+        ? "会议可可选挂叶子或父级以计入工时；挂父级时按会议名自动建子任务"
+        : "可选叶子、父级，或「新建独立任务」（本日程即顶层叶子）");
   }
   if (lockLinkUi) closeEntryTaskPopup();
   syncEntryTaskTrigger();
@@ -12904,12 +13065,16 @@ function syncEntryTaskTrigger() {
     const linked = findTask(locks.linkedTaskId)?.task;
     el.entryTaskTrigger.textContent = linked?.title
       ? `已挂接「${linked.title}」（不可改）`
-      : "已挂接叶子（不可改）";
+      : "已挂接任务（不可改）";
+    return;
+  }
+  if (selected?.value === "__create__") {
+    el.entryTaskTrigger.textContent = "新建独立任务（本日程即任务）";
     return;
   }
   el.entryTaskTrigger.textContent = selected?.value && selected.value !== ""
     ? selected.textContent
-    : "选择已有叶子任务";
+    : "选择挂接任务（叶子或父级）";
 }
 
 function getCalendarEntriesForDate(dateKey) {
@@ -13233,6 +13398,8 @@ function createTaskFromEntryPayload(entryPayload, dateKey = state.selectedDate, 
     createdAt: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
   };
   getDay(dateKey).tasks.push(task);
+  // 新建后立刻失效查找缓存，否则后续 findTask / 清单渲染仍用旧快照会「建了却看不见、日程也写不进去」。
+  invalidateTaskLookupCaches();
   return task;
 }
 
@@ -13610,8 +13777,17 @@ function taskHasActiveChildWork(taskId, now = new Date()) {
 function applyInvestmentNoteToTask(taskId, { dateKey = "", start = 0, end = 0, note = "", title = "" } = {}) {
   if (!taskId) return false;
   if (typeof TaskWorkPolicy?.appendInvestmentNote !== "function") return false;
+  let records = findTaskRecords(taskId);
+  if (!records.length) {
+    invalidateTaskLookupCaches();
+    records = findTaskRecords(taskId);
+  }
+  if (!records.length) {
+    showToast("未找到对应任务，投入未能写入进度说明");
+    return false;
+  }
   let changed = false;
-  updateTaskRecords(taskId, task => {
+  records.forEach(({ task }) => {
     const result = TaskWorkPolicy.appendInvestmentNote({
       deliveryNote: plainTextFromDeliveryNote(task.deliveryNote || ""),
       dateKey,
