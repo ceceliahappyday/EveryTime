@@ -4302,10 +4302,13 @@ function isSupersededClosedWorkTask(task, pool = getAllTasks().map(({ task: item
 function matchesUnifiedTaskFilter(task, filter) {
   if (filter === "memo") return belongsInMemoList(task);
   if (filter !== "ended" && isSupersededClosedWorkTask(task)) return false;
-  if (filter === "in_progress") return isOngoingTask(task);
+  // 仅关注/待跟踪仍可能保持 in_progress 状态，但列表只进「待跟踪」栏。
+  if (filter === "in_progress") return isOngoingTask(task) && !belongsInMemoList(task);
   if (filter === "all") return true;
   if (filter === "ended") return task.status === "done" || task.status === "closed";
-  if (taskHasWorkHistory(task.id) && isOngoingTask(task)) return filter === "in_progress";
+  if (taskHasWorkHistory(task.id) && isOngoingTask(task) && !belongsInMemoList(task)) {
+    return filter === "in_progress";
+  }
   return matchesFilter(task, filter);
 }
 
@@ -5318,7 +5321,8 @@ function updateTaskStats(tasks, memoTasks = [], meetingItems = []) {
     unplanned: tasks.filter(isUnplannedTask),
     planned: tasks.filter(task =>
       task.status === "planned" && !isUnplannedTask(task) && !isContainerOnlyTask(task)),
-    inProgress: tasks.filter(task => task.status === "in_progress"),
+    inProgress: tasks.filter(task =>
+      (task.status === "in_progress" || isOngoingTask(task)) && !belongsInMemoList(task)),
     ended: tasks.filter(task => task.status === "done" || task.status === "closed"),
     memo: memos,
     meeting: meetings

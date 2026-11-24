@@ -38,5 +38,15 @@ assert.match(html, /placeholder="输入标题，回车新建"/, "heading quick-a
 assert.match(html, /placeholder="搜索\.\.\.\/@人员"/, "toolbar search should hint @人员 filtering");
 assert.match(styles, /\.task-side-control/, "search and continue-yesterday should share side-control styles");
 assert.match(app, /function matchesUnifiedTaskFilter\(task, filter\)/, "status filtering should happen inside the unified task list");
+assert.match(
+  app,
+  /filter === "in_progress"\) return isOngoingTask\(task\) && !belongsInMemoList\(task\)/,
+  "进行中 tab must exclude 仅关注/待跟踪 tasks"
+);
+assert.match(
+  app,
+  /inProgress: tasks\.filter\(task =>[\s\S]*!belongsInMemoList\(task\)\)/,
+  "进行中 badge count must exclude 仅关注/待跟踪 tasks"
+);
 
 console.log("task view policy tests passed");
