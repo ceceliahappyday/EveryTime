@@ -157,7 +157,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "dayNoteText", "noteDialog", "noteForm", "dayNoteInput", "toast",
     "updateProgress", "updateProgressText", "updateProgressBar",
     "exportDialog", "exportForm", "exportFormat", "importButton", "minimizeWindow", "maximizeWindow", "closeWindow", "aiAssistantButton", "aiDialog", "aiForm", "aiPrompt", "aiPeriodStart", "aiPeriodEnd", "aiResult", "aiStatus", "aiCopyButton", "aiExportTablesButton", "aiQuickActions",
-    "aiChatLog", "aiAttachment", "aiAttachmentPreview", "aiAttachmentClear", "aiImageInput", "aiAttachImageButton", "aiSubmitButton", "aiScreenshotHintButton",
+    "aiChatLog", "aiClearChatButton", "aiAttachment", "aiAttachmentPreview", "aiAttachmentClear", "aiImageInput", "aiAttachImageButton", "aiSubmitButton", "aiScreenshotHintButton",
     "taskAiDropzone", "taskAiDropzoneBody", "taskAiDropzoneStatus", "taskAiImageInput", "taskAiPickImageButton",
     "aiBatchDraftDialog", "aiBatchDraftForm", "aiBatchDraftTitle", "aiBatchDraftHint", "aiBatchDraftList", "aiBatchSelectAllButton", "aiBatchCreateButton",
     "progressReviewButton", "progressReviewDialog", "progressReviewForm", "progressReviewSearch", "progressReviewCount", "progressReviewList", "progressReviewApplyButton",
@@ -165,7 +165,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     "taskPanelToggle",
     "focusViewChrome", "focusViewButton", "focusViewMenu",
     "glassToggleButton",
-    "topbarMain", "headerToolsSlot", "headerTools", "headerOverflow", "headerMoreButton", "headerMoreMenu", "headerChromeMenu", "headerChromeMaximize", "headerActions",
+    "topbarMain", "headerToolsSlot", "headerTools", "headerOverflow", "headerMoreButton", "headerMoreMenu", "headerChromeMenu", "headerChromeMaximize", "headerPinnedActions", "headerActions",
     "settingsButton", "settingsDialog", "settingsForm", "settingsDialogScroll", "settingsCategoryList", "addCategoryButton", "settingsPaneTitle", "settingsNavList",
     "settingProfileName", "settingGlass", "settingPinned", "settingLocked", "settingStartAtLogin",
     "settingMorningStart", "settingMorningEnd", "settingAfternoonStart", "settingAfternoonEnd", "settingWorkHoursSummary",
@@ -1311,6 +1311,8 @@ function syncHeaderOverflow() {
   const moreWidth = 34;
   const toolsWidth = visibleWidth(el.headerTools);
   const settingsWidth = chromeCollapse ? 0 : visibleWidth(el.settingsButton);
+  // Progress + AI stay pinned on the main chrome; always reserve their width.
+  const pinnedActionsWidth = visibleWidth(el.headerPinnedActions);
   const panelToggle = el.taskPanelToggle;
   const toggleWidth = visibleWidth(panelToggle);
   const viewWidth = chromeCollapse ? 0 : visibleWidth(el.viewSwitcher);
@@ -1325,7 +1327,7 @@ function syncHeaderOverflow() {
   const topbarGap = Number.parseFloat(getComputedStyle(topbar).columnGap) || 10;
 
   // Budget left after reserved chrome that must never clip.
-  const reservedTrailing = settingsWidth + focusViewWidth + moreWidth + windowWidth + gap * 2;
+  const reservedTrailing = settingsWidth + pinnedActionsWidth + focusViewWidth + moreWidth + windowWidth + gap * 3;
   const reservedLeading = viewWidth + brandWidth + dateWidth;
   const reservedGaps = topbarGap * 3;
   const availableForTools = topbar.clientWidth - topbarPad - reservedLeading - reservedTrailing - reservedGaps - toggleWidth;
@@ -2045,6 +2047,7 @@ async function initDesktop() {
     showToast(ok ? "AI 结果已复制" : "复制失败，请手动选择文本复制");
   });
   el.aiExportTablesButton?.addEventListener("click", () => exportLatestAiTables());
+  el.aiClearChatButton?.addEventListener("click", () => clearAiChat());
   el.aiAttachImageButton?.addEventListener("click", () => el.aiImageInput?.click());
   el.aiImageInput?.addEventListener("change", async () => {
     const file = el.aiImageInput.files?.[0];
@@ -2772,51 +2775,91 @@ function setAiRangeForWeek() {
 let aiChatMessages = [];
 let aiPendingAttachment = null;
 let aiExtractBusy = false;
+let aiAskBusy = false;
 
 function openAiDialog() {
   const date = fromDateKey(state.selectedDate);
   const first = new Date(date.getFullYear(), date.getMonth(), 1);
   const last = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-  el.aiPeriodStart.value = toDateKey(first);
-  el.aiPeriodEnd.value = toDateKey(last);
+  if (!String(el.aiPeriodStart?.value || "").trim()) el.aiPeriodStart.value = toDateKey(first);
+  if (!String(el.aiPeriodEnd?.value || "").trim()) el.aiPeriodEnd.value = toDateKey(last);
   el.aiPrompt.value = "";
   clearAiAttachment();
-  aiChatMessages = [];
   syncAiExportTablesButton();
-  el.aiStatus.textContent = "在下方消息框输入后发送；回复会显示在同一框内。";
-  if (el.aiResult) {
-    el.aiResult.textContent = "";
-    el.aiResult.classList.add("hidden");
-  }
+  renderAiChatLog();
+  el.aiStatus.textContent = aiChatMessages.length
+    ? "可继续提问；对话显示在上方。"
+    : "在下方输入后发送；对话显示在上方消息区。";
+  if (el.aiResult) el.aiResult.classList.add("hidden");
   el.aiDialog.showModal();
   setTimeout(() => el.aiPrompt?.focus(), 40);
 }
 
-function showAiMessageInBox(text = "") {
-  const value = String(text || "");
-  if (el.aiPrompt) {
-    el.aiPrompt.value = value;
-    el.aiPrompt.scrollTop = 0;
+function clearAiChat() {
+  aiChatMessages = [];
+  if (el.aiResult) {
+    el.aiResult.textContent = "";
+    el.aiResult.classList.add("hidden");
   }
-  if (el.aiResult) el.aiResult.textContent = value;
+  renderAiChatLog();
+  syncAiExportTablesButton();
+  el.aiStatus.textContent = "对话已清空。可继续提问。";
+}
+
+function renderAiChatLog() {
+  if (!el.aiChatLog) return;
+  el.aiChatLog.innerHTML = "";
+  aiChatMessages.forEach((item, index) => {
+    const bubble = document.createElement("div");
+    const role = item.role === "user" ? "user" : "assistant";
+    bubble.className = `ai-chat-bubble ai-chat-${role}`;
+    if (item.pending) bubble.classList.add("is-pending");
+    bubble.dataset.aiChatIndex = String(index);
+    bubble.textContent = String(item.text || "");
+    el.aiChatLog.appendChild(bubble);
+  });
+  el.aiChatLog.scrollTop = el.aiChatLog.scrollHeight;
 }
 
 function appendAiChat(role, text, meta = {}) {
   const tables = Array.isArray(meta.tables) ? meta.tables : [];
   const content = String(text || "").trim();
-  aiChatMessages.push({ role, text: content, tables });
-  if (role === "assistant") showAiMessageInBox(content);
+  const message = {
+    role,
+    text: content,
+    tables,
+    pending: Boolean(meta.pending)
+  };
+  aiChatMessages.push(message);
+  if (role === "assistant" && !message.pending && el.aiResult) {
+    el.aiResult.textContent = content;
+  }
+  renderAiChatLog();
+  syncAiExportTablesButton();
+  return aiChatMessages.length - 1;
+}
+
+function updateAiChat(index, text, meta = {}) {
+  const item = aiChatMessages[index];
+  if (!item) return;
+  item.text = String(text || "").trim();
+  item.pending = Boolean(meta.pending);
+  if (Object.prototype.hasOwnProperty.call(meta, "tables")) {
+    item.tables = Array.isArray(meta.tables) ? meta.tables : [];
+  }
+  if (item.role === "assistant" && !item.pending && el.aiResult) {
+    el.aiResult.textContent = item.text;
+  }
+  renderAiChatLog();
   syncAiExportTablesButton();
 }
 
 function getAiCopyText() {
   const assistants = aiChatMessages
-    .filter(item => item.role === "assistant")
+    .filter(item => item.role === "assistant" && !item.pending)
     .map(item => item.text)
     .filter(text => String(text || "").trim());
   if (assistants.length) return assistants[assistants.length - 1];
-  const fromBox = el.aiPrompt?.value?.trim() || "";
-  if (fromBox) return fromBox;
   return el.aiResult?.textContent?.trim() || "";
 }
 
@@ -2947,27 +2990,105 @@ function handleAiImagePaste(event) {
   setAiAttachmentFromFile(file);
 }
 
+function clipAiText(value = "", max = 360) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
 function buildAiContext(startKey, endKey) {
-  const tasks = uniqueTasks(getAllTasks().map(({ task }) => task)).map(task => {
+  const allTasks = uniqueTasks(getAllTasks().map(({ task }) => task));
+  const titleById = new Map(allTasks.map(task => [task.id, task.title || ""]));
+  const tasks = allTasks.map(task => {
     const entries = getTaskScheduleEntries(task.id).filter(item => item.dateKey >= startKey && item.dateKey <= endKey);
     const scheduledHours = entries.reduce((sum, item) => sum + (item.entry.end - item.entry.start), 0);
     const actualHours = entries.reduce((sum, item) => sum + getEntryInvestedHours(item.dateKey, item.entry), 0);
+    const recurrence = task.recurrence && typeof task.recurrence === "object"
+      ? {
+        frequency: task.recurrence.frequency || "",
+        dayOfMonth: task.recurrence.dayOfMonth ?? "",
+        until: task.recurrence.until || ""
+      }
+      : null;
     return {
-      id: task.id, title: task.title, status: task.status, priority: task.priority, owner: task.owner,
-      dueDate: task.dueDate || "", dueTime: task.dueTime || "", parentId: task.parentId || "",
-      createdAt: task.createdAt || "", updatedAt: task.updatedAt || "", completedAt: task.completedAt || "",
-      scheduleCount: entries.length, scheduledHours: Number(scheduledHours.toFixed(2)), actualHours: Number(actualHours.toFixed(2)),
-      notes: entries.map(item => ({ date: item.dateKey, start: formatTime(item.entry.start), end: formatTime(item.entry.end), note: item.entry.note || "" }))
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      priority: task.priority,
+      owner: task.owner,
+      category: task.category || "",
+      description: clipAiText(task.description, 240),
+      dueDate: task.dueDate || "",
+      dueTime: task.dueTime || "",
+      parentId: task.parentId || "",
+      parentTitle: titleById.get(task.parentId) || "",
+      attentionOnly: Boolean(task.attentionOnly),
+      setupIncomplete: Boolean(task.setupIncomplete),
+      progress: Number(task.progress || 0),
+      startedAt: task.startedAt || "",
+      // createdAt is display clock only; createdAtIso is the real create timestamp.
+      createdAtIso: task.createdAtIso || "",
+      createdAt: task.createdAt || "",
+      updatedAt: task.updatedAt || "",
+      completedAt: task.completedAt || "",
+      businessBackground: clipAiText(task.businessBackground, 280),
+      problemReason: clipAiText(task.problemReason, 200),
+      deliveryNote: clipAiText(task.deliveryNote, 280),
+      recurrence,
+      recurrenceGroupId: task.recurrenceGroupId || "",
+      followUpFromTaskId: task.followUpFromTaskId || "",
+      successorFromTaskId: task.successorFromTaskId || "",
+      scheduleCount: entries.length,
+      scheduledHours: Number(scheduledHours.toFixed(2)),
+      actualHours: Number(actualHours.toFixed(2)),
+      notes: entries.map(item => ({
+        date: item.dateKey,
+        start: formatTime(item.entry.start),
+        end: formatTime(item.entry.end),
+        hours: Number(getEntryInvestedHours(item.dateKey, item.entry).toFixed(2)),
+        note: clipAiText(item.entry.note, 160)
+      }))
     };
   });
   const entries = Object.entries(state.data).flatMap(([date, day]) => (day.entries || [])
     .filter(entry => date >= startKey && date <= endKey)
-    .map(entry => ({ date, title: entry.title, entryType: entry.entryType || "calendar", start: formatTime(entry.start), end: formatTime(entry.end), note: entry.note || "", owner: entry.owner || "", taskId: entry.taskId || "" })));
-  return { period: { start: startKey, end: endKey }, tasks, calendarEntries: entries, dayNotes: Object.entries(state.data).filter(([date, day]) => date >= startKey && date <= endKey && day.note).map(([date, day]) => ({ date, note: day.note })) };
+    .map(entry => ({
+      id: entry.id || "",
+      date,
+      title: entry.title,
+      entryType: entry.entryType || "calendar",
+      category: entry.category || "",
+      start: formatTime(entry.start),
+      end: formatTime(entry.end),
+      hours: Number(getEntryInvestedHours(date, entry).toFixed(2)),
+      isMeeting: isGanttMeetingEntry(entry),
+      note: clipAiText(entry.note, 200),
+      owner: entry.owner || "",
+      taskId: entry.taskId || "",
+      taskTitle: entry.taskId ? (titleById.get(entry.taskId) || "") : ""
+    })));
+  const context = {
+    period: { start: startKey, end: endKey },
+    tasks,
+    calendarEntries: entries,
+    dayNotes: Object.entries(state.data)
+      .filter(([date, day]) => date >= startKey && date <= endKey && day.note)
+      .map(([date, day]) => ({ date, note: clipAiText(day.note, 400) }))
+  };
+  if (typeof AiQueryPolicy !== "undefined" && AiQueryPolicy.buildAiMetrics) {
+    context.metrics = AiQueryPolicy.buildAiMetrics(context);
+  }
+  return context;
+}
+
+function setAiBusy(busy = false) {
+  aiAskBusy = Boolean(busy);
+  if (el.aiPrompt) el.aiPrompt.disabled = aiAskBusy || aiExtractBusy;
+  if (el.aiSubmitButton) el.aiSubmitButton.disabled = aiAskBusy || aiExtractBusy;
 }
 
 async function submitAiAssistant() {
-  if (aiExtractBusy || el.aiPrompt?.disabled) return;
+  if (aiExtractBusy || aiAskBusy || el.aiPrompt?.disabled) return;
   if (aiPendingAttachment) {
     await extractAndCreateTaskFromImage({
       attachment: aiPendingAttachment,
@@ -2989,14 +3110,46 @@ async function askAi() {
     el.aiStatus.textContent = "请在桌面版使用 AI 助手。";
     return;
   }
-  const startKey = el.aiPeriodStart.value || "1900-01-01";
-  const endKey = el.aiPeriodEnd.value || "2999-12-31";
+  const todayKey = toDateKey(new Date());
+  const relative = (typeof AiQueryPolicy !== "undefined" && AiQueryPolicy.resolveRelativePeriod)
+    ? AiQueryPolicy.resolveRelativePeriod(question, todayKey)
+    : null;
+  const startKey = relative?.start || el.aiPeriodStart.value || "1900-01-01";
+  const endKey = relative?.end || el.aiPeriodEnd.value || "2999-12-31";
+  const rangeLabel = relative
+    ? `${relative.label}（${startKey} 至 ${endKey}）`
+    : `${startKey} 至 ${endKey}`;
+  if (relative) {
+    el.aiPeriodStart.value = startKey;
+    el.aiPeriodEnd.value = endKey;
+  }
   const context = buildAiContext(startKey, endKey);
+  const metrics = context.metrics
+    || (typeof AiQueryPolicy !== "undefined" && AiQueryPolicy.buildAiMetrics
+      ? AiQueryPolicy.buildAiMetrics(context)
+      : null);
+  const intent = (typeof AiQueryPolicy !== "undefined" && AiQueryPolicy.classifyAiIntent)
+    ? AiQueryPolicy.classifyAiIntent(question)
+    : "summary";
+  const priorMessages = aiChatMessages.filter(item => !item.pending);
+
   appendAiChat("user", question);
-  el.aiStatus.textContent = "正在整理本地任务数据并请求 AI…";
-  el.aiPrompt.disabled = true;
+  el.aiPrompt.value = "";
+  const pendingIndex = appendAiChat("assistant", "正在请求 AI…", { pending: true });
+  setAiBusy(true);
+  el.aiStatus.textContent = relative
+    ? `已按${relative.label}（${startKey}～${endKey}）整理数据并请求 AI…`
+    : "正在整理本地任务数据并请求 AI…";
+
   try {
-    const result = await window.desktopAPI.aiAsk({ question, rangeLabel: `${startKey} 至 ${endKey}`, context });
+    const llmContext = (typeof AiQueryPolicy !== "undefined" && AiQueryPolicy.slimContextForLlm)
+      ? AiQueryPolicy.slimContextForLlm(context, metrics, priorMessages)
+      : { ...context, metrics, conversation: priorMessages };
+    const result = await window.desktopAPI.aiAsk({
+      question,
+      rangeLabel,
+      context: llmContext
+    });
     const rawText = typeof result === "string" ? result : (result?.text || "");
     const parsed = (typeof AiAnswerPolicy !== "undefined" && AiAnswerPolicy.parseAssistantAnswer)
       ? AiAnswerPolicy.parseAssistantAnswer(rawText)
@@ -3005,16 +3158,24 @@ async function askAi() {
     if (!tables.length && (AiAnswerPolicy?.wantsTableExport?.(question) || /表格|明细|清单|汇总/.test(question))) {
       tables = buildFallbackAiTables(context, question);
     }
-    appendAiChat("assistant", parsed.displayText || rawText, { tables });
+    if (!tables.length && intent === "stats" && typeof AiQueryPolicy?.buildStatsTables === "function") {
+      tables = AiQueryPolicy.buildStatsTables(context);
+    }
+    if (!tables.length && intent === "list" && typeof AiQueryPolicy?.formatLocalListAnswer === "function") {
+      tables = AiQueryPolicy.formatLocalListAnswer(context, question).tables || [];
+    }
+    const displayText = parsed.displayText || rawText || "AI 没有返回可显示的结果。";
+    updateAiChat(pendingIndex, displayText, { tables, pending: false });
     el.aiStatus.textContent = tables.length
-      ? `已完成。可下载 Excel（${tables.length} 张表）。清空或改写后可继续提问。`
-      : "已完成。清空或改写后可继续提问。";
+      ? `已完成。可下载 Excel（${tables.length} 张表）。可继续提问。`
+      : "已完成。可继续提问。";
   } catch (error) {
-    el.aiStatus.textContent = error?.message || "AI 请求失败";
-    appendAiChat("assistant", "请检查设置中的 API Key、模型名称和网络连接。");
+    const message = error?.message || "AI 请求失败";
+    el.aiStatus.textContent = message;
+    updateAiChat(pendingIndex, `${message}\n请检查设置中的 API Key、模型名称和网络连接。`, { pending: false });
   } finally {
-    el.aiPrompt.disabled = false;
-    el.aiPrompt.focus();
+    setAiBusy(false);
+    el.aiPrompt?.focus();
   }
 }
 

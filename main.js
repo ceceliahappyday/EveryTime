@@ -1041,14 +1041,30 @@ function isTokenHubLike(provider, settings = {}) {
   return /^tokenhub/.test(provider?.id || "") || /tokenhub/.test(baseUrl);
 }
 
-async function fetchProviderJson(request, provider, { method = "POST", body, settings = loadSettings() } = {}) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 60000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("AI 请求超时，请稍后重试或更换更快的模型。");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchProviderJson(request, provider, { method = "POST", body, settings = loadSettings(), timeoutMs = 60000 } = {}) {
   const customBase = AiProviderPolicy.normalizeCustomBaseUrl(settings?.aiBaseUrl || "");
+  const requestInit = {
+    method,
+    headers: request.headers,
+    body: body !== undefined ? body : (method === "GET" ? undefined : JSON.stringify(request.body))
+  };
   if (customBase) {
-    const response = await fetch(request.url, {
-      method,
-      headers: request.headers,
-      body: body !== undefined ? body : (method === "GET" ? undefined : JSON.stringify(request.body))
-    });
+    const response = await fetchWithTimeout(request.url, requestInit, timeoutMs);
     const parsed = await response.json().catch(() => ({}));
     return { response, body: parsed };
   }
@@ -1065,11 +1081,7 @@ async function fetchProviderJson(request, provider, { method = "POST", body, set
   for (let index = 0; index < bases.length; index += 1) {
     const targetBase = bases[index] || primaryBase;
     const url = AiProviderPolicy.swapRequestBaseUrl(request.url, templateBase, targetBase);
-    const response = await fetch(url, {
-      method,
-      headers: request.headers,
-      body: body !== undefined ? body : (method === "GET" ? undefined : JSON.stringify(request.body))
-    });
+    const response = await fetchWithTimeout(url, requestInit, timeoutMs);
     const parsed = await response.json().catch(() => ({}));
     lastResponse = response;
     lastBody = parsed;
@@ -1226,6 +1238,7 @@ async function askAi(payload) {
   }
   return AiProviderPolicy.extractChatText(body, provider)
     || extractResponseText(body)
+    || AiProviderPolicy.EMPTY_ASSISTANT_FALLBACK
     || "AI 没有返回可显示的结果。";
 }
 

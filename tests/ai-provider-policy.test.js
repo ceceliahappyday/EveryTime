@@ -54,6 +54,19 @@ assert.equal(
   policy.extractChatText({ content: [{ type: "text", text: "Claude 回复" }] }, policy.getProvider("anthropic")),
   "Claude 回复"
 );
+assert.equal(
+  policy.extractChatText({
+    choices: [{ message: { content: "", reasoning_content: "我们需回答用户：统计本月…" } }]
+  }, policy.getProvider("openai")),
+  "",
+  "reasoning_content must not become the visible answer"
+);
+assert.equal(
+  policy.scrubAssistantText("前言<think>内部推理</think>结论：共 3 小时"),
+  "前言结论：共 3 小时"
+);
+assert.equal(chat.body.max_tokens, 4096);
+assert.match(policy.SYSTEM_PROMPT, /metrics/);
 
 const visionOpenAi = policy.buildChatRequest({
   provider: policy.getProvider("openai"),
@@ -164,6 +177,17 @@ const tokenhubVision = policy.buildChatRequest({
 assert.equal(tokenhubVision.body.reasoning_effort, "high");
 assert.equal(tokenhubVision.body.temperature, undefined);
 assert.equal(tokenhubVision.body.messages.length, 1);
+const tokenhubQuery = policy.buildChatRequest({
+  provider: policy.getProvider("tokenhub_gz"),
+  apiKey: "sk-test",
+  baseUrl: "https://tokenhub.tencentmaas.com/v1",
+  model: "kimi-k3.1-pro",
+  question: "总结本周",
+  rangeLabel: "本周",
+  context: { metrics: { totalInvestedHours: 3 } }
+});
+assert.equal(tokenhubQuery.body.reasoning_effort, "low");
+assert.equal(tokenhubQuery.body.max_tokens, 4096);
 assert.equal(tokenhubVision.body.messages[0].role, "user");
 const imagePart = tokenhubVision.body.messages[0].content.find(part => part.type === "image_url");
 assert.ok(imagePart);

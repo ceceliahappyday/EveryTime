@@ -133,7 +133,19 @@ assert.ok(app.includes("syncHeaderOverflow"));
 assert.ok(app.includes("syncHeaderChromeCollapse"));
 assert.ok(app.includes("header-chrome-collapsed"));
 assert.ok(app.includes("bindHeaderOverflow"));
+assert.match(html, /id="headerPinnedActions"/, "progress + AI must stay pinned on the main topbar");
+assert.match(
+  html,
+  /id="headerPinnedActions"[\s\S]*?id="progressReviewButton"[\s\S]*?id="aiAssistantButton"/,
+  "progress and AI icons must live in the pinned actions group"
+);
+const toolsBlock = html.match(/id="headerTools"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<div class="header-overflow/)?.[1] || "";
+assert.match(toolsBlock, /id="exportButton"/, "export stays in overflowable tools");
+assert.doesNotMatch(toolsBlock, /id="progressReviewButton"/, "progress must not live in overflowable tools");
+assert.doesNotMatch(toolsBlock, /id="aiAssistantButton"/, "AI must not live in overflowable tools");
+assert.match(app, /pinnedActionsWidth/, "overflow budget must reserve pinned progress/AI width");
 const styles = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+assert.match(styles, /\.header-icon-action/, "pinned progress/AI should use icon-button chrome");
 assert.match(
   styles,
   /\.header-more-menu \.header-tools \.soft-button[\s\S]*?border:\s*0\s*!important/s,

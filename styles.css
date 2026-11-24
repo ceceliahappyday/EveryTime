@@ -148,8 +148,41 @@
 .ai-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .ai-range { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ai-status { min-height: 24px; color: var(--muted-text); font-size: 13px; margin-top: 10px; }
+.ai-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  margin-top: 8px;
+  padding: 4px 2px 8px;
+}
+.ai-chat-bubble {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  line-height: 1.55;
+  font-size: 13px;
+  word-break: break-word;
+}
+.ai-chat-user {
+  align-self: flex-end;
+  background: rgba(64, 160, 160, .28);
+  border: 1px solid rgba(120, 200, 200, .35);
+  color: #eef7f7;
+}
+.ai-chat-assistant {
+  align-self: flex-start;
+  background: rgba(0, 0, 0, .38);
+  border: 1px solid rgba(160, 220, 220, .35);
+  color: #f2f7fa;
+}
+.ai-chat-assistant.is-pending {
+  opacity: .75;
+  font-style: italic;
+}
 .ai-result {
-  min-height: 160px;
+  min-height: 0;
   max-height: none;
   overflow: visible;
   white-space: pre-wrap;
@@ -161,14 +194,36 @@
   background: rgba(0,0,0,.38);
   color: #f2f7fa;
 }
-.ai-compose { margin-top: 8px; }
+.ai-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--line-soft);
+  background: #fff;
+}
+body.in-desktop.glass-mode #aiDialog .ai-footer {
+  background: rgba(8, 22, 36, .92);
+  border-top-color: rgba(181, 218, 239, .28);
+}
+.ai-compose {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 24px 6px;
+  border-top: 0;
+  background: transparent;
+}
+body.in-desktop.glass-mode #aiDialog .ai-compose {
+  background: transparent;
+  border-top-color: transparent;
+}
 .ai-message-field {
   display: grid;
   gap: 6px;
 }
 .ai-message-field #aiPrompt {
-  min-height: min(36vh, 280px);
-  max-height: min(52vh, 420px);
+  min-height: 2.75rem;
+  max-height: 5.5rem;
   resize: vertical;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -177,8 +232,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin-top: 8px;
+  gap: 8px;
+  margin-top: 6px;
 }
 .ai-attachment {
   display: flex;
@@ -451,40 +506,92 @@ body.in-desktop.glass-mode .ai-batch-modal .modal-actions {
 }
 #aiDialog {
   padding: 0;
+  overflow: hidden;
   flex-direction: column;
+  height: min(560px, calc(100vh - 72px));
+  max-height: min(560px, calc(100vh - 72px));
+}
+body.in-desktop #aiDialog {
+  height: min(540px, calc(100vh - 148px));
+  max-height: min(540px, calc(100vh - 148px));
 }
 #aiDialog[open] {
   display: flex;
 }
 #aiDialog form {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-  display: flex;
-  flex-direction: column;
-}
-#aiDialog .modal-header {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 22px 24px 8px;
-}
-#aiDialog .modal-scroll {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 4px 24px 16px;
+  max-height: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
-#aiDialog .modal-actions {
-  flex: 0 0 auto;
+#aiDialog .modal-header {
+  margin: 0;
+  padding: 16px 24px 4px;
+}
+#aiDialog .modal-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 24px 8px;
+}
+#aiDialog .ai-footer {
+  min-height: 0;
+  /* Keep footer above dialog border-radius / overflow clip. */
+  padding-bottom: 4px;
+}
+#aiDialog .ai-compose {
+  padding: 8px 20px 4px;
+}
+#aiDialog .modal-actions,
+#aiDialog .ai-footer-actions {
   margin-top: 0;
-  padding: 12px 24px 18px;
+  padding: 8px 20px 16px;
   border-top: 1px solid var(--line-soft);
-  background: #fff;
+  background: transparent;
   position: relative;
+  bottom: auto;
   z-index: 2;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
-body.in-desktop.glass-mode #aiDialog .modal-actions {
-  background: rgba(8, 22, 36, .92);
-  border-top-color: rgba(181, 218, 239, .28);
+#aiDialog .ai-footer-tools,
+#aiDialog .ai-footer-primary {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+#aiDialog .ai-footer-tools {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+#aiDialog .ai-footer-primary {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+#aiDialog .ai-footer-tools .soft-button,
+#aiDialog .ai-footer-primary .soft-button,
+#aiDialog .ai-footer-primary .primary-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+/* Defeat glass-mode sticky footer (bottom: -24px) that clips AI actions. */
+body.in-desktop.glass-mode #aiDialog .modal-actions,
+body.in-desktop.glass-mode #aiDialog .ai-footer-actions {
+  position: relative;
+  bottom: auto;
+  padding: 8px 20px 16px;
+  border-top: 1px solid rgba(181, 218, 239, .28);
+  background: transparent;
+  background-image: none;
+  display: flex;
+  flex-wrap: nowrap;
 }
 body.in-desktop.glass-mode .task-ai-dropzone {
   background: rgba(120, 180, 170, .08);
@@ -744,6 +851,18 @@ button[hidden],
   height: calc(14px * var(--chrome-scale));
 }
 .header-actions .btn-icon { font-size: calc(14px * var(--chrome-scale)); }
+.header-pinned-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.header-icon-action .menu-ico svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .soft-button .btn-label,
 .primary-button .btn-label { white-space: nowrap; }
 .icon-button:hover, .soft-button:hover { border-color: #b8b9b2; background: #f8f7f3; }
@@ -8231,13 +8350,47 @@ body.in-desktop .date-controls {
 body.in-desktop .header-tools-slot,
 body.in-desktop .header-tools,
 body.in-desktop .header-overflow,
-body.in-desktop .header-pinned {
+body.in-desktop .header-pinned,
+body.in-desktop .header-pinned-actions {
   flex: 0 0 auto;
 }
 body.in-desktop .header-tools {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+body.in-desktop .header-pinned-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+/* Keep Progress / AI as always-visible icon buttons on the main topbar. */
+body.in-desktop .header-icon-action {
+  width: var(--chrome-control);
+  min-width: var(--chrome-control);
+  padding: 0;
+  gap: 0;
+}
+body.in-desktop .header-icon-action .btn-label {
+  display: none;
+}
+body.in-desktop .header-icon-action .menu-ico,
+body.in-desktop .header-icon-action .menu-ico svg {
+  width: calc(16px * var(--chrome-scale));
+  height: calc(16px * var(--chrome-scale));
+  display: block;
+}
+body.in-desktop .header-icon-action .menu-ico svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+body.in-desktop.shell-focus .header-pinned-actions,
+body.in-desktop.header-chrome-collapsed .header-pinned-actions {
+  display: inline-flex !important;
 }
 body.in-desktop .header-overflow {
   position: relative;
@@ -9152,6 +9305,18 @@ body.in-desktop.glass-mode .focus-view-menu button:hover {
   .modal-actions [data-close-dialog] { grid-column: 1; }
   .modal-actions .primary-button { grid-column: 2; }
   .modal-actions > button { min-width: 0; width: 100%; }
+  /* AI footer stays left-tools / right-send; do not tile into a 2-col button grid. */
+  #aiDialog .ai-footer-actions {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    grid-template-columns: none !important;
+  }
+  #aiDialog .ai-footer-actions > button { width: auto; }
+  #aiDialog .ai-footer-primary [data-close-dialog],
+  #aiDialog .ai-footer-primary .primary-button {
+    grid-column: auto;
+    width: auto;
+  }
   .task-close-confirm-actions {
     display: flex;
     flex-wrap: wrap;

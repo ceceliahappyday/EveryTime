@@ -51,8 +51,6 @@
         <button class="soft-button desktop-only shell-only-focus" id="taskPanelToggle" type="button" title="显示待办清单" aria-pressed="false" hidden><i class="btn-icon" aria-hidden="true">☰</i><span class="btn-label">待办</span></button>
         <div class="header-tools-slot" id="headerToolsSlot">
           <div class="header-tools" id="headerTools">
-            <button class="soft-button" id="progressReviewButton" type="button" title="批量更新：进行中、待跟踪、计划中叶子（含无投入），可搜索"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.2 8a4.8 4.8 0 0 1 8.2-3.3M12.8 8a4.8 4.8 0 0 1-8.2 3.3"/><path d="M11.2 2.6v2.8H14M4.8 13.4v-2.8H2"/></svg></i><span class="btn-label">更新进度</span></button>
-            <button class="soft-button" id="aiAssistantButton" type="button" title="查询任务和生成工作总结"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.2l.85 3.35L12.2 6.4l-3.35.85L8 10.6l-.85-3.35L3.8 6.4l3.35-.85z"/><path d="M12.4 10.2l.45 1.75L14.6 12.4l-1.75.45-.45 1.75-.45-1.75-1.75-.45 1.75-.45z"/></svg></i><span class="btn-label">AI助手</span></button>
             <button class="soft-button" id="exportButton" type="button" title="导出全部任务和日程"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.5v7.2"/><path d="M5.2 7.2 8 10l2.8-2.8"/><path d="M3.2 12.8h9.6"/></svg></i><span class="btn-label">导出</span></button>
             <button class="soft-button" id="importButton" type="button" title="从 JSON 备份文件导入恢复"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 10.5V3.3"/><path d="M5.2 5.8 8 3l2.8 2.8"/><path d="M3.2 12.8h9.6"/></svg></i><span class="btn-label">导入</span></button>
           </div>
@@ -69,6 +67,10 @@
               <button type="button" role="menuitem" data-chrome-action="close" class="is-danger"><i class="menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2"/></svg></i><span>关闭</span></button>
             </div>
           </div>
+        </div>
+        <div class="header-pinned-actions" id="headerPinnedActions">
+          <button class="soft-button header-pinned header-icon-action" id="progressReviewButton" type="button" title="更新进度" aria-label="更新进度"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.2 8a4.8 4.8 0 0 1 8.2-3.3M12.8 8a4.8 4.8 0 0 1-8.2 3.3"/><path d="M11.2 2.6v2.8H14M4.8 13.4v-2.8H2"/></svg></i><span class="btn-label">更新进度</span></button>
+          <button class="soft-button header-pinned header-icon-action" id="aiAssistantButton" type="button" title="AI助手" aria-label="AI助手"><i class="btn-icon menu-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.2l.85 3.35L12.2 6.4l-3.35.85L8 10.6l-.85-3.35L3.8 6.4l3.35-.85z"/><path d="M12.4 10.2l.45 1.75L14.6 12.4l-1.75.45-.45 1.75-.45-1.75-1.75-.45 1.75-.45z"/></svg></i><span class="btn-label">AI助手</span></button>
         </div>
         <button class="soft-button desktop-only header-pinned" id="settingsButton" type="button" title="设置、置顶、玻璃背景、紧凑显示等"><i class="btn-icon" aria-hidden="true">⚙</i><span class="btn-label">设置</span></button>
       </div>
@@ -977,29 +979,33 @@
         </div>
         <div class="ai-range"><label><span>开始日期</span><input type="date" id="aiPeriodStart" /></label><label><span>结束日期</span><input type="date" id="aiPeriodEnd" /></label></div>
         <div class="ai-status" id="aiStatus"></div>
+        <div class="ai-chat-log" id="aiChatLog" aria-live="polite"></div>
         <div class="ai-result hidden" id="aiResult" aria-hidden="true"></div>
+      </div>
+      <div class="ai-footer" id="aiFooter">
         <div class="ai-compose">
           <div class="ai-attachment hidden" id="aiAttachment">
             <img id="aiAttachmentPreview" alt="待发送截图预览" />
             <button type="button" class="soft-button" id="aiAttachmentClear">移除截图</button>
           </div>
           <label class="ai-message-field">
-            <span>消息</span>
-            <textarea id="aiPrompt" rows="10" placeholder="在此输入问题；回复也会显示在这里。Enter 或 Ctrl+Enter 发送，Shift+Enter 换行；可粘贴/拖入截图。"></textarea>
+            <span class="visually-hidden-select">消息</span>
+            <textarea id="aiPrompt" rows="2" placeholder="输入问题后发送；对话显示在上方。Enter 发送，Shift+Enter 换行；可粘贴截图。"></textarea>
           </label>
-          <div class="ai-compose-tools">
+        </div>
+        <div class="modal-actions ai-footer-actions">
+          <div class="ai-footer-tools">
             <input type="file" id="aiImageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
             <button type="button" class="soft-button" id="aiAttachImageButton">附加截图</button>
-            <span class="form-hint">Enter / Ctrl+Enter 发送 · Shift+Enter 换行 · 有截图=识别待办 · 无截图=查询数据</span>
+            <button type="button" class="soft-button" id="aiClearChatButton">清空对话</button>
+            <button type="button" class="soft-button" id="aiCopyButton">复制结果</button>
+            <button type="button" class="soft-button hidden" id="aiExportTablesButton">下载 Excel</button>
+          </div>
+          <div class="ai-footer-primary">
+            <button type="button" class="soft-button" data-close-dialog="aiDialog">取消</button>
+            <button type="submit" class="primary-button" id="aiSubmitButton">发送</button>
           </div>
         </div>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="soft-button" id="aiCopyButton">复制结果</button>
-        <button type="button" class="soft-button hidden" id="aiExportTablesButton">下载 Excel</button>
-        <span></span>
-        <button type="button" class="soft-button" data-close-dialog="aiDialog">取消</button>
-        <button type="submit" class="primary-button" id="aiSubmitButton">发送</button>
       </div>
     </form>
   </dialog>
@@ -1052,6 +1058,7 @@
   <script src="rich-note-policy.js"></script>
   <script src="ai-task-draft-policy.js"></script>
   <script src="ai-answer-policy.js"></script>
+  <script src="ai-query-policy.js"></script>
   <script src="navigation-policy.js"></script>
   <script src="ui-scale-policy.js"></script>
   <script src="import-policy.js"></script>

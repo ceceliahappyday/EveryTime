@@ -128,8 +128,11 @@ DailyPlanner（今日日程）同时包含三种能力，但三者必须分开�
 ## AI assistant policy (v2.0.78+)
 
 - AI is an optional assistant. Default mode is read-only over DailyPlanner task/calendar/work-log context: unfinished-task answers, task search/location, and date-range work summaries.
+- The assistant dialog shows a visible multi-turn chat log with a fixed compose box; it remains a scoped planner assistant, not a general-purpose chatbot.
+- Text questions always go through the configured model. The app precomputes local `metrics` (same invested-hour rules as day view / gantt: `taskWorkHours + meetingHours`, plus share percents) and recent chat turns as ground truth; the model must answer the user’s actual question using those numbers, not a fixed local reply template.
+- AI context is intentionally scoped (period + caps) for token size, but must stay answer-complete: `createdAtIso`/`createdDate`, dated `workLogs`/`workSessions` (with start/end), category/owner, hierarchy (`parentTitle`), attention/setup flags, progress notes (truncated), recurrence, and day notes. Phrases like 本周/上周/本月 auto-narrow the query period before building context. Do not send only cumulative `actualHours` without dates.
 - The user enters their own API Key in Settings. The key is handled by Electron main process, encrypted with Windows safeStorage when available, and never returned to the renderer.
-- Chat requests use the provider’s chat/completions, Anthropic messages, or Gemini generateContent protocols (not a single OpenAI-only Responses API).
+- Chat requests use the provider’s chat/completions, Anthropic messages, or Gemini generateContent protocols (not a single OpenAI-only Responses API). Provider reasoning/thinking payloads are never shown as the user-visible answer.
 - When the user **actively** drops/pastes/attaches a screenshot (new-task dialog or AI assistant) and sends it, AI may extract **one or more** todos (up to 12). A single match is created immediately; multiple matches open a review panel to edit/select before batch create. Images are sent only for that request to the user-configured provider; they are not persisted by the app.
-- Aside from that explicit screenshot-create path, AI cannot edit, close, delete, or sync tasks, and is not a general-purpose chatbot.
+- Aside from that explicit screenshot-create path, AI cannot edit, close, delete, or sync tasks.
 - Screenshot parsing needs a vision-capable model (for example gpt-4o / gpt-4.1 / Claude / Gemini). If AI is disabled or no key is configured, the rest of the planner remains fully usable offline.

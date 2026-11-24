@@ -4,20 +4,29 @@
   root.AiProviderPolicy = policy;
 })(typeof globalThis !== "undefined" ? globalThis : window, function () {
   const SYSTEM_PROMPT = [
-    "你是 DailyPlanner（今日日程）的任务数据助手。只根据用户提供的任务、日程和工时数据回答。",
-    "不要编造数据；找不到时明确说没有找到。",
-    "用简洁清晰的中文回答，优先列出任务名称、状态、日期和工时。",
-    "你只能做任务查询、定位未完成任务和指定期间工作总结。",
-    "当适合用表格呈现（任务清单、工时汇总、未完成事项、期间总结明细等）时：",
-    "1）先给简短文字说明；",
-    "2）再用 Markdown 表格列出明细；",
-    "3）最后附加一个 everytime-tables 代码块，便于应用导出 Excel。",
-    "everytime-tables 格式示例：",
+    "你是 DailyPlanner（今日日程）的 AI 任务助手。根据用户问题与提供的应用数据作答，像助手一样对话，不要套固定模板。",
+    "先直接回答当前问题，再按需补充简短依据。",
+    "字段含义：createdAtIso/createdDate=任务创建时间；createdAt 只是显示用时分；workLogs[].date 与 workSessions[].date=工时/会议发生日；dueDate=目标完成日（不是投入日）。",
+    "还可使用：category、parentTitle、attentionOnly、setupIncomplete、progress、startedAt、businessBackground、deliveryNote、problemReason、recurrence、dayNotes、workLogs 的 start/end/owner。",
+    "问「本周/这周新增」时按 createdDate/createdAtIso 落在 period 内统计（也可用 metrics.createdInPeriodCount）；问「本周投入了哪些」时按 workLogs/workSessions 的 date 筛选，不要用 dueDate 冒充发生日。",
+    "metrics 是 period 内工时汇总真源（totalInvestedHours/taskWorkHours/meetingHours/meetingSharePercent）；禁止自行重算这些汇总值，但明细可按 date 列举。",
+    "若有近期对话，结合上下文理解指代。不要编造；不要输出思考过程。用简洁中文。",
+    "适合表格时：短文字 + Markdown 表 + everytime-tables 代码块便于导出 Excel。",
+    "everytime-tables 示例：",
     "```everytime-tables",
     '{"tables":[{"name":"未完成任务","headers":["任务","状态","截止日期","投入工时"],"rows":[["示例","进行中","2026-10-08",1.5]]}]}',
-    "```",
-    "name 用作工作表名（不超过 31 字）；headers/rows 必须与文字结论一致，不得编造。"
+    "```"
   ].join("");
+
+  const EMPTY_ASSISTANT_FALLBACK = "AI 没有返回可显示的结果。请重试或更换模型。";
+
+  function scrubAssistantText(text = "") {
+    return String(text || "")
+      .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "")
+      .replace(/```(?:thinking|reasoning)[\s\S]*?```/gi, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
 
   const PROVIDERS = {
     openai: {
@@ -446,7 +455,7 @@
         },
         body: {
           model: chosenModel,
-          max_tokens: 2048,
+          max_tokens: isExtract ? 8192 : 4096,
           system,
           messages: [{ role: "user", content }]
         }
@@ -498,7 +507,7 @@
 
     const body = {
       model: chosenModel,
-      max_tokens: isExtract ? 8192 : 2048,
+      max_tokens: isExtract ? 8192 : 4096,
       messages
     };
     const tokenHubKimi = tokenHub && (isKimiK3FamilyModel(chosenModel) || isKimiLegacyThinkingModel(chosenModel) || imageList.length > 0);
@@ -506,8 +515,9 @@
       body.temperature = isExtract ? 0.1 : 0.2;
     }
     if (tokenHub && isKimiK3FamilyModel(chosenModel)) {
-      body.reasoning_effort = isExtract ? "high" : "high";
-    } else if (tokenHub && isKimiLegacyThinkingModel(chosenModel)) {
+      // Query answers should stay concise; keep high effort only for screenshot extract.
+      body.reasoning_effort = isExtract ? "high" : "low";
+    } else if (tokenHub && isKimiLegacyThinkingModel(chosenModel) && isExtract) {
       body.thinking = { type: "enabled" };
     }
 
@@ -523,37 +533,44 @@
 
   function extractChatText(payload, provider) {
     if (!payload) return "";
+    let raw = "";
     if (provider?.protocol === "anthropic-messages") {
-      return (payload.content || []).map(part => part?.text || "").filter(Boolean).join("\n").trim();
-    }
-    if (provider?.protocol === "gemini") {
-      return (payload.candidates || [])
+      raw = (payload.content || []).map(part => part?.text || "").filter(Boolean).join("\n").trim();
+    } else if (provider?.protocol === "gemini") {
+      raw = (payload.candidates || [])
         .flatMap(item => item?.content?.parts || [])
         .map(part => part?.text || "")
         .filter(Boolean)
         .join("\n")
         .trim();
+    } else {
+      const choice = payload.choices?.[0];
+      const message = choice?.message || {};
+      if (typeof message.content === "string" && message.content.trim()) {
+        raw = message.content.trim();
+      } else if (Array.isArray(message.content)) {
+        raw = message.content.map(part => part?.text || part?.content || "").filter(Boolean).join("\n").trim();
+      } else if (typeof choice?.message?.content === "string") {
+        raw = choice.message.content.trim();
+      } else if (typeof payload?.output_text === "string") {
+        raw = payload.output_text.trim();
+      } else {
+        raw = (payload?.output || []).flatMap(item => item.content || [])
+          .map(item => item.text || item.value || "")
+          .filter(Boolean)
+          .join("\n")
+          .trim();
+      }
+      // Never surface reasoning_content as the user-visible answer.
     }
-    const choice = payload.choices?.[0];
-    const message = choice?.message || {};
-    if (typeof message.content === "string" && message.content.trim()) return message.content.trim();
-    if (typeof message.reasoning_content === "string" && message.reasoning_content.trim()) {
-      return message.reasoning_content.trim();
-    }
-    if (typeof choice?.message?.content === "string") return choice.message.content.trim();
-    if (Array.isArray(choice?.message?.content)) {
-      return choice.message.content.map(part => part?.text || part?.content || "").filter(Boolean).join("\n").trim();
-    }
-    if (typeof payload?.output_text === "string") return payload.output_text.trim();
-    return (payload?.output || []).flatMap(item => item.content || [])
-      .map(item => item.text || item.value || "")
-      .filter(Boolean)
-      .join("\n")
-      .trim();
+    const cleaned = scrubAssistantText(raw);
+    return cleaned || "";
   }
 
   return {
     SYSTEM_PROMPT,
+    EMPTY_ASSISTANT_FALLBACK,
+    scrubAssistantText,
     PROVIDERS,
     AMBIGUOUS_SK_PROVIDERS,
     normalizeKey,
