@@ -669,8 +669,12 @@ function bindEvents() {
   });
   el.exportForm.addEventListener("submit", event => {
     event.preventDefault();
+    const format = el.exportFormat?.value === "xlsx" ? "xlsx" : "json";
     el.exportDialog.close();
-    exportAllData(el.exportFormat.value);
+    void exportAllData(format).catch(error => {
+      console.error(error);
+      showToast(`导出失败：${error?.message || error || "未知错误"}`);
+    });
   });
   el.quickAddButton?.addEventListener("click", () => openNewFromQuickAdd("", { forceDialog: true }));
   el.quickTaskForm.addEventListener("submit", event => {
@@ -14715,15 +14719,32 @@ function scheduledDateTimeIso(dateKey, decimalHour) {
 }
 
 async function exportAllData(format = "json") {
-  const tasks = getAllTasks().map(({ task, dateKey }) => ({
-    id: task.id, title: task.title, planDate: dateKey, dueDate: task.dueDate, dueTime: task.dueTime,
-    owner: task.owner, parentId: task.parentId || null, priority: task.priority, status: task.status,
-    progress: task.progress, startedAt: task.startedAt || null, startOverrideAt: task.startOverrideAt || null, completedAt: task.completedAt || null,
-    workHours: getTaskDuration(task.id), businessBackground: task.businessBackground || "",
-    problemReason: task.problemReason || "", deliveryNote: task.deliveryNote || "",
-    description: task.description || "", createdAt: task.createdAtIso || null, updatedAt: task.updatedAt || null,
-    recurrence: task.recurrence || null, recurrenceGroupId: task.recurrenceGroupId || null
-  }));
+  const wantsExcel = format === "xlsx";
+  const noteText = value => {
+    if (typeof RichNotePolicy !== "undefined" && RichNotePolicy.plainTextFromNote) {
+      return RichNotePolicy.plainTextFromNote(value || "");
+    }
+    return String(value || "").replace(/<[^>]+>/g, " ").trim();
+  };
+  const tasks = getAllTasks().map(({ task, dateKey }) => {
+    const row = {
+      id: task.id, title: task.title, planDate: dateKey, dueDate: task.dueDate, dueTime: task.dueTime,
+      owner: task.owner, parentId: task.parentId || null, priority: task.priority, status: task.status,
+      progress: task.progress, startedAt: task.startedAt || null, startOverrideAt: task.startOverrideAt || null, completedAt: task.completedAt || null,
+      workHours: getTaskDuration(task.id), businessBackground: task.businessBackground || "",
+      problemReason: task.problemReason || "", deliveryNote: task.deliveryNote || "",
+      description: task.description || "", createdAt: task.createdAtIso || null, updatedAt: task.updatedAt || null,
+      recurrence: task.recurrence || null, recurrenceGroupId: task.recurrenceGroupId || null
+    };
+    if (!wantsExcel) return row;
+    return {
+      ...row,
+      businessBackground: noteText(row.businessBackground),
+      deliveryNote: noteText(row.deliveryNote),
+      problemReason: String(row.problemReason || "").slice(0, 32000),
+      description: String(row.description || "").slice(0, 32000)
+    };
+  });
   const schedules = Object.entries(state.data).flatMap(([date, day]) =>
     (day.entries || []).map(entry => ({
       date,
@@ -14733,8 +14754,16 @@ async function exportAllData(format = "json") {
     }))
   );
   const notes = Object.entries(state.data).filter(([, day]) => day.note).map(([date, day]) => ({ date, note: day.note }));
-  const data = format === "json"
+  const data = wantsExcel
     ? {
+      format: "today-planner-export",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      tasks,
+      schedules,
+      notes
+    }
+    : {
       format: "today-planner-backup",
       version: 1,
       exportedAt: new Date().toISOString(),
@@ -14743,23 +14772,29 @@ async function exportAllData(format = "json") {
       tasks,
       schedules,
       notes
-    }
-    : {
-      format: "today-planner-export",
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      tasks,
-      schedules,
-      notes
     };
-  const extension = format === "xlsx" ? "xlsx" : "json";
+  const extension = wantsExcel ? "xlsx" : "json";
   const filename = `今日日程-全部数据-${toDateKey(new Date())}.${extension}`;
   if (window.desktopAPI?.exportData) {
-    const saved = await window.desktopAPI.exportData(filename, format, data);
+    const saved = await window.desktopAPI.exportData(filename, wantsExcel ? "xlsx" : "json", data);
+    if (saved && typeof saved === "object") {
+      if (saved.canceled) {
+        showToast("已取消导出");
+        return;
+      }
+      if (saved.ok === false) {
+        showToast(`导出失败：${saved.error || "未知错误"}`);
+        return;
+      }
+      showToast(wantsExcel
+        ? `Excel 已导出（任务 ${saved.taskCount || tasks.length} / 日程 ${saved.scheduleCount || schedules.length}）`
+        : "全部数据已导出");
+      return;
+    }
     showToast(saved ? "全部数据已导出" : "已取消导出");
     return;
   }
-  if (format === "xlsx") {
+  if (wantsExcel) {
     showToast("Excel 导出请从桌面应用使用");
     return;
   }

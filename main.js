@@ -9,7 +9,7 @@ const ImportPolicy = require("./import-policy.js");
 const AiProviderPolicy = require("./ai-provider-policy.js");
 const AiTaskDraftPolicy = require("./ai-task-draft-policy.js");
 const WindowBoundsPolicy = require("./window-bounds-policy.js");
-const RichNotePolicy = require("./rich-note-policy.js");
+const ExcelExportPolicy = require("./excel-export-policy.js");
 
 let mainWindow;
 let locked = false;
@@ -542,22 +542,47 @@ if (singleInstanceLock) app.whenReady().then(() => {
     if (locked) scheduleSendWindowToDesktopLayer();
   });
   ipcMain.handle("data:export", async (_event, filename, format, data) => {
-    const exportDir = defaultExportDir();
-    try { fs.mkdirSync(exportDir, { recursive: true }); } catch {}
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: "导出全部日程数据",
-      defaultPath: path.join(exportDir, filename),
-      filters: format === "xlsx"
-        ? [{ name: "Excel 工作簿", extensions: ["xlsx"] }]
-        : [{ name: "JSON 数据文件", extensions: ["json"] }]
-    });
-    if (result.canceled || !result.filePath) return false;
-    if (format === "json") {
-      fs.writeFileSync(result.filePath, JSON.stringify(data, null, 2), "utf8");
-      return true;
+    try {
+      const exportDir = defaultExportDir();
+      try { fs.mkdirSync(exportDir, { recursive: true }); } catch {}
+      const wantsExcel = format === "xlsx";
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: "导出全部日程数据",
+        defaultPath: path.join(exportDir, filename),
+        filters: wantsExcel
+          ? [{ name: "Excel 工作簿", extensions: ["xlsx"] }]
+          : [{ name: "JSON 数据文件", extensions: ["json"] }]
+      });
+      if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+      if (!wantsExcel) {
+        fs.writeFileSync(result.filePath, JSON.stringify(data, null, 2), "utf8");
+        return { ok: true, filePath: result.filePath };
+      }
+      const target = ExcelExportPolicy.ensureXlsxPath(result.filePath);
+      let payload = data;
+      const hasRows = Array.isArray(payload?.tasks) && payload.tasks.length
+        || Array.isArray(payload?.schedules) && payload.schedules.length
+        || Array.isArray(payload?.notes) && payload.notes.length;
+      if (!hasRows) {
+        const store = (() => {
+          const file = plannerDataPath();
+          if (!fs.existsSync(file)) return {};
+          try { return JSON.parse(fs.readFileSync(file, "utf8")) || {}; }
+          catch { return {}; }
+        })();
+        payload = ExcelExportPolicy.buildExportDataFromStore(store);
+      }
+      const written = await ExcelExportPolicy.writeExcelFile(target, payload);
+      fs.writeFileSync(written.target, written.buffer);
+      return {
+        ok: true,
+        filePath: written.target,
+        taskCount: written.taskCount,
+        scheduleCount: written.scheduleCount
+      };
+    } catch (error) {
+      return { ok: false, error: String(error?.message || error || "导出失败") };
     }
-    await buildExcel(result.filePath, data);
-    return true;
   });
   ipcMain.handle("data:import", async () => {
     const exportDir = defaultExportDir();
@@ -1563,7 +1588,7 @@ async function buildTablesExcel(outputPath, tables = []) {
   workbook.modified = new Date();
   const list = Array.isArray(tables) ? tables.filter(item => item && Array.isArray(item.headers)) : [];
   if (!list.length) {
-    addSheet(workbook, "说明", ["内容"], [["当前没有可导出的表格数据"]]);
+    ExcelExportPolicy.addSheet(workbook, "说明", ["内容"], [["当前没有可导出的表格数据"]]);
   } else {
     const usedNames = new Set();
     list.forEach((table, index) => {
@@ -1581,7 +1606,7 @@ async function buildTablesExcel(outputPath, tables = []) {
         const value = Array.isArray(row) ? row[col] : "";
         return value == null ? "" : value;
       }));
-      addSheet(workbook, unique, headers, rows, {
+      ExcelExportPolicy.addSheet(workbook, unique, headers, rows, {
         wrapCols: headers.map((_, i) => i + 1).filter(i => i > 2)
       });
     });
@@ -1590,140 +1615,9 @@ async function buildTablesExcel(outputPath, tables = []) {
 }
 
 async function buildExcel(outputPath, data) {
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "今日日程";
-  workbook.created = new Date();
-  workbook.modified = new Date();
-
-  addSheet(workbook, "任务清单", [
-    "任务ID", "任务名称", "层级", "父任务ID", "责任人", "优先级", "状态", "进度",
-    "计划归属日期", "截止日期", "截止时间", "实际开始", "实际完成/关闭", "投入工时",
-    "业务背景", "问题原因", "详细计划/交付件", "任务说明", "每月重复", "重复至月份",
-    "重复组ID", "创建时间", "最后更新时间"
-  ], (data.tasks || []).map(task => [
-    task.id, task.title, task.parentId ? "子任务" : "父任务", task.parentId || "", task.owner || "",
-    priorityLabel(task.priority), statusLabel(task.status), Number(task.progress || 0) / 100,
-    asDate(task.planDate), asDate(task.dueDate), task.dueTime || "", asDateTime(task.startedAt || task.startOverrideAt),
-    asDateTime(task.completedAt), Number(task.workHours || 0), RichNotePolicy.plainTextFromNote(task.businessBackground || ""),
-    task.problemReason || "", RichNotePolicy.plainTextFromNote(task.deliveryNote || ""), task.description || "",
-    task.recurrence?.frequency === "monthly" ? "是" : "否", task.recurrence?.until || "",
-    task.recurrenceGroupId || "", asDateTime(task.createdAt), asDateTime(task.updatedAt)
-  ]), {
-    percentCols: [8],
-    dateCols: [9, 10],
-    dateTimeCols: [12, 13, 22, 23],
-    numberCols: [14],
-    wrapCols: [15, 16, 17, 18]
-  });
-
-  addSheet(workbook, "日程记录", [
-    "日期", "开始时间", "结束时间", "计划时长", "实际投入工时", "事项", "关联任务ID", "参会人", "备注", "颜色"
-  ], (data.schedules || []).map(entry => [
-    asDate(entry.date), decimalTime(entry.start), decimalTime(entry.end),
-    Number(entry.plannedDurationHours || 0), Number(entry.durationHours || 0),
-    entry.title || "", entry.taskId || "", entry.owner || "", entry.note || "", entry.color || ""
-  ]), {
-    dateCols: [1],
-    timeCols: [2, 3],
-    numberCols: [4, 5],
-    wrapCols: [6, 8, 9]
-  });
-
-  addSheet(workbook, "每日备注", ["日期", "当天备注"], (data.notes || []).map(note => [
-    asDate(note.date), note.note || ""
-  ]), {
-    dateCols: [1],
-    wrapCols: [2]
-  });
-
-  await workbook.xlsx.writeFile(outputPath);
-}
-
-function addSheet(workbook, name, headers, rows, formats = {}) {
-  const sheet = workbook.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1 }] });
-  sheet.addRow(headers);
-  rows.forEach(row => sheet.addRow(row));
-  const header = sheet.getRow(1);
-  header.height = 24;
-  header.eachCell(cell => {
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF3C6655" } };
-    cell.font = { color: { argb: "FFFFFFFF" }, bold: true };
-    cell.alignment = { vertical: "middle", horizontal: "center" };
-  });
-  sheet.eachRow((row, rowNumber) => {
-    row.eachCell(cell => {
-      cell.font = { name: "Microsoft YaHei", size: 10, ...(cell.font || {}) };
-      cell.border = {
-        top: { style: "thin", color: { argb: "FFE2E6E1" } },
-        left: { style: "thin", color: { argb: "FFE2E6E1" } },
-        bottom: { style: "thin", color: { argb: "FFE2E6E1" } },
-        right: { style: "thin", color: { argb: "FFE2E6E1" } }
-      };
-      if (rowNumber > 1) cell.alignment = { vertical: "top", wrapText: false };
-    });
-  });
-  (formats.percentCols || []).forEach(index => sheet.getColumn(index).numFmt = "0%");
-  (formats.dateCols || []).forEach(index => sheet.getColumn(index).numFmt = "yyyy-mm-dd");
-  (formats.dateTimeCols || []).forEach(index => sheet.getColumn(index).numFmt = "yyyy-mm-dd hh:mm");
-  (formats.timeCols || []).forEach(index => sheet.getColumn(index).numFmt = "hh:mm");
-  (formats.numberCols || []).forEach(index => sheet.getColumn(index).numFmt = "0.0");
-  (formats.wrapCols || []).forEach(index => {
-    sheet.getColumn(index).alignment = { vertical: "top", wrapText: true };
-  });
-  sheet.columns.forEach((column, index) => {
-    const max = Math.max(String(headers[index] || "").length, ...column.values.slice(2).map(value => displayLength(value)));
-    column.width = Math.min(Math.max(max + 2, 10), formats.wrapCols?.includes(index + 1) ? 36 : 24);
-  });
-  if (rows.length) {
-    sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
-  }
-}
-
-function asDate(value) {
-  if (!value) return "";
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? value : date;
-}
-
-function asDateTime(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date;
-}
-
-function decimalTime(value) {
-  if (value === undefined || value === null || value === "") return "";
-  const hour = Math.floor(Number(value));
-  const minute = Math.round((Number(value) - hour) * 60);
-  return new Date(1899, 11, 30, hour, minute, 0, 0);
-}
-
-function displayLength(value) {
-  if (value instanceof Date) return 16;
-  if (value === null || value === undefined) return 0;
-  return String(value).length;
-}
-
-function statusLabel(status) {
-  return TaskStatusPolicy?.statusLabel?.(status) || {
-    unplanned: "未计划",
-    planned: "计划中",
-    in_progress: "进行中",
-    tracking: "待跟踪",
-    done: "已完成",
-    closed: "已关闭"
-  }[status] || "计划中";
-}
-
-function priorityLabel(priority) {
-  return {
-    general_daily: "一般日常",
-    kpi: "KPI",
-    follow_up: "跟踪关注",
-    important_urgent: "重要紧急",
-    paused: "中止暂停",
-    monthly_fixed: "每月例行"
-  }[priority] || "一般日常";
+  const written = await ExcelExportPolicy.writeExcelFile(outputPath, data);
+  fs.writeFileSync(written.target, written.buffer);
+  return written;
 }
 
 app.on("window-all-closed", () => {
